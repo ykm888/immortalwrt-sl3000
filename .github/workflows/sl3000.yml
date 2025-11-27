@@ -1,7 +1,7 @@
-name: Build & Release Siluo SL-3000 Firmware
+name: Build & Release Siluo SL-3000 Firmware (24.10, Kernel 6.6)
 
 on:
-  workflow_dispatch:   # 手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -10,10 +10,7 @@ jobs:
     steps:
     - name: 清理磁盘空间
       run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /usr/local/lib/android
-        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
         df -h
@@ -28,11 +25,11 @@ jobs:
           libncurses5-dev libncursesw5-dev zlib1g-dev gawk flex gettext \
           libssl-dev python3 python3-distutils rsync
 
-    - name: 克隆 ImmortalWrt 稳定版
+    - name: 克隆 ImmortalWrt 24.10
       run: |
         git clone https://github.com/immortalwrt/immortalwrt.git
         cd immortalwrt
-        git checkout v23.05.3   # 锁定稳定版分支
+        git checkout v24.10.0   # 锁定最新稳定版，内核 6.6
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
@@ -83,12 +80,6 @@ jobs:
         CONFIG_PACKAGE_kmod-nf-conntrack=y
 
         CONFIG_PACKAGE_sl3000-logo=y
-
-        # 关闭自动更新相关插件
-        # CONFIG_PACKAGE_luci-app-attendedsysupgrade is not set
-        # CONFIG_PACKAGE_rpcd-mod-attendedsysupgrade is not set
-        # CONFIG_PACKAGE_luci-app-auto-update is not set
-        # CONFIG_PACKAGE_auto-update is not set
         EOF
 
         make defconfig
@@ -110,7 +101,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         tag_name: sl3000-${{ github.run_number }}
-        name: "Siluo SL-3000 固件发布 #${{ github.run_number }}"
+        name: "Siluo SL-3000 固件发布 #${{ github.run_number }} (24.10, Kernel 6.6)"
         files: immortalwrt/bin/targets/mediatek/mt7981/*/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
