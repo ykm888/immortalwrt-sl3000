@@ -36,6 +36,11 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
+    - name: 清理旧配置
+      run: |
+        cd immortalwrt
+        make distclean
+
     - name: 生成 .config
       run: |
         cd immortalwrt
@@ -86,12 +91,11 @@ jobs:
         # CONFIG_PACKAGE_auto-update is not set
         EOF
 
-        ./scripts/diffconfig.sh || true
+        make defconfig
 
     - name: 编译固件
       run: |
         cd immortalwrt
-        make defconfig
         make -j$(nproc) || make -j1 V=s
         echo "===== 编译结果 ====="
         find bin/targets -type f
