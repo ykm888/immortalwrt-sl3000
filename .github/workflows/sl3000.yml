@@ -29,7 +29,7 @@ jobs:
       run: |
         git clone https://github.com/ykm99999/immortalwrt.git
         cd immortalwrt
-        git checkout v24.10.0   # 锁定最新稳定版，内核 6.6
+        git checkout openwrt-24.10   # 使用 24.10 稳定分支 (内核 6.6)
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
