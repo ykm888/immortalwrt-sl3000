@@ -25,11 +25,18 @@ jobs:
           libncurses5-dev libncursesw5-dev zlib1g-dev gawk flex gettext \
           libssl-dev python3 python3-distutils rsync
 
-    - name: 克隆 ImmortalWrt 24.10
+    - name: 克隆 ImmortalWrt (带分支检测)
       run: |
-        git clone https://github.com/ykm99999/immortalwrt.git
+        BRANCH="openwrt-24.10"
+        echo "Checking branch: $BRANCH"
+        if git ls-remote --exit-code https://github.com/ykm99999/immortalwrt.git refs/heads/$BRANCH; then
+          echo "✅ Found branch in fork, using fork"
+          git clone -b $BRANCH https://github.com/ykm99999/immortalwrt.git immortalwrt
+        else
+          echo "⚠️ Branch '$BRANCH' not found in fork, fallback to official"
+          git clone -b $BRANCH https://github.com/immortalwrt/immortalwrt.git immortalwrt
+        fi
         cd immortalwrt
-        git checkout openwrt-24.10   # 使用 24.10 稳定分支 (内核 6.6)
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
