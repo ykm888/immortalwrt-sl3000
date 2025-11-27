@@ -27,11 +27,54 @@ jobs:
 
     - name: 克隆 ImmortalWrt 24.10
       run: |
-        git clone https://github.com/immortalwrt/immortalwrt.git
+        git clone https://github.com/ykm99999/immortalwrt.git
         cd immortalwrt
         git checkout v24.10.0   # 锁定最新稳定版，内核 6.6
         ./scripts/feeds update -a
         ./scripts/feeds install -a
+
+    - name: 替换 LuCI 源码
+      run: |
+        cd immortalwrt/package
+        rm -rf luci
+        git clone https://github.com/ykm99999/luci.git luci
+
+    - name: 添加 sl3000-logo 包
+      run: |
+        mkdir -p immortalwrt/package/sl3000-logo
+        cat > immortalwrt/package/sl3000-logo/Makefile << 'EOF'
+        include $(TOPDIR)/rules.mk
+
+        PKG_NAME:=sl3000-logo
+        PKG_VERSION:=1.0
+        PKG_RELEASE:=1
+
+        PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
+
+        include $(INCLUDE_DIR)/package.mk
+
+        define Package/$(PKG_NAME)
+          SECTION:=utils
+          CATEGORY:=Siluo
+          TITLE:=SL-3000 Logo
+        endef
+
+        define Build/Prepare
+        	mkdir -p $(PKG_BUILD_DIR)
+        	cp $(TOPDIR)/logo.jpeg $(PKG_BUILD_DIR)/
+        endef
+
+        define Build/Compile
+        	true
+        endef
+
+        define Package/$(PKG_NAME)/install
+        	$(INSTALL_DIR) $(1)/www
+        	$(INSTALL_DATA) $(PKG_BUILD_DIR)/logo.jpeg $(1)/www/司徒SL-3000.jpeg
+        endef
+
+        $(eval $(call BuildPackage,$(PKG_NAME)))
+        EOF
 
     - name: 清理旧配置
       run: |
@@ -80,6 +123,9 @@ jobs:
         CONFIG_PACKAGE_kmod-nf-conntrack=y
 
         CONFIG_PACKAGE_sl3000-logo=y
+
+        CONFIG_PACKAGE_luci-app-attendedsysupgrade=y
+        CONFIG_PACKAGE_rpcd-mod-attendedsysupgrade=y
         EOF
 
         make defconfig
