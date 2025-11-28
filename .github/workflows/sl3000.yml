@@ -49,16 +49,25 @@ jobs:
             wget python3 rsync ccache parted e2fsprogs gpg python3-pip xz-utils zip libelf-dev time
           python3 -m pip install --user packaging
 
-      - name: 4. 安装指定版本 CMake (3.30.5)
+      - name: 4. 安装 CMake (优先 3.30.5，兼容最新)
         run: |
-          sudo apt-get purge -y cmake || true
+          sudo apt-get purge -y cmake cmake-data || true
           wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | \
             sudo gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] \
             https://apt.kitware.com/ubuntu/ jammy main" | \
             sudo tee /etc/apt/sources.list.d/kitware.list
           sudo apt-get update
-          sudo apt-get install -y cmake=3.30.5-*
+
+          echo "=== 尝试安装 CMake 3.30.5 ==="
+          if sudo apt-get install -y cmake=3.30.5-0kitware1ubuntu22.04.1 \
+                                     cmake-data=3.30.5-0kitware1ubuntu22.04.1; then
+            echo "✅ 已成功安装 CMake 3.30.5"
+          else
+            echo "⚠️ 3.30.5 不可用，安装最新版本"
+            sudo apt-get install -y cmake
+          fi
+
           hash -r
           cmake --version
 
@@ -80,29 +89,35 @@ jobs:
           grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
           grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' .config || { echo "❌ 未选择 siluo_sl3000 设备"; exit 1; }
 
-      - name: 7. 更新 feeds
+      - name: 7. 校验 overlay 文件是否存在
+        run: |
+          test -f files/etc/fstab || { echo "❌ fstab 未复制"; exit 1; }
+          test -f files/etc/uci-defaults/99-docker-mount || { echo "❌ docker-mount 脚本未复制"; exit 1; }
+          echo "✅ overlay 文件已复制到固件目录"
+
+      - name: 8. 更新 feeds
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a -f
 
-      - name: 8. 下载源码
+      - name: 9. 下载源码
         run: |
           make download -j$(nproc) || make download -j1 V=s
           echo "=== 下载后磁盘空间 ==="
           df -h
           du -sh dl/* || true
 
-      - name: 9. Defconfig
+      - name: 10. Defconfig
         run: make defconfig
 
-      - name: 10. 强制使用系统 CMake 并清理 host cmake
+      - name: 11. 强制使用系统 CMake 并清理 host cmake
         run: |
           rm -f staging_dir/host/bin/cmake || true
           rm -rf staging_dir/host/*cmake* || true
           echo "System cmake -> $(which cmake)"
           cmake --version
 
-      - name: 11. 编译固件
+      - name: 12. 编译固件
         run: |
           echo "=== 编译前磁盘空间 ==="
           df -h
@@ -112,7 +127,7 @@ jobs:
           df -h
           du -sh ./build_dir/* || true
 
-      - name: 12. 收集固件
+      - name: 13. 收集固件
         run: |
           mkdir -p bin/firmware
           find bin/targets -type f \( -name "*.bin" -o -name "*.bin.gz" -o -name "*.img" -o -name "*.img.gz" -o -name "*.tar.gz" \) -exec cp -v {} bin/firmware/ \;
@@ -125,14 +140,14 @@ jobs:
             exit 1
           fi
 
-      - name: 13. 上传固件
+      - name: 14. 上传固件
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-emmc-firmware
           path: bin/firmware/*
           retention-days: 7
 
-      - name: 14. 计算动态标签名
+      - name: 15. 计算动态标签名
         id: tag_calc
         shell: bash
         run: |
@@ -143,7 +158,7 @@ jobs:
           echo "release_name=ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC, ${{ github.event.inputs.branch }})" >> "$GITHUB_OUTPUT"
           echo "Computed tag: ${FULL_TAG}"
 
-      - name: 15. 发布固件
+      - name: 16. 发布固件
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.tag_calc.outputs.tag }}
@@ -152,10 +167,5 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: 16. 清理旧 release
+      - name: 17. 清理旧 release
         uses: dev-drprasad/delete-older-releases@v0.3.3
-        with:
-          keep_latest: 3
-          delete_tags: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
