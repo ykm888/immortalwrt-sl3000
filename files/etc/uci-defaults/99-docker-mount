@@ -1,0 +1,12 @@
+#!/bin/sh
+# 初始化 docker 分区（仅首次刷机时执行）
+
+if [ ! -d /opt/docker ]; then
+    mkdir -p /opt/docker
+fi
+
+# 检查分区是否已格式化
+blkid /dev/mmcblk0p4 || mkfs.ext4 /dev/mmcblk0p4
+
+# 挂载分区
+mount /opt/docker
