@@ -1,2 +1,18 @@
-# 自动挂载 docker 分区到 /opt/docker
-/dev/mmcblk0p4  /opt/docker  ext4  defaults  0  0
+# /etc/fstab - 自动挂载配置
+# 挂载根文件系统
+/dev/root / ext4 defaults 0 1
+
+# 挂载 tmpfs
+tmpfs /tmp tmpfs defaults,nosuid,nodev,mode=1777 0 0
+
+# 挂载 Docker 分区（推荐使用 UUID 或 LABEL）
+# 方法 1：直接设备路径（简单）
+#/dev/mmcblk0p4 /opt/docker ext4 defaults 0 0
+
+# 方法 2：使用 UUID（推荐）
+# 先运行 blkid /dev/mmcblk0p4 获取 UUID
+UUID=abcd-1234 /opt/docker ext4 defaults 0 0
+
+# 方法 3：使用 LABEL（也推荐）
+# mkfs.ext4 -L docker /dev/mmcblk0p4
+#LABEL=docker /opt/docker ext4 defaults 0 0
