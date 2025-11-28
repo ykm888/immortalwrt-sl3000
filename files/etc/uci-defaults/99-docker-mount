@@ -1,12 +1,21 @@
 #!/bin/sh
 # 初始化 docker 分区（仅首次刷机时执行）
 
-if [ ! -d /opt/docker ]; then
-    mkdir -p /opt/docker
+DOCKER_DEV="/dev/mmcblk0p4"
+MOUNT_POINT="/opt/docker"
+
+# 创建挂载点
+[ -d "$MOUNT_POINT" ] || mkdir -p "$MOUNT_POINT"
+
+# 如果分区未格式化则 mkfs
+if ! blkid "$DOCKER_DEV" >/dev/null 2>&1; then
+    mkfs.ext4 "$DOCKER_DEV"
 fi
 
-# 检查分区是否已格式化
-blkid /dev/mmcblk0p4 || mkfs.ext4 /dev/mmcblk0p4
+# 如果 fstab 没有记录则添加
+if ! grep -q "$DOCKER_DEV" /etc/fstab; then
+    echo "$DOCKER_DEV $MOUNT_POINT ext4 defaults 0 0" >> /etc/fstab
+fi
 
 # 挂载分区
-mount /opt/docker
+mount -a
