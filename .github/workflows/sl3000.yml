@@ -10,7 +10,11 @@ on:
       device:
         description: "设备型号"
         required: true
-        default: "sl-3000"
+        default: "sl3000"
+      config_type:
+        description: "配置类型 (minimal/full)"
+        required: true
+        default: "full"
 
 permissions:
   contents: write
@@ -78,12 +82,17 @@ jobs:
           cp overlay/target/linux/mediatek/dts/mt7981-siluo-sl3000.dts target/linux/mediatek/dts/
           cp overlay/target/linux/mediatek/image/mt7981.mk target/linux/mediatek/image/
           cp -r overlay/files ./files
-          cp overlay/sl3000.config .config
-          echo "✅ 使用 sl3000.config"
+          if [ "${{ github.event.inputs.config_type }}" = "minimal" ]; then
+            cp overlay/sl3000.minimal.config .config
+            echo "✅ 使用 sl3000.minimal.config"
+          else
+            cp overlay/sl3000.config .config
+            echo "✅ 使用 sl3000.config"
+          fi
           head -n 40 .config
-          yes "" | make olddefconfig
+          make defconfig
           grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
-          grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' .config || { echo "❌ 未选择 siluo_sl3000 设备"; exit 1; }
+          grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE.*sl3000=y' .config || { echo "❌ 未选择 SL-3000 设备"; exit 1; }
 
       - name: 7. 校验 overlay 文件是否存在
         run: |
@@ -104,7 +113,7 @@ jobs:
       - name: 10. Defconfig
         env:
           TERM: xterm
-        run: yes "" | make olddefconfig
+        run: make defconfig
 
       - name: 11. 清理 host cmake
         run: |
