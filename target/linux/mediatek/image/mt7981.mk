@@ -6,9 +6,18 @@ define Device/siluo_sl3000
   SUPPORTED_DEVICES := sl3000 siluo_sl3000
 
   # 必须的硬件驱动包
-  DEVICE_PACKAGES := kmod-mt7981-wifi
+  DEVICE_PACKAGES := \
+    kmod-mt7981-wifi \
+    kmod-usb3 \
+    kmod-usb2 \
+    block-mount \
+    kmod-fs-ext4 \
+    kmod-fs-vfat \
+    kmod-fs-xfs \
+    kmod-overlay \
+    kmod-fs-btrfs
 
-  # 定义生成的镜像类型（常规）
+  # 定义生成的镜像类型
   IMAGES := sysupgrade.bin initramfs.bin
 
   # 各镜像规则
