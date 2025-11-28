@@ -1,160 +1,136 @@
-name: Build & Release Siluo SL-3000 Firmware (24.10, Kernel 6.6)
+name: Build ImmortalWrt SL-3000 (Kernel 6.6)
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "选择要编译的 ImmortalWrt 分支"
+        required: true
+        default: "openwrt-24.10"
+      device:
+        description: "设备型号 (例如: sl-3000, x86, mt798x)"
+        required: true
+        default: "sl-3000"
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: 清理磁盘空间
-      run: |
-        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost
-        sudo apt-get clean
-        sudo rm -rf /var/lib/apt/lists/*
-        df -h
+      - name: Checkout ImmortalWrt source
+        uses: actions/checkout@v4
+        with:
+          repository: ykm99999/immortalwrt
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0
 
-    - name: 拉取仓库
-      uses: actions/checkout@v4
+      - name: Debug repo and branch
+        run: |
+          echo "Current branch: $(git rev-parse --abbrev-ref HEAD)"
+          git log -1 --oneline
+          ls -la
 
-    - name: 安装依赖
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential git wget curl unzip \
-          libncurses5-dev libncursesw5-dev zlib1g-dev gawk flex gettext \
-          libssl-dev python3 python3-distutils rsync
+      - name: Free disk space
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/lib/jvm
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          df -h
 
-    - name: 克隆 ImmortalWrt (带分支检测)
-      run: |
-        BRANCH="openwrt-24.10"
-        echo "Checking branch: $BRANCH"
-        if git ls-remote --exit-code https://github.com/ykm99999/immortalwrt.git refs/heads/$BRANCH; then
-          echo "✅ Found branch in fork, using fork"
-          git clone -b $BRANCH https://github.com/ykm99999/immortalwrt.git immortalwrt
-        else
-          echo "⚠️ Branch '$BRANCH' not found in fork, fallback to official"
-          git clone -b $BRANCH https://github.com/immortalwrt/immortalwrt.git immortalwrt
-        fi
-        cd immortalwrt
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
+      - name: Install base dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc g++ make libncurses5-dev \
+            libncursesw5-dev zlib1g-dev gawk git gettext unzip file libssl-dev \
+            wget python3 rsync ccache parted e2fsprogs software-properties-common \
+            wget gpg
 
-    - name: 替换 LuCI 源码
-      run: |
-        cd immortalwrt/package
-        rm -rf luci
-        git clone https://github.com/ykm99999/luci.git luci
+      - name: Install latest CMake from Kitware (>=3.31)
+        run: |
+          sudo apt-get purge -y cmake || true
+          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | sudo gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main" | sudo tee /etc/apt/sources.list.d/kitware.list
+          sudo apt-get update
+          sudo apt-get install -y cmake
+          cmake --version
 
-    - name: 添加 sl3000-logo 包
-      run: |
-        mkdir -p immortalwrt/package/sl3000-logo
-        cat > immortalwrt/package/sl3000-logo/Makefile << 'EOF'
-        include $(TOPDIR)/rules.mk
+      - name: Setup ccache cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-
 
-        PKG_NAME:=sl3000-logo
-        PKG_VERSION:=1.0
-        PKG_RELEASE:=1
+      - name: Enable ccache
+        run: |
+          echo 'export PATH="/usr/lib/ccache:$PATH"' >> $GITHUB_ENV
+          echo 'export CCACHE_DIR=$HOME/.ccache' >> $GITHUB_ENV
+          echo 'export CCACHE_COMPRESS=1' >> $GITHUB_ENV
+          echo 'export CCACHE_MAXSIZE=2G' >> $GITHUB_ENV
 
-        PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
+      - name: Update feeds
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-        include $(INCLUDE_DIR)/package.mk
+      - name: Replace LuCI with your repo
+        run: |
+          rm -rf feeds/luci
+          git clone https://github.com/ykm99999/luci feeds/luci
 
-        define Package/$(PKG_NAME)
-          SECTION:=utils
-          CATEGORY:=Siluo
-          TITLE:=SL-3000 Logo
-        endef
+      - name: Copy device config
+        run: |
+          DEVICE="${{ github.event.inputs.device }}"
+          FILE="configs/${DEVICE}.config"
+          echo "Using device: $DEVICE"
+          ls -l configs || echo "configs 目录不存在"
+          if [ -f "$FILE" ]; then
+            cp "$FILE" .config
+            echo "✅ 使用 $FILE"
+          else
+            echo "❌ 没有设备配置文件，退出"
+            exit 1
+          fi
+          echo "=== .config (前 30 行) ==="
+          head -n 30 .config
 
-        define Build/Prepare
-        	mkdir -p $(PKG_BUILD_DIR)
-        	cp $(TOPDIR)/logo.jpeg $(PKG_BUILD_DIR)/
-        endef
+      - name: Upload used config
+        uses: actions/upload-artifact@v4
+        with:
+          name: used-config-${{ github.event.inputs.device }}
+          path: .config
 
-        define Build/Compile
-        	true
-        endef
+      - name: Defconfig
+        run: make defconfig
 
-        define Package/$(PKG_NAME)/install
-        	$(INSTALL_DIR) $(1)/www
-        	$(INSTALL_DATA) $(PKG_BUILD_DIR)/logo.jpeg $(1)/www/司徒SL-3000.jpeg
-        endef
+      - name: Build firmware
+        run: |
+          make -j$(nproc) || make -j1 V=s
 
-        $(eval $(call BuildPackage,$(PKG_NAME)))
-        EOF
+      - name: List firmware files
+        run: |
+          echo "=== 固件目录结构 ==="
+          ls -lh bin/targets/*/* || echo "❌ 没有生成固件文件"
 
-    - name: 清理旧配置
-      run: |
-        cd immortalwrt
-        make distclean
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-firmware
+          path: bin/targets/**/**/*.bin
 
-    - name: 生成 .config
-      run: |
-        cd immortalwrt
-        cat > .config << 'EOF'
-        CONFIG_TARGET_mediatek=y
-        CONFIG_TARGET_mediatek_mt7981=y
-        CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y
+      - name: Release firmware
+        uses: softprops/action-gh-release@v1
+        with:
+          files: bin/targets/**/**/*.bin
+          name: "ImmortalWrt 固件 - ${{ github.event.inputs.device }}"
+          tag_name: "${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}"
 
-        CONFIG_TARGET_ROOTFS_SQUASHFS=y
-        CONFIG_TARGET_IMAGES_GZIP=y
-
-        CONFIG_PACKAGE_curl=y
-        CONFIG_PACKAGE_wget=y
-        CONFIG_PACKAGE_tcpdump=y
-        CONFIG_PACKAGE_ipset=y
-        CONFIG_PACKAGE_htop=y
-        CONFIG_PACKAGE_bash=y
-        CONFIG_PACKAGE_nano=y
-
-        CONFIG_PACKAGE_luci=y
-        CONFIG_PACKAGE_luci-compat=y
-        CONFIG_PACKAGE_luci-base=y
-        CONFIG_PACKAGE_luci-mod-admin-full=y
-        CONFIG_PACKAGE_luci-theme-bootstrap=y
-
-        CONFIG_PACKAGE_luci-app-firewall=y
-        CONFIG_PACKAGE_luci-app-upnp=y
-        CONFIG_PACKAGE_luci-app-sqm=y
-        CONFIG_PACKAGE_luci-app-ddns=y
-
-        CONFIG_PACKAGE_dockerd=y
-        CONFIG_PACKAGE_docker-ce=y
-        CONFIG_PACKAGE_docker-cli=y
-        CONFIG_PACKAGE_luci-app-dockerman=y
-
-        CONFIG_PACKAGE_kmod-veth=y
-        CONFIG_PACKAGE_kmod-bridge=y
-        CONFIG_PACKAGE_kmod-xt-overlay=y
-        CONFIG_PACKAGE_kmod-nf-nat=y
-        CONFIG_PACKAGE_kmod-nf-conntrack=y
-
-        CONFIG_PACKAGE_sl3000-logo=y
-
-        CONFIG_PACKAGE_luci-app-attendedsysupgrade=y
-        CONFIG_PACKAGE_rpcd-mod-attendedsysupgrade=y
-        EOF
-
-        make defconfig
-
-    - name: 编译固件
-      run: |
-        cd immortalwrt
-        make -j$(nproc) || make -j1 V=s
-        echo "===== 编译结果 ====="
-        find bin/targets -type f
-
-    - name: 上传固件到 Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: sl3000-firmware
-        path: immortalwrt/bin/targets/mediatek/mt7981/
-
-    - name: 发布到 Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: sl3000-${{ github.run_number }}
-        name: "Siluo SL-3000 固件发布 #${{ github.run_number }} (24.10, Kernel 6.6)"
-        files: immortalwrt/bin/targets/mediatek/mt7981/*/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cleanup old releases
+        uses: dev-drprasad/delete-older-releases@v0.3.3
+        with:
+          keep_latest: 1
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
