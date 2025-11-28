@@ -85,7 +85,7 @@ jobs:
           cp overlay/sl3000.config .config
           echo "✅ 使用 sl3000.config"
           echo "=== .config (前40行) ==="; head -n 40 .config
-          make defconfig
+          make olddefconfig
           grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
           grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' .config || { echo "❌ 未选择 siluo_sl3000 设备"; exit 1; }
 
@@ -108,7 +108,7 @@ jobs:
           du -sh dl/* || true
 
       - name: 10. Defconfig
-        run: make defconfig
+        run: make olddefconfig
 
       - name: 11. 强制使用系统 CMake 并清理 host cmake
         run: |
@@ -130,42 +130,4 @@ jobs:
       - name: 13. 收集固件
         run: |
           mkdir -p bin/firmware
-          find bin/targets -type f \( -name "*.bin" -o -name "*.bin.gz" -o -name "*.img" -o -name "*.img.gz" -o -name "*.tar.gz" \) -exec cp -v {} bin/firmware/ \;
-          echo "--- 原始固件目录结构 ---"; ls -R bin/targets || true
-          echo "--- 收集后的固件 ---"; ls -lh bin/firmware || true
-          sha256sum bin/firmware/* || true
-          COUNT=$(find bin/firmware -type f | wc -l)
-          if [ "$COUNT" -eq 0 ]; then
-            echo "❌ 没有生成固件。检查：1) .config 设备选择；2) mt7981.mk 的 TARGET_DEVICES/IMAGE 规则；3) 上方 V=s 包编译是否失败"
-            exit 1
-          fi
-
-      - name: 14. 上传固件
-        uses: actions/upload-artifact@v4
-        with:
-          name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-emmc-firmware
-          path: bin/firmware/*
-          retention-days: 7
-
-      - name: 15. 计算动态标签名
-        id: tag_calc
-        shell: bash
-        run: |
-          DATE_TAG=$(date +%Y%m%d)
-          SHORT_HASH=$(git rev-parse --short HEAD)
-          FULL_TAG="${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}-${SHORT_HASH}-${DATE_TAG}"
-          echo "tag=${FULL_TAG}" >> "$GITHUB_OUTPUT"
-          echo "release_name=ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC, ${{ github.event.inputs.branch }})" >> "$GITHUB_OUTPUT"
-          echo "Computed tag: ${FULL_TAG}"
-
-      - name: 16. 发布固件
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.tag_calc.outputs.tag }}
-          name: ${{ steps.tag_calc.outputs.release_name }}
-          files: bin/firmware/*
-          draft: false
-          prerelease: false
-
-      - name: 17. 清理旧 release
-        uses: dev-drprasad/delete-older-releases@v0.3.3
+          find bin/targets -type f \( -name "*.bin" -o -name "*.bin
