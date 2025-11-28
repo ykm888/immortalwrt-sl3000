@@ -11,10 +11,6 @@ on:
         description: "设备型号"
         required: true
         default: "sl-3000"
-      mode:
-        description: "编译模式 (minimal 或 luci)"
-        required: true
-        default: "luci"
 
 jobs:
   build:
@@ -39,9 +35,8 @@ jobs:
           cp overlay/target/linux/mediatek/dts/mt7981-siluo-sl3000.dts target/linux/mediatek/dts/
           cp overlay/target/linux/mediatek/image/mt7981.mk target/linux/mediatek/image/
           cp -r overlay/files ./files
-          DEVICE="${{ github.event.inputs.device }}"
-          MODE="${{ github.event.inputs.mode }}"
-          cp overlay/configs/${DEVICE}-${MODE}.config .config
+          cp overlay/sl3000.config .config
+          echo "✅ 使用根目录的 sl3000.config"
 
       - name: Verify overlay files
         run: |
@@ -66,27 +61,26 @@ jobs:
           DATE=$(date +%Y%m%d)
           DEVICE="${{ github.event.inputs.device }}"
           BRANCH="${{ github.event.inputs.branch }}"
-          MODE="${{ github.event.inputs.mode }}"
           for f in bin/targets/*/*/*.bin; do
             if [[ $f == *"sysupgrade"* ]]; then
-              mv "$f" "bin/targets/${DEVICE}-${BRANCH}-${MODE}-emmc-${DATE}-sysupgrade.bin"
+              mv "$f" "bin/targets/${DEVICE}-${BRANCH}-emmc-${DATE}-sysupgrade.bin"
             elif [[ $f == *"initramfs"* ]]; then
-              mv "$f" "bin/targets/${DEVICE}-${BRANCH}-${MODE}-emmc-${DATE}-initramfs.bin"
+              mv "$f" "bin/targets/${DEVICE}-${BRANCH}-emmc-${DATE}-initramfs.bin"
             fi
           done
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-${{ github.event.inputs.mode }}-emmc-firmware
+          name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-emmc-firmware
           path: bin/targets/*.bin
 
       - name: Release firmware
         uses: softprops/action-gh-release@v1
         with:
           files: bin/targets/*.bin
-          name: "ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC, ${{ github.event.inputs.branch}}, ${{ github.event.inputs.mode }})"
-          tag_name: "${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}-${{ github.event.inputs.mode }}-emmc-$(date +%Y%m%d)"
+          name: "ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC, ${{ github.event.inputs.branch}})"
+          tag_name: "${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}-emmc-$(date +%Y%m%d)"
 
       - name: Cleanup old releases
         uses: dev-drprasad/delete-older-releases@v0.3.3
