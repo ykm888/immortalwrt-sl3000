@@ -18,119 +18,94 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: 1. ⚡ 激进磁盘空间清理
+      - name: 1. 清理磁盘空间
         run: |
-          echo "--- 释放磁盘空间 ---"
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/lib/jvm
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
           df -h
 
-      - name: 2. Checkout ImmortalWrt source
+      - name: 2. Checkout ImmortalWrt 源码
         uses: actions/checkout@v4
         with:
           repository: ykm99999/immortalwrt
           ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
 
-      - name: 3. 安装基础编译依赖 (修复缺失的步骤)
+      - name: 3. 安装依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential gcc g++ make libncurses5-dev \
             libncursesw5-dev zlib1g-dev gawk git gettext unzip file libssl-dev \
-            wget python3 rsync ccache parted e2fsprogs
+            wget python3 rsync ccache parted e2fsprogs gpg python3-pip
+          python3 -m pip install --user packaging
 
-      - name: 4. Checkout overlay repo
+      - name: 4. 安装最新 CMake (>=3.31)
+        run: |
+          sudo apt-get purge -y cmake || true
+          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | sudo gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main" | sudo tee /etc/apt/sources.list.d/kitware.list
+          sudo apt-get update
+          sudo apt-get install -y cmake
+          cmake --version
+
+      - name: 5. Checkout overlay
         uses: actions/checkout@v4
         with:
           repository: ykm888/immortalwrt-sl3000
           path: overlay
 
-      - name: 5. Apply overlay (DTS, mk, files, config)
+      - name: 6. 应用 overlay
         run: |
           cp overlay/target/linux/mediatek/dts/mt7981-siluo-sl3000.dts target/linux/mediatek/dts/
           cp overlay/target/linux/mediatek/image/mt7981.mk target/linux/mediatek/image/
           cp -r overlay/files ./files
           cp overlay/sl3000.config .config
-          echo "✅ 使用根目录的 sl3000.config"
+          echo "✅ 使用 sl3000.config"
+          grep siluo_sl3000 .config || { echo "❌ 配置文件未选择设备"; exit 1; }
 
-      - name: 6. Setup ccache cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.ccache
-          key: ${{ runner.os }}-ccache-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-
-
-      - name: 7. Enable ccache
-        run: |
-          echo 'export PATH="/usr/lib/ccache:$PATH"' >> $GITHUB_ENV
-          echo 'export CCACHE_DIR=$HOME/.ccache' >> $GITHUB_ENV
-          echo 'export CCACHE_COMPRESS=1' >> $GITHUB_ENV
-          echo 'export CCACHE_MAXSIZE=2G' >> $GITHUB_ENV
-
-      - name: 8. Update feeds
+      - name: 7. 更新 feeds
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 9. Download sources
+      - name: 8. 下载源码
         run: make download -j$(nproc)
 
-      - name: 10. Defconfig
+      - name: 9. Defconfig
         run: make defconfig
 
-      - name: 11. Build firmware
+      - name: 10. 编译固件
         run: |
-          make -j$(nproc) || make -j1 V=s
+          CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j$(nproc) || \
+          CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j1 V=s
 
-      - name: 12. Rename firmware files (用于简化上传路径)
+      - name: 11. 收集固件
         run: |
-          DATE=$(date +%Y%m%d)
-          DEVICE="${{ github.event.inputs.device }}"
-          BRANCH="${{ github.event.inputs.branch }}"
-          for f in bin/targets/*/*/*.bin; do
-            if [[ $f == *"sysupgrade"* ]]; then
-              # 重命名到顶层 bin/targets/ 目录
-              mv "$f" "bin/targets/${DEVICE}-${BRANCH}-emmc-${DATE}-sysupgrade.bin"
-            elif [[ $f == *"initramfs"* ]]; then
-              mv "$f" "bin/targets/${DEVICE}-${BRANCH}-emmc-${DATE}-initramfs.bin"
-            fi
-          done
-          echo "--- 检查重命名后的文件 ---"
-          ls -lh bin/targets/
+          mkdir -p bin/firmware
+          find bin/targets -type f \( -name "*.bin" -o -name "*.img*" \) -exec cp -v {} bin/firmware/ \;
+          echo "--- 固件目录 ---"
+          ls -lh bin/firmware || true
+          COUNT=$(find bin/firmware -type f | wc -l)
+          if [ "$COUNT" -eq 0 ]; then
+            echo "❌ 没有生成固件，请检查 .config 和 mt7981.mk 是否正确"
+            exit 1
+          fi
 
-      - name: 13. Cleanup build artifacts
-        run: |
-          rm -rf bin/packages build_dir staging_dir
-          df -h
-
-      - name: 14. Upload firmware (路径已修复)
+      - name: 12. 上传固件
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-emmc-firmware
-          # 现在文件在 bin/targets/ 目录下，路径正确
-          path: bin/targets/*.bin 
+          path: bin/firmware/*
 
-      - name: 15. 计算动态标签名 (修复标签无效问题)
-        id: tag_calc # 增加 ID 以便引用输出
-        run: |
-          # 提前执行 Shell 命令计算出正确的日期标签
-          DATE_TAG=$(date +%Y%m%d)
-          FULL_TAG="${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}-emmc-${DATE_TAG}"
-          echo "tag=$FULL_TAG" >> $GITHUB_OUTPUT # 导出标签名
-
-      - name: 16. Release firmware (标签和文件路径已修复)
+      - name: 13. 发布固件
         uses: softprops/action-gh-release@v1
         with:
-          # 引用上一步计算的有效标签名
-          tag_name: ${{ steps.tag_calc.outputs.tag }} 
-          name: "ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC, ${{ github.event.inputs.branch}})"
-          # 文件路径已修复
-          files: bin/targets/*.bin 
-          # 使用 ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}-$(date +%Y%m%d)
+          name: "ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC)"
+          files: bin/firmware/*
 
-      - name: 17. Cleanup old releases
+      - name: 14. 清理旧 release
         uses: dev-drprasad/delete-older-releases@v0.3.3
         with:
           keep_latest: 3
