@@ -1,48 +1,76 @@
 /dts-v1/;
 
+#include "mt7981.dtsi"
+
 / {
-    compatible = "siluo,sl3000", "mediatek,mt7981";
-    model = "Siluo SL3000";
+	compatible = "siluo,sl3000", "mediatek,mt7981";
+	model = "Siluo SL3000";
 
-    memory {
-        device_type = "memory";
-        reg = <0x40000000 0x20000000>; /* 512MB */
-    };
+	chosen {
+		stdout-path = &uart0;
+		bootargs = "console=ttyS0,115200n8";
+	};
 
-    chosen {
-        bootargs = "console=ttyS0,115200n8";
-    };
+	memory {
+		device_type = "memory";
+		reg = <0x40000000 0x20000000>; /* 512MiB */
+	};
 
-    soc {
-        wifi@18000000 {
-            compatible = "mediatek,mt7981-wifi";
-            status = "okay";
-        };
+	leds {
+		compatible = "gpio-leds";
+		status {
+			label = "status";
+			gpios = <&gpio 12 GPIO_ACTIVE_LOW>;
+		};
+	};
 
-        ethernet@15100000 {
-            compatible = "mediatek,mt7981-eth";
-            status = "okay";
-        };
-    };
+	keys {
+		compatible = "gpio-keys";
+		reset {
+			label = "reset";
+			linux,code = <KEY_RESTART>;
+			gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
 
-    partitions {
-        compatible = "fixed-partitions";
-        #address-cells = <1>;
-        #size-cells = <1>;
+/* eMMC 存储定义，含 Docker 分区 */
+&mmc0 {
+	status = "okay";
 
-        partition@0 {
-            label = "bootloader";
-            reg = <0x0 0x40000>;
-        };
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
 
-        partition@40000 {
-            label = "firmware";
-            reg = <0x40000 0x1fc0000>;
-        };
+		bootloader@0 {
+			label = "bootloader";
+			reg = <0x00000000 0x01000000>; /* 16MB */
+			read-only;
+		};
 
-        partition@2000000 {
-            label = "factory";
-            reg = <0x2000000 0x100000>;
-        };
-    };
+		firmware@1000000 {
+			label = "firmware";
+			reg = <0x01000000 0x20000000>; /* 512MB 固件区 */
+		};
+
+		factory@21000000 {
+			label = "factory";
+			reg = <0x21000000 0x01000000>; /* 16MB 校准区 */
+		};
+
+		docker@22000000 {
+			label = "docker";
+			reg = <0x22000000 0x280000000>; /* 10GB Docker 专用分区 */
+		};
+	};
+};
+
+&eth {
+	status = "okay";
+	/* TODO: 根据实际 PHY 拓扑补充 mdio/phy */
+};
+
+&wmac {
+	status = "okay";
 };
