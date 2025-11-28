@@ -48,7 +48,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential gcc g++ make libncurses5-dev \
             libncursesw5-dev zlib1g-dev gawk git gettext unzip file libssl-dev \
-            wget python3 rsync ccache parted e2fsprogs gpg python3-pip xz-utils zip libelf-dev time
+            wget python3 rsync ccache parted e2fsprogs gpg python3-pip xz-utils zip libelf-dev time \
+            perl flex bison libpcap-dev
           python3 -m pip install --user packaging
 
       - name: 4. 安装 CMake (优先 3.30.5，兼容最新)
@@ -75,16 +76,13 @@ jobs:
           repository: ykm888/immortalwrt-sl3000
           path: overlay
 
-      - name: 6. 应用 overlay 并复制配置文件 (已移除 make defconfig 和校验)
+      - name: 6. 应用 overlay 并复制配置文件
         env:
           TERM: xterm
         run: |
-          # 复制 DTS 和 Image Makefile
           cp overlay/target/linux/mediatek/dts/mt7981-siluo-sl3000.dts target/linux/mediatek/dts/
           cp overlay/target/linux/mediatek/image/mt7981.mk target/linux/mediatek/image/
-          # 复制 files 目录
           cp -r overlay/files ./files
-          # 复制 .config
           if [ "${{ github.event.inputs.config_type }}" = "minimal" ]; then
             cp overlay/sl3000.minimal.config .config
             echo "✅ 使用 sl3000.minimal.config"
@@ -93,7 +91,7 @@ jobs:
             echo "✅ 使用 sl3000.config"
           fi
           head -n 40 .config
-          
+
       - name: 7. 校验 overlay 文件是否存在
         run: |
           test -f files/etc/fstab || { echo "❌ fstab 未复制"; exit 1; }
@@ -102,20 +100,21 @@ jobs:
 
       - name: 8. 更新 feeds
         run: |
+          ./scripts/feeds clean
           ./scripts/feeds update -a
           ./scripts/feeds install -a -f
 
       - name: 9. 下载源码
         run: |
+          rm -rf dl/*
           make download -j$(nproc) || make download -j1 V=s
           df -h
 
-      - name: 10. Defconfig 并校验平台 (已添加 make defconfig 和校验)
+      - name: 10. Defconfig 并校验平台
         env:
           TERM: xterm
         run: |
           make defconfig
-          # 在 feeds 更新和 defconfig 之后进行校验
           grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
           grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE.*sl3000=y' .config || { echo "❌ 未选择 SL-3000 设备"; exit 1; }
           echo "✅ 平台和设备选择校验通过！"
