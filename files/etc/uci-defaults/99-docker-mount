@@ -10,21 +10,23 @@ echo "[uci-defaults] 初始化 Docker 分区挂载..."
 # 创建挂载点
 [ -d "$MOUNT_POINT" ] || mkdir -p "$MOUNT_POINT"
 
-# 如果分区未格式化则 mkfs.ext4
+# 如果分区未格式化则 mkfs.ext4，并加上 LABEL
 if ! blkid "$DOCKER_DEV" >/dev/null 2>&1; then
-    echo "[uci-defaults] 格式化 $DOCKER_DEV 为 ext4"
-    mkfs.ext4 "$DOCKER_DEV"
+    echo "[uci-defaults] 格式化 $DOCKER_DEV 为 ext4 并设置 LABEL=docker"
+    mkfs.ext4 -L docker "$DOCKER_DEV"
 fi
 
-# 如果 fstab 没有记录则添加
-if ! grep -q "$DOCKER_DEV" /etc/fstab; then
-    echo "[uci-defaults] 添加 fstab 挂载记录"
-    echo "$DOCKER_DEV $MOUNT_POINT ext4 defaults 0 0" >> /etc/fstab
+# 获取分区 UUID
+UUID=$(blkid -s UUID -o value "$DOCKER_DEV")
+
+# 如果 fstab 没有记录则添加（优先 UUID）
+if ! grep -q "$DOCKER_DEV" /etc/fstab && ! grep -q "$UUID" /etc/fstab; then
+    echo "[uci-defaults] 添加 fstab 挂载记录 (UUID)"
+    echo "UUID=$UUID $MOUNT_POINT ext4 defaults 0 0" >> /etc/fstab
 fi
 
 # 挂载分区
 mount -a
-
 echo "[uci-defaults] Docker 分区已挂载到 $MOUNT_POINT"
 
 # 删除自身，避免重复执行
