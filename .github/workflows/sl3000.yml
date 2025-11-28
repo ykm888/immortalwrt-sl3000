@@ -1,4 +1,4 @@
-name: Build ImmortalWrt SL-3000 (Kernel 6.6)
+name: Build ImmortalWrt SL-3000 (eMMC 128G)
 
 on:
   workflow_dispatch:
@@ -8,9 +8,13 @@ on:
         required: true
         default: "openwrt-24.10"
       device:
-        description: "设备型号 (例如: sl-3000, x86, mt798x)"
+        description: "设备型号 (例如: sl-3000)"
         required: true
         default: "sl-3000"
+      mode:
+        description: "编译模式 (minimal 或 luci)"
+        required: true
+        default: "luci"
 
 jobs:
   build:
@@ -74,7 +78,8 @@ jobs:
       - name: Copy device config
         run: |
           DEVICE="${{ github.event.inputs.device }}"
-          FILE="configs/${DEVICE}.config"
+          MODE="${{ github.event.inputs.mode }}"
+          FILE="configs/${DEVICE}-${MODE}.config"
           if [ -f "$FILE" ]; then
             cp "$FILE" .config
             echo "✅ 使用 $FILE"
@@ -82,6 +87,11 @@ jobs:
             echo "❌ 没有设备配置文件，退出"
             exit 1
           fi
+
+      - name: Verify custom files
+        run: |
+          test -f files/etc/fstab || (echo "❌ fstab missing" && exit 1)
+          test -f files/etc/uci-defaults/99-docker-mount || (echo "❌ docker mount script missing" && exit 1)
 
       - name: Defconfig
         run: make defconfig
@@ -95,11 +105,12 @@ jobs:
           DATE=$(date +%Y%m%d)
           DEVICE="${{ github.event.inputs.device }}"
           BRANCH="${{ github.event.inputs.branch }}"
+          MODE="${{ github.event.inputs.mode }}"
           for f in bin/targets/*/*/*.bin; do
             if [[ $f == *"sysupgrade"* ]]; then
-              mv "$f" "bin/targets/${DEVICE}-${BRANCH}-${DATE}-sysupgrade.bin"
+              mv "$f" "bin/targets/${DEVICE}-${BRANCH}-${MODE}-emmc-${DATE}-sysupgrade.bin"
             elif [[ $f == *"initramfs"* ]]; then
-              mv "$f" "bin/targets/${DEVICE}-${BRANCH}-${DATE}-initramfs.bin"
+              mv "$f" "bin/targets/${DEVICE}-${BRANCH}-${MODE}-emmc-${DATE}-initramfs.bin"
             fi
           done
           ls -lh bin/targets/*/*.bin
@@ -107,15 +118,15 @@ jobs:
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-firmware
+          name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-${{ github.event.inputs.mode }}-emmc-firmware
           path: bin/targets/*.bin
 
       - name: Release firmware
         uses: softprops/action-gh-release@v1
         with:
           files: bin/targets/*.bin
-          name: "ImmortalWrt 固件 - ${{ github.event.inputs.device }} (${{ github.event.inputs.branch }})"
-          tag_name: "${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}-$(date +%Y%m%d)"
+          name: "ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC, ${{ github.event.inputs.branch}}, ${{ github.event.inputs.mode }})"
+          tag_name: "${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}-${{ github.event.inputs.mode }}-emmc-$(date +%Y%m%d)"
 
       - name: Cleanup old releases
         uses: dev-drprasad/delete-older-releases@v0.3.3
