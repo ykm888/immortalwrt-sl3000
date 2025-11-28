@@ -12,6 +12,9 @@ on:
         required: true
         default: "sl-3000"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -55,14 +58,17 @@ jobs:
           repository: ykm888/immortalwrt-sl3000
           path: overlay
 
-      - name: 6. 应用 overlay
+      - name: 6. 应用 overlay 并校验设备选择
         run: |
           cp overlay/target/linux/mediatek/dts/mt7981-siluo-sl3000.dts target/linux/mediatek/dts/
           cp overlay/target/linux/mediatek/image/mt7981.mk target/linux/mediatek/image/
           cp -r overlay/files ./files
           cp overlay/sl3000.config .config
           echo "✅ 使用 sl3000.config"
-          grep siluo_sl3000 .config || { echo "❌ 配置文件未选择设备"; exit 1; }
+          echo "=== .config (前40行) ==="; head -n 40 .config
+          # 双重校验
+          grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
+          grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' .config || { echo "❌ 未选择 siluo_sl3000 设备"; exit 1; }
 
       - name: 7. 更新 feeds
         run: |
@@ -75,37 +81,55 @@ jobs:
       - name: 9. Defconfig
         run: make defconfig
 
-      - name: 10. 编译固件
+      - name: 10. 强制使用系统 CMake 并清理 host cmake
+        run: |
+          rm -f staging_dir/host/bin/cmake || true
+          rm -rf staging_dir/host/*cmake* || true
+          echo "System cmake -> $(which cmake)"
+          cmake --version
+
+      - name: 11. 编译固件
         run: |
           CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j$(nproc) || \
           CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j1 V=s
 
-      - name: 11. 收集固件
+      - name: 12. 收集固件
         run: |
           mkdir -p bin/firmware
-          find bin/targets -type f \( -name "*.bin" -o -name "*.img*" \) -exec cp -v {} bin/firmware/ \;
-          echo "--- 固件目录 ---"
-          ls -lh bin/firmware || true
+          # 补全匹配 .bin.gz
+          find bin/targets -type f \( -name "*.bin" -o -name "*.bin.gz" -o -name "*.img" -o -name "*.img.gz" \) -exec cp -v {} bin/firmware/ \;
+          echo "--- 原始固件目录结构 ---"; ls -R bin/targets || true
+          echo "--- 收集后的固件 ---"; ls -lh bin/firmware || true
           COUNT=$(find bin/firmware -type f | wc -l)
           if [ "$COUNT" -eq 0 ]; then
-            echo "❌ 没有生成固件，请检查 .config 和 mt7981.mk 是否正确"
+            echo "❌ 没有生成固件。检查：1) .config 设备选择；2) mt7981.mk 的 TARGET_DEVICES/IMAGE 规则；3) 上方 V=s 包编译是否失败"
             exit 1
           fi
 
-      - name: 12. 上传固件
+      - name: 13. 上传固件
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-emmc-firmware
           path: bin/firmware/*
 
-      - name: 13. 发布固件
+      - name: 14. 计算动态标签名
+        id: tag_calc
+        shell: bash
+        run: |
+          DATE_TAG=$(date +%Y%m%d)
+          FULL_TAG="${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}-emmc-${DATE_TAG}"
+          echo "tag=${FULL_TAG}" >> "$GITHUB_OUTPUT"
+          echo "release_name=ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC, ${{ github.event.inputs.branch }})" >> "$GITHUB_OUTPUT"
+          echo "Computed tag: ${FULL_TAG}"
+
+      - name: 15. 发布固件
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}-$(date +%Y%m%d)
-          name: "ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC)"
+          tag_name: ${{ steps.tag_calc.outputs.tag }}
+          name: ${{ steps.tag_calc.outputs.release_name }}
           files: bin/firmware/*
 
-      - name: 14. 清理旧 release
+      - name: 16. 清理旧 release
         uses: dev-drprasad/delete-older-releases@v0.3.3
         with:
           keep_latest: 3
