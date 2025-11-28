@@ -75,13 +75,16 @@ jobs:
           repository: ykm888/immortalwrt-sl3000
           path: overlay
 
-      - name: 6. 应用 overlay 并校验设备选择
+      - name: 6. 应用 overlay 并复制配置文件 (已移除 make defconfig 和校验)
         env:
           TERM: xterm
         run: |
+          # 复制 DTS 和 Image Makefile
           cp overlay/target/linux/mediatek/dts/mt7981-siluo-sl3000.dts target/linux/mediatek/dts/
           cp overlay/target/linux/mediatek/image/mt7981.mk target/linux/mediatek/image/
+          # 复制 files 目录
           cp -r overlay/files ./files
+          # 复制 .config
           if [ "${{ github.event.inputs.config_type }}" = "minimal" ]; then
             cp overlay/sl3000.minimal.config .config
             echo "✅ 使用 sl3000.minimal.config"
@@ -90,10 +93,7 @@ jobs:
             echo "✅ 使用 sl3000.config"
           fi
           head -n 40 .config
-          make defconfig
-          grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
-          grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE.*sl3000=y' .config || { echo "❌ 未选择 SL-3000 设备"; exit 1; }
-
+          
       - name: 7. 校验 overlay 文件是否存在
         run: |
           test -f files/etc/fstab || { echo "❌ fstab 未复制"; exit 1; }
@@ -110,10 +110,15 @@ jobs:
           make download -j$(nproc) || make download -j1 V=s
           df -h
 
-      - name: 10. Defconfig
+      - name: 10. Defconfig 并校验平台 (已添加 make defconfig 和校验)
         env:
           TERM: xterm
-        run: make defconfig
+        run: |
+          make defconfig
+          # 在 feeds 更新和 defconfig 之后进行校验
+          grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
+          grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE.*sl3000=y' .config || { echo "❌ 未选择 SL-3000 设备"; exit 1; }
+          echo "✅ 平台和设备选择校验通过！"
 
       - name: 11. 清理 host cmake
         run: |
