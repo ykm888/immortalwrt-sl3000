@@ -24,19 +24,11 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
 
-      - name: Debug repo and branch
-        run: |
-          echo "Current branch: $(git rev-parse --abbrev-ref HEAD)"
-          git log -1 --oneline
-          ls -la
-
       - name: Free disk space
         run: |
-          df -h
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/lib/jvm
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
-          df -h
 
       - name: Install base dependencies
         run: |
@@ -53,7 +45,6 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main" | sudo tee /etc/apt/sources.list.d/kitware.list
           sudo apt-get update
           sudo apt-get install -y cmake
-          cmake --version
 
       - name: Setup ccache cache
         uses: actions/cache@v4
@@ -84,8 +75,6 @@ jobs:
         run: |
           DEVICE="${{ github.event.inputs.device }}"
           FILE="configs/${DEVICE}.config"
-          echo "Using device: $DEVICE"
-          ls -l configs || echo "configs 目录不存在"
           if [ -f "$FILE" ]; then
             cp "$FILE" .config
             echo "✅ 使用 $FILE"
@@ -93,14 +82,6 @@ jobs:
             echo "❌ 没有设备配置文件，退出"
             exit 1
           fi
-          echo "=== .config (前 30 行) ==="
-          head -n 30 .config
-
-      - name: Upload used config
-        uses: actions/upload-artifact@v4
-        with:
-          name: used-config-${{ github.event.inputs.device }}
-          path: .config
 
       - name: Defconfig
         run: make defconfig
@@ -109,28 +90,37 @@ jobs:
         run: |
           make -j$(nproc) || make -j1 V=s
 
-      - name: List firmware files
+      - name: Rename firmware files
         run: |
-          echo "=== 固件目录结构 ==="
-          ls -lh bin/targets/*/* || echo "❌ 没有生成固件文件"
+          DATE=$(date +%Y%m%d)
+          DEVICE="${{ github.event.inputs.device }}"
+          BRANCH="${{ github.event.inputs.branch }}"
+          for f in bin/targets/*/*/*.bin; do
+            if [[ $f == *"sysupgrade"* ]]; then
+              mv "$f" "bin/targets/${DEVICE}-${BRANCH}-${DATE}-sysupgrade.bin"
+            elif [[ $f == *"initramfs"* ]]; then
+              mv "$f" "bin/targets/${DEVICE}-${BRANCH}-${DATE}-initramfs.bin"
+            fi
+          done
+          ls -lh bin/targets/*/*.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-firmware
-          path: bin/targets/**/**/*.bin
+          path: bin/targets/*.bin
 
       - name: Release firmware
         uses: softprops/action-gh-release@v1
         with:
-          files: bin/targets/**/**/*.bin
-          name: "ImmortalWrt 固件 - ${{ github.event.inputs.device }}"
-          tag_name: "${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}"
+          files: bin/targets/*.bin
+          name: "ImmortalWrt 固件 - ${{ github.event.inputs.device }} (${{ github.event.inputs.branch }})"
+          tag_name: "${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}-$(date +%Y%m%d)"
 
       - name: Cleanup old releases
         uses: dev-drprasad/delete-older-releases@v0.3.3
         with:
-          keep_latest: 1
+          keep_latest: 3
           delete_tags: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
