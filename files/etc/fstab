@@ -1,0 +1,2 @@
+# 自动挂载 docker 分区到 /opt/docker
+/dev/mmcblk0p4  /opt/docker  ext4  defaults  0  0
