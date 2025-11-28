@@ -3,74 +3,144 @@
 #include "mt7981.dtsi"
 
 / {
-	compatible = "siluo,sl3000", "mediatek,mt7981";
-	model = "Siluo SL3000";
+    compatible = "siluo,sl3000", "mediatek,mt7981";
+    model = "Siluo SL3000";
 
-	chosen {
-		stdout-path = &uart0;
-		bootargs = "console=ttyS0,115200n8";
-	};
+    chosen {
+        stdout-path = &uart0;
+        bootargs = "console=ttyS0,115200n8";
+    };
 
-	memory {
-		device_type = "memory";
-		reg = <0x40000000 0x20000000>; /* 512MiB */
-	};
+    aliases {
+        led-boot = &led_status;
+        led-failsafe = &led_status;
+        led-running = &led_status;
+        led-upgrade = &led_status;
+    };
 
-	leds {
-		compatible = "gpio-leds";
-		status {
-			label = "status";
-			gpios = <&gpio 12 GPIO_ACTIVE_LOW>;
-		};
-	};
+    memory {
+        device_type = "memory";
+        reg = <0x40000000 0x40000000>; /* 1GiB DDR4 */
+    };
 
-	keys {
-		compatible = "gpio-keys";
-		reset {
-			label = "reset";
-			linux,code = <KEY_RESTART>;
-			gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
-		};
-	};
+    leds {
+        compatible = "gpio-leds";
+
+        led_status: status {
+            label = "status";
+            gpios = <&gpio 12 GPIO_ACTIVE_LOW>;
+            default-state = "off";
+        };
+    };
+
+    keys {
+        compatible = "gpio-keys";
+
+        reset {
+            label = "reset";
+            linux,code = <KEY_RESTART>;
+            gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
+            debounce-interval = <20>;
+        };
+    };
 };
 
-/* eMMC 存储定义，含 Docker 分区 */
+/* SPI-NOR Flash 32MB */
+&spi0 {
+    status = "okay";
+
+    flash@0 {
+        compatible = "jedec,spi-nor";
+        reg = <0>;
+        spi-max-frequency = <50000000>;
+
+        partitions {
+            compatible = "fixed-partitions";
+            #address-cells = <1>;
+            #size-cells = <1>;
+
+            bootloader@0 {
+                label = "bootloader";
+                reg = <0x00000000 0x00200000>; /* 2MB */
+                read-only;
+            };
+
+            factory@200000 {
+                label = "factory";
+                reg = <0x00200000 0x00100000>; /* 1MB 校准数据 */
+                read-only;
+            };
+
+            flash_unused@300000 {
+                label = "unused";
+                reg = <0x00300000 0x01D00000>; /* 剩余空间 */
+            };
+        };
+    };
+};
+
+/* eMMC 128GB */
 &mmc0 {
-	status = "okay";
+    status = "okay";
 
-	partitions {
-		compatible = "fixed-partitions";
-		#address-cells = <1>;
-		#size-cells = <1>;
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
 
-		bootloader@0 {
-			label = "bootloader";
-			reg = <0x00000000 0x01000000>; /* 16MB */
-			read-only;
-		};
+        firmware@1000000 {
+            label = "firmware";
+            reg = <0x01000000 0x20000000>; /* 512MB 固件区 */
+        };
 
-		firmware@1000000 {
-			label = "firmware";
-			reg = <0x01000000 0x20000000>; /* 512MB 固件区 */
-		};
-
-		factory@21000000 {
-			label = "factory";
-			reg = <0x21000000 0x01000000>; /* 16MB 校准区 */
-		};
-
-		docker@22000000 {
-			label = "docker";
-			reg = <0x22000000 0x280000000>; /* 10GB Docker 专用分区 */
-		};
-	};
+        /* Docker 分区建议运行时脚本创建，不在 DTS 固定 */
+    };
 };
 
+/* Ethernet: 4x Gigabit ports */
 &eth {
-	status = "okay";
-	/* TODO: 根据实际 PHY 拓扑补充 mdio/phy */
+    status = "okay";
+
+    mdio-bus {
+        phy0: ethernet-phy@0 {
+            reg = <0>;
+        };
+        phy1: ethernet-phy@1 {
+            reg = <1>;
+        };
+        phy2: ethernet-phy@2 {
+            reg = <2>;
+        };
+        phy3: ethernet-phy@3 {
+            reg = <3>;
+        };
+    };
+
+    /* 示例：绑定端口到 PHY，需根据实际布线调整 */
+    port@0 {
+        phy-handle = <&phy0>;
+    };
+    port@1 {
+        phy-handle = <&phy1>;
+    };
+    port@2 {
+        phy-handle = <&phy2>;
+    };
+    port@3 {
+        phy-handle = <&phy3>;
+    };
 };
 
+/* Wi-Fi 6 AX3000 */
 &wmac {
-	status = "okay";
+    status = "okay";
+    nvmem-cells = <&wifi_eeprom>;
+    nvmem-cell-names = "eeprom";
+};
+
+/* Wi-Fi 校准数据绑定到 factory 分区 */
+&factory {
+    wifi_eeprom: wifi@0 {
+        reg = <0x0 0x1000>;
+    };
 };
