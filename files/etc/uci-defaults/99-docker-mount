@@ -1,21 +1,31 @@
 #!/bin/sh
-# 初始化 docker 分区（仅首次刷机时执行）
+# UCI defaults 脚本：初始化 Docker 分区并挂载
+# 仅在首次刷机时执行，之后不会重复运行
 
 DOCKER_DEV="/dev/mmcblk0p4"
 MOUNT_POINT="/opt/docker"
 
+echo "[uci-defaults] 初始化 Docker 分区挂载..."
+
 # 创建挂载点
 [ -d "$MOUNT_POINT" ] || mkdir -p "$MOUNT_POINT"
 
-# 如果分区未格式化则 mkfs
+# 如果分区未格式化则 mkfs.ext4
 if ! blkid "$DOCKER_DEV" >/dev/null 2>&1; then
+    echo "[uci-defaults] 格式化 $DOCKER_DEV 为 ext4"
     mkfs.ext4 "$DOCKER_DEV"
 fi
 
 # 如果 fstab 没有记录则添加
 if ! grep -q "$DOCKER_DEV" /etc/fstab; then
+    echo "[uci-defaults] 添加 fstab 挂载记录"
     echo "$DOCKER_DEV $MOUNT_POINT ext4 defaults 0 0" >> /etc/fstab
 fi
 
 # 挂载分区
 mount -a
+
+echo "[uci-defaults] Docker 分区已挂载到 $MOUNT_POINT"
+
+# 删除自身，避免重复执行
+rm -f /etc/uci-defaults/99-docker-mount
