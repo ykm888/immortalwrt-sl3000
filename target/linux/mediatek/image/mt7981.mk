@@ -15,7 +15,12 @@ define Device/siluo_sl3000
     kmod-fs-vfat \
     kmod-fs-xfs \
     kmod-overlay \
-    kmod-fs-btrfs
+    kmod-fs-btrfs \
+    kmod-nf-nat \
+    kmod-nf-conntrack \
+    kmod-nf-iptables \
+    kmod-nf-ipvs \
+    kmod-nfnetlink
 
   # 定义生成的镜像类型
   IMAGES := sysupgrade.bin initramfs.bin
