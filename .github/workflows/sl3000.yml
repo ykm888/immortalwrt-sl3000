@@ -101,27 +101,20 @@ jobs:
           fi
           cmake --version
 
-      - name: 5. 拉取 overlay 📥
-        uses: actions/checkout@v4
-        with:
-          repository: ykm888/immortalwrt-sl3000
-          path: overlay
-
-      - name: 6. 应用 overlay 并复制配置文件 📝
+      - name: 5. 拉取 Overlay 并应用配置 📝
         run: |
-          # 关键修改：移除 DTS 和 Makefile 复制，只保留 files 目录复制
-          # cp overlay/target/linux/mediatek/image/mt7981.mk target/linux/mediatek/image/
+          echo "📥 拉取自定义 Overlay 仓库..."
+          git clone --depth 1 https://github.com/ykm888/immortalwrt-sl3000 overlay
           
-          # 保留 files overlay 复制 (用于 fstab, docker 脚本等自定义运行时配置)
+          # 1. 复制 files overlay (自定义仓库的唯一目的)
           cp -r overlay/files ./files
           
-          # 复制配置文件 (使用官方配置或自定义 minimal)
+          # 2. 复制配置文件 (使用官方配置或自定义 minimal)
           if [ "${{ github.event.inputs.config_type }}" = "minimal" ]; then
-            # 假设 minimal config 仍需从自定义 overlay 复制
             cp overlay/sl3000.minimal.config .config
             echo "✅ 使用自定义 overlay 的 sl3000.minimal.config"
           else
-            # 使用官方仓库中已集成的 sl-3000.config
+            # 使用官方仓库中已集成的 sl-3000.config (Full Config)
             OFFICIAL_CONFIG="configs/sl-3000.config"
             if [ -f $OFFICIAL_CONFIG ]; then
               cp $OFFICIAL_CONFIG .config
@@ -132,24 +125,25 @@ jobs:
             fi
           fi
           
-          echo "--- .config 文件前 40 行 ---"
-          head -n 40 .config
-
-      - name: 7. 校验 overlay 文件是否存在 ✅
-        run: |
-          # 校验 files 目录的内容
+          # 3. 校验并清理
           test -d files || { echo "❌ files 目录未复制"; exit 1; }
           test -f files/etc/fstab || { echo "❌ fstab 未复制"; exit 1; }
           test -f files/etc/uci-defaults/99-docker-mount || { echo "❌ docker-mount 脚本未复制"; exit 1; }
-          echo "✅ overlay 文件已复制到固件目录并校验通过"
+          echo "✅ Overlay 文件校验通过！"
+          
+          # 移除临时的 overlay 目录
+          rm -rf overlay
+          
+          echo "--- .config 文件前 40 行 ---"
+          head -n 40 .config
 
-      - name: 8. 更新 feeds 🔄
+      - name: 6. 更新 feeds 🔄
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a -f
 
       # --- 性能优化：源码下载 dl 缓存 ---
-      - name: 9a. 配置 dl 源码下载缓存
+      - name: 7a. 配置 dl 源码下载缓存
         uses: actions/cache@v4
         id: dl
         with:
@@ -158,14 +152,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-dl-${{ github.ref }}-
 
-      - name: 9b. 下载源码 🌐
+      - name: 7b. 下载源码 🌐
         run: |
           make download -j$(nproc) || make download -j1 V=s
           echo "下载后磁盘使用情况："
           df -h
           
       # --- 核心修复：清理残留、强制配置并使用诊断模式 ---
-      - name: 10. 自动填充配置依赖并校验平台 💡
+      - name: 8. 自动填充配置依赖并校验平台 💡
         run: |
           echo "--- 原始 .config 文件平台部分 ---"
           grep 'CONFIG_TARGET' .config || true
@@ -197,7 +191,7 @@ jobs:
           echo 'CONFIG_TARGET_mediatek_mt7981=y' >> .config
           echo 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' >> .config
           
-          # 校验配置 (这次应该能通过)
+          # 校验配置 
           grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
           grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' .config || { echo "❌ 未选择 SL-3000 设备"; exit 1; }
           
@@ -206,16 +200,17 @@ jobs:
           echo "✅ 平台和设备选择校验通过！"
       # ------------------------------------------------------------------
 
-      - name: 11. 编译固件 🔨
+      - name: 9. 编译固件 🔨 (诊断模式 - 必需!)
         run: |
           echo "编译前磁盘使用情况："
           df -h
-          CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j$(nproc) IGNORE_ERRORS=m || \
-          CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j1 V=s IGNORE_ERRORS=m
+          # 关键：我们保留 -j1 V=sc 来诊断当前软件包失败问题。
+          # 解决问题后，将此行替换为: CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j$(nproc)
+          CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j1 V=sc 
           echo "编译后磁盘使用情况："
           df -h
 
-      - name: 12. 收集固件 📂
+      - name: 10. 收集固件 📂
         run: |
           mkdir -p bin/firmware
           find bin/targets -type f \( -name "*.bin" -o -name "*.img" -o -name "*.tar.gz" \) -exec cp -v {} bin/firmware/ \;
@@ -223,14 +218,14 @@ jobs:
           ls -lh bin/firmware
           sha256sum bin/firmware/* || true
 
-      - name: 13. 上传固件 Artifact ⬆️
+      - name: 11. 上传固件 Artifact ⬆️
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-emmc-firmware
           path: bin/firmware/*
           retention-days: 7
 
-      - name: 14. 生成标签和 Release 名称 🏷️
+      - name: 12. 生成标签和 Release 名称 🏷️
         id: tag_calc
         run: |
           DATE_TAG=$(date +%Y%m%d)
@@ -239,7 +234,7 @@ jobs:
           echo "tag=${FULL_TAG}" >> "$GITHUB_OUTPUT"
           echo "release_name=ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC, ${{ github.event.inputs.branch }})" >> "$GITHUB_OUTPUT"
 
-      - name: 15. 发布固件到 Release 🚀
+      - name: 13. 发布固件到 Release 🚀
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.tag_calc.outputs.tag }}
@@ -248,7 +243,7 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: 16. 清理旧 release 🗑️
+      - name: 14. 清理旧 release 🗑️
         uses: dev-drprasad/delete-older-releases@v0.3.3
         with:
           keep_latest: 3
