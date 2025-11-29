@@ -28,7 +28,7 @@ jobs:
       - name: 1. 清理磁盘空间
         run: |
           df -h
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/lib/jvm
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
           sudo rm -rf /tmp/*
@@ -84,9 +84,11 @@ jobs:
           cp overlay/target/linux/mediatek/image/mt7981.mk target/linux/mediatek/image/
           cp -r overlay/files ./files
           if [ "${{ github.event.inputs.config_type }}" = "minimal" ]; then
+            # 复制你预设的 minimal 配置
             cp overlay/sl3000.minimal.config .config
             echo "✅ 使用 sl3000.minimal.config"
           else
+            # 复制你预设的 full 配置
             cp overlay/sl3000.config .config
             echo "✅ 使用 sl3000.config"
           fi
@@ -100,53 +102,55 @@ jobs:
 
       - name: 8. 更新 feeds
         run: |
-          ./scripts/feeds clean
+          # 移除 scripts/feeds clean，直接更新和安装
           ./scripts/feeds update -a
           ./scripts/feeds install -a -f
 
       - name: 9. 下载源码
         run: |
-          rm -rf dl/*
+          # 移除 rm -rf dl/* 以利用缓存
           make download -j$(nproc) || make download -j1 V=s
           df -h
 
-      - name: 10. Defconfig 并校验平台
+      # --- 关键修改：将 make defconfig 替换为 make menuconfig ---
+      - name: 10. Menuconfig 并校验平台
         env:
           TERM: xterm
         run: |
-          make defconfig
+          # 使用 make menuconfig 来解析并自动填充配置依赖，但不会覆盖你的平台选择。
+          make menuconfig
+          
+          # 校验平台配置是否依然存在 (通过了 menuconfig 这一步，这里应该能通过)
           grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
           grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE.*sl3000=y' .config || { echo "❌ 未选择 SL-3000 设备"; exit 1; }
           echo "✅ 平台和设备选择校验通过！"
+      # ------------------------------------------------------------------
 
-      - name: 11. 清理 host cmake
-        run: |
-          rm -f staging_dir/host/bin/cmake || true
-          rm -rf staging_dir/host/*cmake* || true
-          cmake --version
+      # --- 移除原有的 11. 清理 host cmake 步骤 (它是不必要的) ---
 
-      - name: 12. 编译固件
+      - name: 11. 编译固件 (原 12)
         run: |
           df -h
+          # 确保使用 /usr/bin/cmake 路径
           CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j$(nproc) IGNORE_ERRORS=m || \
           CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j1 V=s IGNORE_ERRORS=m
           df -h
 
-      - name: 13. 收集固件
+      - name: 12. 收集固件 (原 13)
         run: |
           mkdir -p bin/firmware
           find bin/targets -type f \( -name "*.bin" -o -name "*.img" -o -name "*.tar.gz" \) -exec cp -v {} bin/firmware/ \;
           ls -lh bin/firmware
           sha256sum bin/firmware/* || true
 
-      - name: 14. 上传固件
+      - name: 13. 上传固件 (原 14)
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-emmc-firmware
           path: bin/firmware/*
           retention-days: 7
 
-      - name: 15. 生成标签
+      - name: 14. 生成标签 (原 15)
         id: tag_calc
         run: |
           DATE_TAG=$(date +%Y%m%d)
@@ -155,7 +159,7 @@ jobs:
           echo "tag=${FULL_TAG}" >> "$GITHUB_OUTPUT"
           echo "release_name=ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC, ${{ github.event.inputs.branch }})" >> "$GITHUB_OUTPUT"
 
-      - name: 16. 发布固件
+      - name: 15. 发布固件 (原 16)
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.tag_calc.outputs.tag }}
@@ -164,5 +168,5 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: 17. 清理旧 release
+      - name: 16. 清理旧 release (原 17)
         uses: dev-drprasad/delete-older-releases@v0.3.3
