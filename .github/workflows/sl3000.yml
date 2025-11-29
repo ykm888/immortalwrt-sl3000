@@ -2,7 +2,19 @@ name: Build ImmortalWrt SL-3000 (eMMC 128G)
 
 on:
   workflow_dispatch:
-    # ... (Inputs remain the same) ...
+    inputs:
+      branch:
+        description: "选择要编译的 ImmortalWrt 分支"
+        required: true
+        default: "openwrt-24.10"
+      device:
+        description: "设备型号"
+        required: true
+        default: "sl3000"
+      config_type:
+        description: "配置类型 (minimal/full)"
+        required: true
+        default: "full"
 
 permissions:
   contents: write
@@ -14,7 +26,6 @@ jobs:
 
     steps:
       - name: 1. 清理磁盘空间 🧹
-        # ... (Step 1 remains the same) ...
         run: |
           echo "初始磁盘使用情况："
           df -h
@@ -28,7 +39,6 @@ jobs:
           df -h
 
       - name: 2. 拉取 ImmortalWrt 源码 ⬇️
-        # ... (Step 2 remains the same) ...
         uses: actions/checkout@v4
         with:
           repository: ykm99999/immortalwrt
@@ -48,35 +58,30 @@ jobs:
       - name: 3b. 安装编译依赖和设置 ccache ⚙️
         run: |
           sudo apt-get update
-          # 添加 ccache 到依赖列表
           sudo apt-get install -y build-essential gcc g++ make libncurses5-dev \
             libncursesw5-dev zlib1g-dev gawk git gettext unzip file libssl-dev \
             wget python3 rsync ccache parted e2fsprogs gpg python3-pip xz-utils zip libelf-dev time \
             perl flex bison libpcap-dev
           python3 -m pip install --user packaging
           
-          # 核心修复：安全地设置 ccache 路径
-          # 注意：$PATH 已经包含标准路径，这里只添加 ccache 目录。
-          # 使用 'prepend' 语法确保 ccache 路径安全地添加到现有路径之前
+          # 核心修复：安全地设置 ccache 路径到 GITHUB_PATH，避免覆盖系统路径
           echo '/usr/lib/ccache' >> $GITHUB_PATH 
           
           echo 'CCACHE_DIR=~/.ccache' >> $GITHUB_ENV
           echo 'CCACHE_MAXSIZE=500M' >> $GITHUB_ENV
           
-          ccache -M 500M # 限制缓存大小
+          ccache -M 500M
           ccache -s
 
       - name: 3c. 💥 关键验证：检查并确保 PATH 稳定 🔍
         run: |
           echo "当前 PATH: $PATH"
-          # 检查关键命令路径是否正常
           if ! command -v sudo >/dev/null 2>&1 || ! command -v wget >/dev/null 2>&1; then
-              echo "❌ 警告：核心命令 (sudo 或 wget) 路径丢失！"
-              echo "尝试恢复标准系统路径..."
-              # 强制将标准系统路径添加到环境变量中，以防被覆盖
+              echo "❌ 警告：核心命令 (sudo 或 wget) 路径丢失！尝试恢复标准系统路径..."
+              # 强制将标准系统路径添加到环境变量中
               echo "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $GITHUB_PATH
               echo "PATH已修复。请查看下一步运行是否成功。"
-              command -v sudo # 再次检查
+              command -v sudo
               command -v wget
           else
               echo "✅ 核心命令路径正常。"
@@ -84,7 +89,6 @@ jobs:
 
       - name: 4. 安装 CMake (优先 3.30.5，兼容最新) ⚙️
         run: |
-          # 这一步现在应该能够找到 sudo 和 wget
           sudo apt-get purge -y cmake cmake-data || true
           wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | \
             sudo gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
@@ -102,14 +106,12 @@ jobs:
           cmake --version
 
       - name: 5. 拉取 overlay 📥
-        # ... (Step 5 remains the same) ...
         uses: actions/checkout@v4
         with:
           repository: ykm888/immortalwrt-sl3000
           path: overlay
 
       - name: 6. 应用 overlay 并复制配置文件 📝
-        # ... (Step 6 remains the same) ...
         run: |
           cp overlay/target/linux/mediatek/dts/mt7981-siluo-sl3000.dts target/linux/mediatek/dts/
           cp overlay/target/linux/mediatek/image/mt7981.mk target/linux/mediatek/image/
@@ -126,14 +128,12 @@ jobs:
           head -n 40 .config
 
       - name: 7. 校验 overlay 文件是否存在 ✅
-        # ... (Step 7 remains the same) ...
         run: |
           test -f files/etc/fstab || { echo "❌ fstab 未复制"; exit 1; }
-          test -f files/etc/uci-defaults/99-docker-mount || { echo "❌ docker-mount 图片未复制"; exit 1; }
+          test -f files/etc/uci-defaults/99-docker-mount || { echo "❌ docker-mount 脚本未复制"; exit 1; }
           echo "✅ overlay 文件已复制到固件目录并校验通过"
 
       - name: 8. 更新 feeds 🔄
-        # ... (Step 8 remains the same) ...
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a -f
@@ -149,7 +149,6 @@ jobs:
             ${{ runner.os }}-dl-${{ github.ref }}-
 
       - name: 9b. 下载源码 🌐
-        # ... (Step 9b remains the same) ...
         run: |
           make download -j$(nproc) || make download -j1 V=s
           echo "下载后磁盘使用情况："
@@ -157,7 +156,6 @@ jobs:
           
       # --- 稳定性修复：强制配置 + 使用 olddefconfig ---
       - name: 10. 自动填充配置依赖并校验平台 💡
-        # ... (Step 10 remains the same) ...
         run: |
           echo "--- 原始 .config 文件平台部分 (执行 defconfig 之前) ---"
           grep 'CONFIG_TARGET' .config || true
@@ -184,7 +182,6 @@ jobs:
       # ------------------------------------------------------------------
 
       - name: 11. 编译固件 🔨
-        # ... (Step 11 remains the same) ...
         run: |
           echo "编译前磁盘使用情况："
           df -h
@@ -194,7 +191,6 @@ jobs:
           df -h
 
       - name: 12. 收集固件 📂
-        # ... (Step 12 remains the same) ...
         run: |
           mkdir -p bin/firmware
           find bin/targets -type f \( -name "*.bin" -o -name "*.img" -o -name "*.tar.gz" \) -exec cp -v {} bin/firmware/ \;
@@ -203,15 +199,13 @@ jobs:
           sha256sum bin/firmware/* || true
 
       - name: 13. 上传固件 Artifact ⬆️
-        # ... (Step 13 remains the same) ...
         uses: actions/upload-artifact@v4
-        with
+        with:
           name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-emmc-firmware
           path: bin/firmware/*
           retention-days: 7
 
       - name: 14. 生成标签和 Release 名称 🏷️
-        # ... (Step 14 remains the same) ...
         id: tag_calc
         run: |
           DATE_TAG=$(date +%Y%m%d)
@@ -221,9 +215,8 @@ jobs:
           echo "release_name=ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC, ${{ github.event.inputs.branch }})" >> "$GITHUB_OUTPUT"
 
       - name: 15. 发布固件到 Release 🚀
-        # ... (Step 15 remains the same) ...
         uses: softprops/action-gh-release@v1
-        with
+        with:
           tag_name: ${{ steps.tag_calc.outputs.tag }}
           name: ${{ steps.tag_calc.outputs.release_name }}
           files: bin/firmware/*
@@ -231,7 +224,6 @@ jobs:
           prerelease: false
 
       - name: 16. 清理旧 release 🗑️
-        # ... (Step 16 remains the same) ...
         uses: dev-drprasad/delete-older-releases@v0.3.3
         with:
           keep_latest: 3
