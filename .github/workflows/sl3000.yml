@@ -64,7 +64,6 @@ jobs:
             perl flex bison libpcap-dev
           python3 -m pip install --user packaging
           
-          # 核心修复：安全地设置 ccache 路径到 GITHUB_PATH
           echo '/usr/lib/ccache' >> $GITHUB_PATH 
           
           echo 'CCACHE_DIR=~/.ccache' >> $GITHUB_ENV
@@ -110,22 +109,36 @@ jobs:
 
       - name: 6. 应用 overlay 并复制配置文件 📝
         run: |
-          cp overlay/target/linux/mediatek/dts/mt7981-siluo-sl3000.dts target/linux/mediatek/dts/
-          cp overlay/target/linux/mediatek/image/mt7981.mk target/linux/mediatek/image/
+          # 关键修改：移除 DTS 和 Makefile 复制，只保留 files 目录复制
+          # cp overlay/target/linux/mediatek/image/mt7981.mk target/linux/mediatek/image/
+          
+          # 保留 files overlay 复制 (用于 fstab, docker 脚本等自定义运行时配置)
           cp -r overlay/files ./files
           
+          # 复制配置文件 (使用官方配置或自定义 minimal)
           if [ "${{ github.event.inputs.config_type }}" = "minimal" ]; then
+            # 假设 minimal config 仍需从自定义 overlay 复制
             cp overlay/sl3000.minimal.config .config
-            echo "✅ 使用 sl3000.minimal.config"
+            echo "✅ 使用自定义 overlay 的 sl3000.minimal.config"
           else
-            cp overlay/sl3000.config .config
-            echo "✅ 使用 sl3000.config"
+            # 使用官方仓库中已集成的 sl-3000.config
+            OFFICIAL_CONFIG="configs/sl-3000.config"
+            if [ -f $OFFICIAL_CONFIG ]; then
+              cp $OFFICIAL_CONFIG .config
+              echo "✅ 使用官方仓库的 ${OFFICIAL_CONFIG}"
+            else
+              echo "❌ 错误：官方 ${OFFICIAL_CONFIG} 不存在！"
+              exit 1
+            fi
           fi
+          
           echo "--- .config 文件前 40 行 ---"
           head -n 40 .config
 
       - name: 7. 校验 overlay 文件是否存在 ✅
         run: |
+          # 校验 files 目录的内容
+          test -d files || { echo "❌ files 目录未复制"; exit 1; }
           test -f files/etc/fstab || { echo "❌ fstab 未复制"; exit 1; }
           test -f files/etc/uci-defaults/99-docker-mount || { echo "❌ docker-mount 脚本未复制"; exit 1; }
           echo "✅ overlay 文件已复制到固件目录并校验通过"
@@ -157,7 +170,7 @@ jobs:
           echo "--- 原始 .config 文件平台部分 ---"
           grep 'CONFIG_TARGET' .config || true
 
-          # 1. 强制清理：删除任何可能导致冲突的构建残留和主机工具
+          # 1. 强制清理
           echo "🚨 强制删除编译目录和主机工具残留..."
           rm -rf build_dir
           rm -rf staging_dir
@@ -165,7 +178,7 @@ jobs:
           # 2. 运行 prereq
           make prereq
           
-          # 3. 强制注入平台配置。使用 defconfig，它对老旧配置的容忍度更高。
+          # 3. 预注入 (Pre-Injection): 确保 defconfig 有正确的起点
           sed -i '/CONFIG_TARGET_mediatek_mt7981=/d' .config
           sed -i '/CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=/d' .config
           
@@ -173,11 +186,18 @@ jobs:
           echo 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' >> .config
           
           echo "👉 运行 make defconfig 自动解析并填充配置依赖 (使用 V=sc 详细模式) ..."
-          # 4. 使用 V=sc (verbose + commands) 运行 defconfig
-          # 如果这次仍失败，V=sc 将在日志中显示导致崩溃的精确命令
+          # 4. 执行 defconfig 
           make defconfig V=sc 
           
-          # 校验配置
+          # 5. 后注入 (Post-Injection): 关键步骤！在 defconfig 覆盖后，强制重写正确的平台配置
+          echo "🔄 强制注入平台配置以防止覆盖..."
+          sed -i '/CONFIG_TARGET_mediatek_mt7981=/d' .config
+          sed -i '/CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=/d' .config
+
+          echo 'CONFIG_TARGET_mediatek_mt7981=y' >> .config
+          echo 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' >> .config
+          
+          # 校验配置 (这次应该能通过)
           grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
           grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' .config || { echo "❌ 未选择 SL-3000 设备"; exit 1; }
           
