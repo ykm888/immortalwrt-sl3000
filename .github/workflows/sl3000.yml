@@ -64,6 +64,7 @@ jobs:
             perl flex bison libpcap-dev
           python3 -m pip install --user packaging
           
+          # 核心修复：安全地设置 ccache 路径到 GITHUB_PATH
           echo '/usr/lib/ccache' >> $GITHUB_PATH 
           
           echo 'CCACHE_DIR=~/.ccache' >> $GITHUB_ENV
@@ -156,20 +157,25 @@ jobs:
           echo "--- 原始 .config 文件平台部分 ---"
           grep 'CONFIG_TARGET' .config || true
 
-          # 1. 关键修复：清除可能导致配置工具崩溃的残留工具或临时文件
-          make clean-tools
+          # 1. 强制清理：删除任何可能导致冲突的构建残留和主机工具
+          echo "🚨 强制删除编译目录和主机工具残留..."
+          rm -rf build_dir
+          rm -rf staging_dir
+          
+          # 2. 运行 prereq
           make prereq
-
-          # 2. 强制注入平台配置。防止配置被清除。
+          
+          # 3. 强制注入平台配置。使用 defconfig，它对老旧配置的容忍度更高。
           sed -i '/CONFIG_TARGET_mediatek_mt7981=/d' .config
           sed -i '/CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=/d' .config
           
           echo 'CONFIG_TARGET_mediatek_mt7981=y' >> .config
           echo 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' >> .config
           
-          echo "👉 运行 make olddefconfig 自动解析并填充配置依赖 (使用详细模式) ..."
-          # 3. 使用 V=s 详细模式运行 olddefconfig，如果失败，日志中将显示具体原因
-          make olddefconfig V=s 
+          echo "👉 运行 make defconfig 自动解析并填充配置依赖 (使用 V=sc 详细模式) ..."
+          # 4. 使用 V=sc (verbose + commands) 运行 defconfig
+          # 如果这次仍失败，V=sc 将在日志中显示导致崩溃的精确命令
+          make defconfig V=sc 
           
           # 校验配置
           grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
