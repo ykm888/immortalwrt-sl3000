@@ -45,14 +45,32 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
 
-      - name: 3. 安装编译依赖 📦
+      # --- 性能优化：启用 ccache 缓存 (3a & 3b) ---
+      - name: 3a. 配置 ccache 缓存 (Pre-Step)
+        uses: actions/cache@v4
+        id: ccache
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-${{ github.ref }}-${{ hashFiles('**/.config') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ github.ref }}-
+
+      - name: 3b. 安装编译依赖 📦
         run: |
           sudo apt-get update
+          # 添加 ccache 到依赖列表
           sudo apt-get install -y build-essential gcc g++ make libncurses5-dev \
             libncursesw5-dev zlib1g-dev gawk git gettext unzip file libssl-dev \
             wget python3 rsync ccache parted e2fsprogs gpg python3-pip xz-utils zip libelf-dev time \
             perl flex bison libpcap-dev
           python3 -m pip install --user packaging
+          
+          # 设置 ccache 环境变量，提高编译速度
+          echo 'CCACHE_DIR=~/.ccache' >> $GITHUB_ENV
+          echo 'CCACHE_MAXSIZE=500M' >> $GITHUB_ENV
+          echo 'PATH=/usr/lib/ccache:$PATH' >> $GITHUB_ENV # 确保 ccache 优先
+          ccache -M 500M # 限制缓存大小
+          ccache -s
 
       - name: 4. 安装 CMake (优先 3.30.5，兼容最新) ⚙️
         run: |
@@ -80,13 +98,10 @@ jobs:
 
       - name: 6. 应用 overlay 并复制配置文件 📝
         run: |
-          # 复制设备树和 Image makefile
           cp overlay/target/linux/mediatek/dts/mt7981-siluo-sl3000.dts target/linux/mediatek/dts/
           cp overlay/target/linux/mediatek/image/mt7981.mk target/linux/mediatek/image/
-          # 复制文件系统 overlay
           cp -r overlay/files ./files
           
-          # 复制预设的 .config 文件
           if [ "${{ github.event.inputs.config_type }}" = "minimal" ]; then
             cp overlay/sl3000.minimal.config .config
             echo "✅ 使用 sl3000.minimal.config"
@@ -108,30 +123,56 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a -f
 
-      - name: 9. 下载源码 🌐
+      # --- 性能优化：源码下载 dl 缓存 ---
+      - name: 9a. 配置 dl 源码下载缓存
+        uses: actions/cache@v4
+        id: dl
+        with:
+          path: dl
+          # key 应该包含分支和 feeds.conf，以在 feeds 或分支变化时重新下载
+          key: ${{ runner.os }}-dl-${{ github.ref }}-${{ hashFiles('feeds.conf') }}
+          restore-keys: |
+            ${{ runner.os }}-dl-${{ github.ref }}-
+
+      - name: 9b. 下载源码 🌐
         run: |
           make download -j$(nproc) || make download -j1 V=s
           echo "下载后磁盘使用情况："
           df -h
-
-      - name: 10. 自动填充配置依赖并校验平台 (修复卡死问题) 💡
-        # 核心修复：使用 make defconfig 避免交互式阻塞
-        run: |
-          echo "👉 运行 make defconfig 自动解析并填充配置依赖..."
-          make defconfig
           
-          # 校验平台配置是否依然存在 (确保配置正确应用)
+      # --- 稳定性修复：强制配置 + 使用 olddefconfig ---
+      - name: 10. 自动填充配置依赖并校验平台 💡
+        run: |
+          echo "--- 原始 .config 文件平台部分 (执行 defconfig 之前) ---"
+          grep 'CONFIG_TARGET' .config || true
+
+          make prereq
+
+          # 强制注入平台配置。防止配置被清除。
+          sed -i '/CONFIG_TARGET_mediatek_mt7981=/d' .config
+          sed -i '/CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=/d' .config
+          
+          echo 'CONFIG_TARGET_mediatek_mt7981=y' >> .config
+          echo 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' >> .config
+          
+          echo "👉 运行 make olddefconfig 自动解析并填充配置依赖..."
+          # olddefconfig 在现有 .config 上运行更稳定
+          make olddefconfig
+          
+          # 校验配置
           grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
           grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' .config || { echo "❌ 未选择 SL-3000 设备"; exit 1; }
-          echo "✅ 平台和设备选择校验通过！"
-          echo "--- 修复后的 .config 平台部分 ---"
+          
+          echo "--- 修复后的 .config 平台部分 (执行 olddefconfig 之后) ---"
           grep 'CONFIG_TARGET' .config
+          echo "✅ 平台和设备选择校验通过！"
+      # ------------------------------------------------------------------
 
       - name: 11. 编译固件 🔨
         run: |
           echo "编译前磁盘使用情况："
           df -h
-          # 确保使用 /usr/bin/cmake 路径
+          # 显式路径和 IGNORE_ERRORS=m 增加稳定性
           CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j$(nproc) IGNORE_ERRORS=m || \
           CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j1 V=s IGNORE_ERRORS=m
           echo "编译后磁盘使用情况："
@@ -140,7 +181,6 @@ jobs:
       - name: 12. 收集固件 📂
         run: |
           mkdir -p bin/firmware
-          # 收集 bin, img, tar.gz 文件
           find bin/targets -type f \( -name "*.bin" -o -name "*.img" -o -name "*.tar.gz" \) -exec cp -v {} bin/firmware/ \;
           echo "--- 收集到的固件文件 ---"
           ls -lh bin/firmware
@@ -161,7 +201,6 @@ jobs:
           FULL_TAG="${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}-${SHORT_HASH}-${DATE_TAG}"
           echo "tag=${FULL_TAG}" >> "$GITHUB_OUTPUT"
           echo "release_name=ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC, ${{ github.event.inputs.branch }})" >> "$GITHUB_OUTPUT"
-          echo "生成的标签: ${FULL_TAG}"
 
       - name: 15. 发布固件到 Release 🚀
         uses: softprops/action-gh-release@v1
@@ -175,5 +214,5 @@ jobs:
       - name: 16. 清理旧 release 🗑️
         uses: dev-drprasad/delete-older-releases@v0.3.3
         with:
-          keep_latest: 3 # 保留最新的 3 个 release
+          keep_latest: 3
           delete_tags: true
