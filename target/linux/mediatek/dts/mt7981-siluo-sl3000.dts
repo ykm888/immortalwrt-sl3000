@@ -69,3 +69,76 @@
                 label = "factory";
                 reg = <0x00200000 0x00100000>; /* 1MB 校准数据 */
                 read-only;
+            };
+
+            firmware@300000 {
+                label = "firmware";
+                reg = <0x00300000 0x01D00000>; /* 剩余空间作为固件区 */
+            };
+        };
+    };
+};
+
+/* eMMC 128GB */
+&mmc0 {
+    status = "okay";
+
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+
+        firmware@1000000 {
+            label = "firmware";
+            reg = <0x01000000 0x20000000>; /* 512MB 固件区 */
+        };
+
+        userdata@21000000 {
+            label = "userdata";
+            reg = <0x21000000 0x7EF000000>; /* 剩余空间作为用户数据区 */
+        };
+    };
+};
+
+/* Ethernet: 4x Gigabit ports */
+&eth {
+    status = "okay";
+
+    mdio-bus {
+        phy0: ethernet-phy@0 { reg = <0>; };
+        phy1: ethernet-phy@1 { reg = <1>; };
+        phy2: ethernet-phy@2 { reg = <2>; };
+        phy3: ethernet-phy@3 { reg = <3>; };
+    };
+
+    port@0 {
+        phy-handle = <&phy0>;
+        phy-mode = "rgmii";
+    };
+    port@1 {
+        phy-handle = <&phy1>;
+        phy-mode = "rgmii";
+    };
+    port@2 {
+        phy-handle = <&phy2>;
+        phy-mode = "rgmii";
+    };
+    port@3 {
+        phy-handle = <&phy3>;
+        phy-mode = "rgmii";
+    };
+};
+
+/* Wi-Fi 6 AX3000 */
+&wmac {
+    status = "okay";
+    nvmem-cells = <&wifi_eeprom>;
+    nvmem-cell-names = "eeprom";
+};
+
+/* Wi-Fi 校准数据绑定到 factory 分区 */
+&factory {
+    wifi_eeprom: wifi@0 {
+        reg = <0x0 0x1000>;
+    };
+};
