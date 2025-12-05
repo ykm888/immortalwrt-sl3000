@@ -1,250 +1,207 @@
-name: Build ImmortalWrt SL-3000 (eMMC 128G)
+name: Build SL3000 Firmware (Ultimate v4.x)
 
 on:
   workflow_dispatch:
-    inputs:
-      branch:
-        description: "选择要编译的 ImmortalWrt 分支"
-        required: true
-        default: "openwrt-24.10"
-      device:
-        description: "设备型号"
-        required: true
-        default: "sl3000"
-      config_type:
-        description: "配置类型 (minimal/full)"
-        required: true
-        default: "full"
 
-permissions:
-  contents: write
+env:
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  WORKDIR: src   # 外部源码仓库目录
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 360
 
     steps:
-      - name: 1. 清理磁盘空间 🧹
-        run: |
-          echo "初始磁盘使用情况："
-          df -h
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
-          sudo apt-get clean
-          sudo rm -rf /var/lib/apt/lists/*
-          sudo rm -rf /tmp/*
-          sudo docker system prune -af || true
-          sudo docker rmi $(docker images -q) || true
-          echo "清理后磁盘使用情况："
-          df -h
+    # 1. Checkout 当前仓库（用于打 tag 和发布 Release）
+    - name: Checkout current repo
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-      - name: 2. 拉取 ImmortalWrt 源码 ⬇️
-        uses: actions/checkout@v4
-        with:
-          repository: ykm99999/immortalwrt
-          ref: ${{ github.event.inputs.branch }}
-          fetch-depth: 0
+    # 2. Checkout 外部源码仓库 (ykm888/immortalwrt)
+    - name: Checkout immortalwrt (ykm888)
+      uses: actions/checkout@v4
+      with:
+        repository: ykm888/immortalwrt
+        ref: openwrt-24.10
+        path: src
+        fetch-depth: 0
+        submodules: recursive
 
-      # --- 性能优化：启用 ccache 缓存 (3a & 3b) ---
-      - name: 3a. 配置 ccache 缓存 (Pre-Step)
-        uses: actions/cache@v4
-        id: ccache
-        with:
-          path: ~/.ccache
-          key: ${{ runner.os }}-ccache-${{ github.ref }}-${{ hashFiles('**/.config') }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-${{ github.ref }}-
+    # 打印分支信息
+    - name: Print branches
+      run: |
+        echo "=== 当前仓库分支 ==="
+        git branch
+        echo "=== 外部源码分支 ==="
+        cd "$WORKDIR"
+        git branch
 
-      - name: 3b. 安装编译依赖和设置 ccache ⚙️
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gcc g++ make libncurses5-dev \
-            libncursesw5-dev zlib1g-dev gawk git gettext unzip file libssl-dev \
-            wget python3 rsync ccache parted e2fsprogs gpg python3-pip xz-utils zip libelf-dev time \
-            perl flex bison libpcap-dev
-          python3 -m pip install --user packaging
-          
-          echo '/usr/lib/ccache' >> $GITHUB_PATH 
-          
-          echo 'CCACHE_DIR=~/.ccache' >> $GITHUB_ENV
-          echo 'CCACHE_MAXSIZE=500M' >> $GITHUB_ENV
-          
-          ccache -M 500M
-          ccache -s
+    # 清理磁盘空间
+    - name: Free disk space
+      run: |
+        echo "=== 清理前磁盘状态 ==="
+        df -h
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+        sudo apt-get clean
+        echo "=== 清理后磁盘状态 ==="
+        df -h
 
-      - name: 3c. 💥 关键验证：检查并确保 PATH 稳定 🔍
-        run: |
-          echo "当前 PATH: $PATH"
-          if ! command -v sudo >/dev/null 2>&1 || ! command -v wget >/dev/null 2>&1; then
-              echo "❌ 警告：核心命令路径丢失！尝试恢复标准系统路径..."
-              echo "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $GITHUB_PATH
-              echo "PATH已修复。请查看下一步运行是否成功。"
-          else
-              echo "✅ 核心命令路径正常。"
-          fi
+    # 清理编译环境
+    - name: Clean build environment
+      working-directory: ${{ env.WORKDIR }}
+      run: |
+        rm -rf build_dir tmp
+        find dl -type f -size +50M -print -delete || true
+        CCACHE_SIZE=$(du -s "$CCACHE_DIR" 2>/dev/null | awk '{print $1}')
+        if [ -n "$CCACHE_SIZE" ] && [ "$CCACHE_SIZE" -gt 3000000 ]; then
+          ccache -C || true
+        fi
+        df -h
 
-      - name: 4. 安装 CMake (优先 3.30.5，兼容最新) ⚙️
-        run: |
-          sudo apt-get purge -y cmake cmake-data || true
-          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | \
-            sudo gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] \
-            https://apt.kitware.com/ubuntu/ jammy main" | \
-            sudo tee /etc/apt/sources.list.d/kitware.list
-          sudo apt-get update
-          if sudo apt-get install -y cmake=3.30.5-0kitware1ubuntu22.04.1 \
-                                     cmake-data=3.30.5-0kitware1ubuntu22.04.1; then
-            echo "✅ 已成功安装 CMake 3.30.5"
-          else
-            echo "⚠️ 3.30.5 不可用，安装最新版本"
-            sudo apt-get install -y cmake
-          fi
-          cmake --version
+    # 安装依赖
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential clang flex bison g++ gawk \
+          gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
+          python3 python3-distutils rsync unzip zlib1g-dev file wget ccache
 
-      - name: 5. 拉取 Overlay 并应用配置 📝
-        run: |
-          echo "📥 拉取自定义 Overlay 仓库..."
-          git clone --depth 1 https://github.com/ykm888/immortalwrt-sl3000 overlay
-          
-          # 1. 复制 files overlay (自定义仓库的唯一目的)
-          cp -r overlay/files ./files
-          
-          # 2. 复制配置文件 (使用官方配置或自定义 minimal)
-          if [ "${{ github.event.inputs.config_type }}" = "minimal" ]; then
-            cp overlay/sl3000.minimal.config .config
-            echo "✅ 使用自定义 overlay 的 sl3000.minimal.config"
-          else
-            # 使用官方仓库中已集成的 sl-3000.config (Full Config)
-            OFFICIAL_CONFIG="configs/sl-3000.config"
-            if [ -f $OFFICIAL_CONFIG ]; then
-              cp $OFFICIAL_CONFIG .config
-              echo "✅ 使用官方仓库的 ${OFFICIAL_CONFIG}"
-            else
-              echo "❌ 错误：官方 ${OFFICIAL_CONFIG} 不存在！"
-              exit 1
-            fi
-          fi
-          
-          # 3. 校验并清理
-          test -d files || { echo "❌ files 目录未复制"; exit 1; }
-          test -f files/etc/fstab || { echo "❌ fstab 未复制"; exit 1; }
-          test -f files/etc/uci-defaults/99-docker-mount || { echo "❌ docker-mount 脚本未复制"; exit 1; }
-          echo "✅ Overlay 文件校验通过！"
-          
-          # 移除临时的 overlay 目录
-          rm -rf overlay
-          
-          echo "--- .config 文件前 40 行 ---"
-          head -n 40 .config
+    # 缓存 DL
+    - name: Cache DL
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.WORKDIR }}/dl
+        key: dl-${{ github.ref_name }}-${{ github.sha }}
+        restore-keys: |
+          dl-${{ github.ref_name }}-
 
-      - name: 6. 更新 feeds 🔄
-        run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a -f
+    # 缓存 ccache
+    - name: Cache ccache
+      uses: actions/cache@v4
+      with:
+        path: .ccache
+        key: ccache-${{ github.ref_name }}
 
-      # --- 性能优化：源码下载 dl 缓存 ---
-      - name: 7a. 配置 dl 源码下载缓存
-        uses: actions/cache@v4
-        id: dl
-        with:
-          path: dl
-          key: ${{ runner.os }}-dl-${{ github.ref }}-${{ hashFiles('feeds.conf') }}
-          restore-keys: |
-            ${{ runner.os }}-dl-${{ github.ref }}-
+    # 缓存工具链
+    - name: Cache toolchain
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ env.WORKDIR }}/staging_dir
+          ${{ env.WORKDIR }}/toolchain
+          ${{ env.WORKDIR }}/build_dir/toolchain-*
+        key: toolchain-${{ github.ref_name }}
+        restore-keys: |
+          toolchain-
 
-      - name: 7b. 下载源码 🌐
-        run: |
-          make download -j$(nproc) || make download -j1 V=s
-          echo "下载后磁盘使用情况："
-          df -h
-          
-      # --- 核心修复：清理残留、强制配置并使用诊断模式 ---
-      - name: 8. 自动填充配置依赖并校验平台 💡
-        run: |
-          echo "--- 原始 .config 文件平台部分 ---"
-          grep 'CONFIG_TARGET' .config || true
+    # 设置 ccache
+    - name: Setup ccache
+      run: |
+        ccache -M 2G
+        ccache -s || true
 
-          # 1. 强制清理
-          echo "🚨 强制删除编译目录和主机工具残留..."
-          rm -rf build_dir
-          rm -rf staging_dir
-          
-          # 2. 运行 prereq
-          make prereq
-          
-          # 3. 预注入 (Pre-Injection): 确保 defconfig 有正确的起点
-          sed -i '/CONFIG_TARGET_mediatek_mt7981=/d' .config
-          sed -i '/CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=/d' .config
-          
-          echo 'CONFIG_TARGET_mediatek_mt7981=y' >> .config
-          echo 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' >> .config
-          
-          echo "👉 运行 make defconfig 自动解析并填充配置依赖 (使用 V=sc 详细模式) ..."
-          # 4. 执行 defconfig 
-          make defconfig V=sc 
-          
-          # 5. 后注入 (Post-Injection): 关键步骤！在 defconfig 覆盖后，强制重写正确的平台配置
-          echo "🔄 强制注入平台配置以防止覆盖..."
-          sed -i '/CONFIG_TARGET_mediatek_mt7981=/d' .config
-          sed -i '/CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=/d' .config
+    # 修剪工具链缓存
+    - name: Trim toolchain cache
+      working-directory: ${{ env.WORKDIR }}
+      run: |
+        find staging_dir -type f -name "*.o" -delete || true
+        find staging_dir -type f -name "*.a" -size +10M -delete || true
+        find build_dir -maxdepth 1 -type d -name "toolchain-*" -exec rm -rf {}/tmp \; || true
 
-          echo 'CONFIG_TARGET_mediatek_mt7981=y' >> .config
-          echo 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' >> .config
-          
-          # 校验配置 
-          grep -q 'CONFIG_TARGET_mediatek_mt7981=y' .config || { echo "❌ 未选择 mt7981 子平台"; exit 1; }
-          grep -q 'CONFIG_TARGET_mediatek_mt7981_DEVICE_siluo_sl3000=y' .config || { echo "❌ 未选择 SL-3000 设备"; exit 1; }
-          
-          echo "--- 修复后的 .config 平台部分 ---"
-          grep 'CONFIG_TARGET' .config
-          echo "✅ 平台和设备选择校验通过！"
-      # ------------------------------------------------------------------
+    # 应用 SL3000 配置
+    - name: Apply SL3000 config
+      working-directory: ${{ env.WORKDIR }}
+      run: |
+        cp ../configs/sl3000.config .config
+        make oldconfig
+        tail -n 50 .config
+        grep "CONFIG_TARGET_mediatek_filogic_DEVICE_siluo_sl3000=y" .config
 
-      - name: 9. 编译固件 🔨 (诊断模式 - 必需!)
-        run: |
-          echo "编译前磁盘使用情况："
-          df -h
-          # 关键：我们保留 -j1 V=sc 来诊断当前软件包失败问题。
-          # 解决问题后，将此行替换为: CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j$(nproc)
-          CMAKE=/usr/bin/cmake HOST_CMAKE=/usr/bin/cmake make -j1 V=sc 
-          echo "编译后磁盘使用情况："
-          df -h
+    # 更新 feeds
+    - name: Update feeds
+      working-directory: ${{ env.WORKDIR }}
+      run: |
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
 
-      - name: 10. 收集固件 📂
-        run: |
-          mkdir -p bin/firmware
-          find bin/targets -type f \( -name "*.bin" -o -name "*.img" -o -name "*.tar.gz" \) -exec cp -v {} bin/firmware/ \;
-          echo "--- 收集到的固件文件 ---"
-          ls -lh bin/firmware
-          sha256sum bin/firmware/* || true
+    # 下载源码
+    - name: Download sources
+      working-directory: ${{ env.WORKDIR }}
+      run: make download -j8 || make download -j1 V=s
 
-      - name: 11. 上传固件 Artifact ⬆️
-        uses: actions/upload-artifact@v4
-        with:
-          name: immortalwrt-${{ github.event.inputs.branch }}-${{ github.event.inputs.device }}-emmc-firmware
-          path: bin/firmware/*
-          retention-days: 7
+    # 编译固件
+    - name: Build firmware
+      working-directory: ${{ env.WORKDIR }}
+      run: |
+        mkdir -p ../logs
+        BUILD_LOG=../logs/build.log
+        make -j$(nproc) V=s | tee "$BUILD_LOG" || make -j1 V=s | tee -a "$BUILD_LOG"
 
-      - name: 12. 生成标签和 Release 名称 🏷️
-        id: tag_calc
-        run: |
-          DATE_TAG=$(date +%Y%m%d)
-          SHORT_HASH=$(git rev-parse --short HEAD)
-          FULL_TAG="${{ github.event.inputs.device }}-${{ github.event.inputs.branch }}-${SHORT_HASH}-${DATE_TAG}"
-          echo "tag=${FULL_TAG}" >> "$GITHUB_OUTPUT"
-          echo "release_name=ImmortalWrt 固件 - ${{ github.event.inputs.device }} (eMMC, ${{ github.event.inputs.branch }})" >> "$GITHUB_OUTPUT"
+    # 检查固件输出
+    - name: Check firmware output
+      working-directory: ${{ env.WORKDIR }}
+      run: |
+        TARGET_DIR=bin/targets/mediatek/filogic
+        ls -lh "$TARGET_DIR"
+        ls "$TARGET_DIR"/*sysupgrade*.img.gz >/dev/null 2>&1
 
-      - name: 13. 发布固件到 Release 🚀
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.tag_calc.outputs.tag }}
-          name: ${{ steps.tag_calc.outputs.release_name }}
-          files: bin/firmware/*
-          draft: false
-          prerelease: false
+    # 生成 SHA256
+    - name: Generate SHA256
+      working-directory: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic
+      run: |
+        FILES=$(find . -maxdepth 1 -type f)
+        sha256sum $FILES > sha256sums.txt
+        ls -lh
 
-      - name: 14. 清理旧 release 🗑️
-        uses: dev-drprasad/delete-older-releases@v0.3.3
-        with:
-          keep_latest: 3
-          delete_tags: true
+    # 上传固件产物
+    - name: Upload firmware artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: sl3000-firmware
+        path: src/bin/targets/mediatek/filogic/
+
+    # 上传日志
+    - name: Upload build logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: sl3000-build-logs
+        path: logs/
+
+    # 创建 Tag
+    - name: Create tag
+      run: |
+        TAG=sl3000-${{ github.ref_name }}-r${{ github.run_number }}-${{ github.sha }}
+        git config user.name "github-actions"
+        git config user.email "github-actions@github.com"
+        git tag "$TAG"
+        git push origin "$TAG"
+
+    # 创建 Release
+    - name: Create release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: sl3000-${{ github.ref_name }}-r${{ github.run_number }}-${{ github.sha }}
+        name: SL3000 ${{ github.ref_name }} r${{ github.run_number }}
+        draft: false
+        prerelease: false
+        body: |
+          SL3000 自动构建固件 (Ultimate v4.x)
+
+          - 源码仓库: ykm888/immortalwrt
+          - 分支: openwrt-24.10
+          - 设备: Siluo SL3000 (mediatek filogic)
+          - 运行编号: ${{ github.run_number }}
+          - 提交: ${{ github.sha }}
+          - 构建时间: ${{ github.run_started_at }}
+
+    # 上传 Release 产物
+    - name: Upload release assets
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          src/bin/targets/mediatek/filogic/*sysupgrade*.img.gz
+          src/bin/targets/mediatek/filogic/*factory*.img
+          src/bin/targets/mediatek/filogic/sha256sums.txt
+          src/bin/targets/mediatek/filogic/*.tar.gz
