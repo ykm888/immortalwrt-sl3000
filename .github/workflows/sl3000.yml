@@ -40,11 +40,9 @@ jobs:
     # 清理磁盘空间
     - name: Free disk space
       run: |
-        echo "=== 清理前磁盘状态 ==="
         df -h
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
         sudo apt-get clean
-        echo "=== 清理后磁盘状态 ==="
         df -h
 
     # 清理编译环境
@@ -109,16 +107,21 @@ jobs:
         find staging_dir -type f -name "*.a" -size +10M -delete || true
         find build_dir -maxdepth 1 -type d -name "toolchain-*" -exec rm -rf {}/tmp \; || true
 
-    # 应用 SL3000 配置
+    # 应用 SL3000 配置（直接用外部仓库 configs/sl3000.config）
     - name: Apply SL3000 config
       working-directory: ${{ env.WORKDIR }}
       run: |
-        cp ../configs/sl3000.config .config
+        echo "=== 使用外部仓库 configs/sl3000.config ==="
+        cp configs/sl3000.config .config
         make oldconfig
         tail -n 50 .config
-        grep "CONFIG_TARGET_mediatek_filogic_DEVICE_siluo_sl3000=y" .config
+        if ! grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_siluo_sl3000=y" .config; then
+          echo "ERROR: SL3000 未启用!"
+          exit 1
+        fi
+        echo "SL3000 配置 OK"
 
-    # 更新 feeds
+    # 更新 feeds（外部仓库自带）
     - name: Update feeds
       working-directory: ${{ env.WORKDIR }}
       run: |
@@ -169,7 +172,7 @@ jobs:
         name: sl3000-build-logs
         path: logs/
 
-    # 创建 Tag
+    # 创建 Tag（在你自己的仓库）
     - name: Create tag
       run: |
         TAG=sl3000-${{ github.ref_name }}-r${{ github.run_number }}-${{ github.sha }}
@@ -178,7 +181,7 @@ jobs:
         git tag "$TAG"
         git push origin "$TAG"
 
-    # 创建 Release
+    # 创建 Release（在你自己的仓库）
     - name: Create release
       uses: softprops/action-gh-release@v1
       with:
