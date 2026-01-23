@@ -1,150 +1,96 @@
-name: Build ImmortalWrt 24.10 (SL3000 eMMC Flagship)
+name: ImmortalWrt SL3000 Two-Stage Build
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  toolchain:
     runs-on: ubuntu-22.04
+    name: Build Toolchain Only
 
     steps:
-      # 1. 检出仓库
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 优化磁盘空间
-      - name: Optimize disk space
-        run: |
-          sudo apt-get remove -y --purge azure-cli google-cloud-sdk dotnet* powershell mono* mysql* php* android* || true
-          sudo apt-get autoremove -y
-          sudo apt-get clean
-
-      # 3. 安装依赖
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential git-core libncurses5-dev \
             zlib1g-dev gawk flex gettext wget unzip python3 python3-distutils \
             file libssl-dev rsync ccache
 
-      # 4. 缓存 dl 和 ccache
-      - name: Cache downloads and ccache
-        uses: actions/cache@v4
-        with:
-          path: |
-            openwrt/dl
-            openwrt/.ccache
-          key: ${{ runner.os }}-immortalwrt-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-immortalwrt-
-
-      # 5. 拉取源码
       - name: Clone ImmortalWrt source
         run: |
           git clone --depth=1 -b openwrt-24.10 https://github.com/ykm888/immortalwrt-sl3000.git openwrt
-          echo "✅ 已拉取 openwrt-24.10 分支源码"
 
-      # 6. 使用根目录 .config
-      - name: Use root .config
+      - name: Copy root .config
         run: |
           cp .config openwrt/.config
-          echo "✅ 已使用根目录 .config"
 
-      # 7. 三件套验证 + 自动修复
-      - name: Verify three-piece set (DTS/mk/config)
+      - name: Build toolchain only
         run: |
           cd openwrt
-          echo "=== 三件套验证开始 ==="
+          make defconfig
+          make toolchain/install -j$(nproc) V=s
 
-          DTS="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-          MK="target/linux/mediatek/image/filogic.mk"
-          CONF=".config"
+      - name: Cache toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/staging_dir
+            openwrt/build_dir/toolchain-*
+          key: toolchain-${{ github.sha }}
+          restore-keys: |
+            toolchain-
 
-          # DTS 检查
-          if grep -q "sl3000-emmc" "$DTS"; then
-            echo "✔ DTS 已包含 sl3000-emmc"
-          else
-            echo "❌ DTS 未包含 sl3000-emmc"
-          fi
+  firmware:
+    runs-on: ubuntu-22.04
+    needs: toolchain
+    name: Build Firmware
 
-          # mk 检查
-          if grep -q "sl3000-emmc" "$MK"; then
-            echo "✔ mk 已包含 sl3000-emmc"
-          else
-            echo "❌ mk 未包含 sl3000-emmc"
-          fi
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-          # config 检查
-          if grep -q "DEVICE_sl3000-emmc" "$CONF"; then
-            echo "✔ .config 已启用 sl3000-emmc profile"
-          else
-            echo "❌ .config 未启用 sl3000-emmc profile"
-          fi
-
-          # 自动修复内核版本
-          if grep -q "CONFIG_LINUX_6_12=y" "$CONF"; then
-            echo "⚠️ 检测到错误内核版本，自动修复为 6.6"
-            sed -i 's/CONFIG_LINUX_6_12=y/CONFIG_LINUX_6_6=y/' "$CONF"
-          fi
-
-          echo "=== 三件套验证结束 ==="
-
-      # 8. 更新 feeds
-      - name: Update feeds
+      - name: Install dependencies
         run: |
-          cd openwrt
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          sudo apt-get update
+          sudo apt-get install -y build-essential git-core libncurses5-dev \
+            zlib1g-dev gawk flex gettext wget unzip python3 python3-distutils \
+            file libssl-dev rsync ccache
 
-      # 9. 应用路由器相关补丁
-      - name: Apply router patches
+      - name: Restore toolchain cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/staging_dir
+            openwrt/build_dir/toolchain-*
+          key: toolchain-${{ github.sha }}
+          restore-keys: |
+            toolchain-
+
+      - name: Clone ImmortalWrt source
         run: |
-          cd openwrt
-          if [ -d patches ]; then
-            for p in patches/*; do
-              if [[ "$p" == *"mediatek"* || "$p" == *"network"* ]]; then
-                patch -p1 < "$p"
-              else
-                echo "跳过非路由器补丁: $p"
-              fi
-            done
-          else
-            echo "⚠️ 无 patches 目录，跳过补丁应用"
-          fi
+          git clone --depth=1 -b openwrt-24.10 https://github.com/ykm888/immortalwrt-sl3000.git openwrt
 
-      # 10. 构建固件
+      - name: Copy root .config
+        run: |
+          cp .config openwrt/.config
+
       - name: Build firmware
         run: |
           cd openwrt
           make defconfig
           make -j$(nproc) V=s | tee build.log
-          echo "✅ 构建完成"
 
-      # 11. 上传构建日志
       - name: Upload build log
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: openwrt/build.log
 
-      # 12. 保存构建产物
-      - name: Upload firmware artifacts
+      - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-sl3000-emmc
+          name: firmware
           path: openwrt/bin/targets/mediatek/filogic/
-
-      # 13. 自动发布固件
-      - name: Release firmware
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: sl3000-emmc-${{ github.run_number }}
-          name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
-          body: |
-            自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
-            - 三件套验证与自动修复 ✔
-            - 路由器补丁过滤 ✔
-            - 磁盘优化 ✔
-            - 缓存机制 ✔
-          files: |
-            openwrt/bin/targets/mediatek/filogic/*
