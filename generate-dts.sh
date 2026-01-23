@@ -10,7 +10,7 @@ cat > "$DTS" << 'EOF'
 
 / {
     model = "SL3000 EMMC AX3000 Router";
-    compatible = "sl,sl3000-emmc", "mediatek,mt7981b";
+    compatible = "sl3000-emmc", "mediatek,mt7981b";
 
     aliases {
         serial0 = &uart0;
@@ -27,19 +27,7 @@ cat > "$DTS" << 'EOF'
 
     memory {
         device_type = "memory";
-        reg = <0x40000000 0x40000000>; /* 1GB DDR，按你实际情况可调 */
-    };
-
-    reserved-memory {
-        #address-cells = <1>;
-        #size-cells = <1>;
-        ranges;
-
-        /* 预留 WED / WiFi / 其他硬件加速区域，按需要启用 */
-        wed_reserved: wed@47c00000 {
-            reg = <0x47c00000 0x00400000>;
-            no-map;
-        };
+        reg = <0x40000000 0x40000000>; /* 1GB DDR */
     };
 
     leds {
@@ -47,7 +35,7 @@ cat > "$DTS" << 'EOF'
 
         led_power: power {
             label = "sl3000:green:power";
-            gpios = <&gpio 0 GPIO_ACTIVE_HIGH>; /* 占位，按实际 GPIO 改 */
+            gpios = <&gpio 0 GPIO_ACTIVE_HIGH>;
             default-state = "on";
         };
 
@@ -70,16 +58,6 @@ cat > "$DTS" << 'EOF'
             label = "sl3000:green:lan3";
             gpios = <&gpio 4 GPIO_ACTIVE_HIGH>;
         };
-
-        wifi2g {
-            label = "sl3000:green:wifi2g";
-            gpios = <&gpio 5 GPIO_ACTIVE_HIGH>;
-        };
-
-        wifi5g {
-            label = "sl3000:green:wifi5g";
-            gpios = <&gpio 6 GPIO_ACTIVE_HIGH>;
-        };
     };
 
     keys {
@@ -87,7 +65,7 @@ cat > "$DTS" << 'EOF'
 
         reset {
             label = "reset";
-            gpios = <&gpio 7 GPIO_ACTIVE_LOW>; /* 占位，按实际 GPIO 改 */
+            gpios = <&gpio 7 GPIO_ACTIVE_LOW>;
             linux,code = <KEY_RESTART>;
             debounce-interval = <60>;
         };
@@ -107,9 +85,6 @@ cat > "$DTS" << 'EOF'
 /* Ethernet / Switch 布局：1 WAN + 3 LAN */
 &eth {
     status = "okay";
-
-    mediatek,eth-mac = "mtketh";
-    mediatek,eth-ports = <0 1 2 3>;
 
     gmac0: mac@0 {
         compatible = "mediatek,eth-mac";
@@ -136,7 +111,6 @@ cat > "$DTS" << 'EOF'
 
     wan_phy: ethernet-phy@0 {
         reg = <0>;
-        /* 外置 PHY 或内置 PHY 映射，按实际改 */
     };
 
     lan1_phy: ethernet-phy@1 {
@@ -152,7 +126,6 @@ cat > "$DTS" << 'EOF'
     };
 };
 
-/* DSA / Switch 节点（如果是内置 GSW，可按官方 mt7981 参考板对齐） */
 &switch {
     status = "okay";
 
@@ -197,7 +170,7 @@ cat > "$DTS" << 'EOF'
     };
 };
 
-/* eMMC：128GB，挂在 SDHCI 控制器上 */
+/* eMMC 分区 */
 &mmc0 {
     status = "okay";
     bus-width = <8>;
@@ -227,11 +200,11 @@ cat > "$DTS" << 'EOF'
 
     mmc0user: partition@3000000 {
         label = "emmc-user";
-        reg = <0x03000000 0x3D000000>; /* 剩余全部空间，按实际调整 */
+        reg = <0x03000000 0x3D000000>;
     };
 };
 
-/* SPI-NOR：32MB，用于 BL + Kernel + Recovery 等 */
+/* SPI-NOR 分区 */
 &spi0 {
     status = "okay";
 
@@ -275,13 +248,13 @@ cat > "$DTS" << 'EOF'
     };
 };
 
-/* WiFi：2.4G + 5G，AX3000 典型布局 */
+/* WiFi */
 &wifi {
     status = "okay";
     mediatek,mtd-eeprom = <&factory 0x0000>;
 };
 
-/* 供电 / LDO 占位，按实际板级电路调整 */
+/* 电源供给 */
 &reg_3p3v {
     status = "okay";
 };
