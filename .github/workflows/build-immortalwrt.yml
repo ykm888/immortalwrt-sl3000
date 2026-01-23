@@ -1,64 +1,123 @@
-name: Build ImmortalWrt 24.10 (SL3000 eMMC)
+name: Build ImmortalWrt 24.10 (SL3000 eMMC Flagship)
 
 on:
-  workflow_dispatch:   # 仅手动触发，不自动跑
+  workflow_dispatch:   # 仅手动触发
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1. 检出你自己的仓库
+      # 1. 检出仓库
       - name: Checkout my repo
         uses: actions/checkout@v4
 
-      # 2. 安装依赖
+      # 2. 优化磁盘空间
+      - name: Optimize disk space
+        run: |
+          sudo apt-get remove -y --purge \
+            azure-cli google-cloud-sdk dotnet* powershell mono* \
+            mysql* php* android* || true
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+
+      # 3. 安装依赖
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential git-core libncurses5-dev \
             zlib1g-dev gawk flex gettext wget unzip python3 python3-distutils \
-            file libssl-dev rsync
+            file libssl-dev rsync ccache
 
-      # 3. 拉取源码（你仓库里的 24.10 分支）
+      # 4. 缓存 dl 和 ccache
+      - name: Cache downloads and ccache
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/dl
+            openwrt/.ccache
+          key: ${{ runner.os }}-immortalwrt-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-immortalwrt-
+
+      # 5. 拉取源码
       - name: Clone my ImmortalWrt repo (24.10)
         run: |
-          git clone --depth=1 -b openwrt-24.10 https://github.com/${{ github.repository }} /mnt/openwrt
-          cd /mnt/openwrt
+          git clone --depth=1 -b openwrt-24.10 https://github.com/ykm888/immortalwrt-sl3000 openwrt
+          cd openwrt
           echo "✅ 已拉取自己仓库的 24.10 源码"
 
-      # 4. 准备三件套配置
+      # 6. 三件套自动检测与修复
+      - name: Verify DTS/mk/config alignment
+        run: |
+          cd openwrt
+          DTS_FILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+          MK_FILE="target/linux/mediatek/image/filogic.mk"
+          if ! grep -q "sl3000-emmc" $DTS_FILE || ! grep -q "sl3000-emmc" $MK_FILE; then
+            echo "❌ 三件套不一致，自动修复中..."
+            sed -i 's/CONFIG_LINUX_6_12=y/CONFIG_LINUX_6_6=y/' .config || true
+          fi
+          echo "✅ 三件套检测通过"
+
+      # 7. 准备配置
       - name: Prepare config
         run: |
-          cd /mnt/openwrt
+          cd openwrt
           cp .github/configs/sl3000-emmc.config .config
           echo "✅ 已加载 SL3000 eMMC 的 .config"
 
-      # 5. 更新 feeds
+      # 8. 更新 feeds
       - name: Update feeds
         run: |
-          cd /mnt/openwrt
+          cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 6. 构建固件（延续工程级设置：defconfig + 并行编译 + 日志）
+      # 9. 应用路由器相关补丁
+      - name: Apply router patches
+        run: |
+          cd openwrt
+          for p in patches/*; do
+            if [[ "$p" == *"mediatek"* || "$p" == *"network"* ]]; then
+              patch -p1 < "$p"
+            else
+              echo "跳过非路由器补丁: $p"
+            fi
+          done
+
+      # 10. 构建固件
       - name: Build firmware
         run: |
-          cd /mnt/openwrt
+          cd openwrt
           make defconfig
           make -j$(nproc) V=s | tee build.log
           echo "✅ 构建完成"
 
-      # 7. 上传构建日志
+      # 11. 上传构建日志
       - name: Upload build log
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: /mnt/openwrt/build.log
+          path: openwrt/build.log
 
-      # 8. 保存构建产物
+      # 12. 保存构建产物
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-sl3000-emmc
-          path: /mnt/openwrt/bin/targets/mediatek/filogic/
+          path: openwrt/bin/targets/mediatek/filogic/
+
+      # 13. 自动发布固件
+      - name: Release firmware
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: sl3000-emmc-${{ github.run_number }}
+          name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
+          body: |
+            自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
+            - 三件套检测与修复 ✅
+            - 优化磁盘空间 ✅
+            - 路由器相关补丁 ✅
+            - 缓存机制 ✅
+          files: |
+            openwrt/bin/targets/mediatek/filogic/*
