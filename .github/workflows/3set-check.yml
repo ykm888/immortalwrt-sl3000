@@ -1,0 +1,146 @@
+name: Three-piece Validation Only
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".config"
+      - "target/linux/mediatek/**"
+      - "patches/**"
+      - ".github/workflows/3set-check.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    name: Validate DTS/mk/config (No Build)
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            device-tree-compiler \
+            graphviz \
+            build-essential \
+            gawk flex bison \
+            libncurses5-dev
+
+      - name: Run three-piece validation
+        run: |
+          echo "=== 三件套工程级检测开始 ==="
+
+          DTS="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+          MK="target/linux/mediatek/image/filogic.mk"
+          CONF=".config"
+
+          echo ""
+          echo "=== 1. 隐藏字符检测 ==="
+          for f in "$DTS" "$MK" "$CONF"; do
+            echo "检查文件: $f"
+            sed -i 's/\r$//' "$f"
+            sed -i '1s/^\xEF\xBB\xBF//' "$f"
+            tr -cd '\11\12\15\40-\176' < "$f" > "$f.clean" && mv "$f.clean" "$f"
+          done
+          echo "✔ 隐藏字符检测完成"
+
+          echo ""
+          echo "=== 2. DTS 语法检测 ==="
+          dtc -I dts -O dtb -o /dev/null "$DTS"
+          echo "✔ DTS 语法正确"
+
+          echo ""
+          echo "=== 3. mk 结构检测 ==="
+          grep -q "define Device/sl3000-emmc" "$MK" || {
+            echo "❌ mk 中未定义 Device/sl3000-emmc"
+            exit 1
+          }
+          echo "✔ mk 结构正确"
+
+          echo ""
+          echo "=== 4. .config 语法检测 ==="
+          make defconfig >/dev/null 2>&1 || {
+            echo "❌ .config 语法错误"
+            exit 1
+          }
+          echo "✔ .config 语法正确"
+
+          echo ""
+          echo "=== 5. DTS 依赖链检测 ==="
+          INCLUDES=$(grep -oP '(?<=#include ").*(?=")' "$DTS" || true)
+          MISSING=0
+
+          for inc in $INCLUDES; do
+            if [[ "$inc" == /* ]]; then
+              REAL="$inc"
+            else
+              REAL="$(dirname $DTS)/$inc"
+            fi
+
+            echo "检测 include: $REAL"
+
+            if [ ! -f "$REAL" ]; then
+              echo "❌ 缺失依赖: $REAL"
+              MISSING=1
+            fi
+          done
+
+          if [ "$MISSING" = "1" ]; then
+            echo "❌ DTS 依赖链不完整"
+            exit 1
+          fi
+
+          echo "--- 检查循环 include ---"
+          if grep -R "$(basename $DTS)" "$(dirname $DTS)" | grep -v "$DTS"; then
+            echo "❌ 检测到循环 include"
+            exit 1
+          fi
+
+          echo "--- 使用 dtc 展开依赖链 ---"
+          dtc -I dts -O dtb -H epapr -@ -o /dev/null "$DTS"
+          echo "✔ DTS 依赖链完整且可解析"
+
+          echo ""
+          echo "=== 6. DTS 依赖图生成（Graphviz） ==="
+          DOT="dts-deps.dot"
+          PNG="dts-deps.png"
+
+          echo "digraph DTSDeps {" > "$DOT"
+          echo "  node [shape=box,fontname=\"monospace\"];" >> "$DOT"
+          echo "  \"$(basename $DTS)\";" >> "$DOT"
+
+          for inc in $INCLUDES; do
+            BASE=$(basename "$inc")
+            echo "  \"$(basename $DTS)\" -> \"$BASE\";" >> "$DOT"
+          done
+
+          echo "}" >> "$DOT"
+
+          dot -Tpng "$DOT" -o "$PNG" || echo "⚠️ DTS 依赖图生成失败"
+          echo "✔ DTS 依赖图生成完成 ($PNG)"
+
+          echo ""
+          echo "=== 7. 三件套一致性检测与自动修复 ==="
+
+          if ! grep -q "DEVICE_sl3000-emmc" "$CONF"; then
+            echo "⚠️ 自动修复 profile"
+            sed -i 's/CONFIG_TARGET_PROFILE=.*/CONFIG_TARGET_PROFILE="DEVICE_sl3000-emmc"/' "$CONF"
+          fi
+
+          if grep -q "CONFIG_LINUX_6_12=y" "$CONF"; then
+            echo "⚠️ 自动修复内核版本"
+            sed -i 's/CONFIG_LINUX_6_12=y/CONFIG_LINUX_6_6=y/' "$CONF"
+          fi
+
+          echo "✔ 三件套一致性检测完成"
+          echo "=== 三件套工程级检测结束 ==="
+
+      - name: Upload DTS dependency graph
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dts-deps-graph
+          path: dts-deps.png
+          if-no-files-found: ignore
