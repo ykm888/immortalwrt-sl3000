@@ -38,11 +38,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-immortalwrt-
 
-      # 5. 拉取源码（修复：避免 clone 自己仓库）
+      # 5. 拉取源码（修复：必须拉取自己的仓库才能找到三件套）
       - name: Clone ImmortalWrt source
         run: |
-          git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git openwrt
-          echo "✅ 已拉取 ImmortalWrt openwrt-24.10 源码"
+          git clone --depth=1 -b main https://github.com/ykm888/immortalwrt-sl3000.git openwrt
+          echo "✅ 已拉取 SL3000 专用源码（包含三件套）"
 
       # 6. 复制根目录 .config 到源码目录
       - name: Use root .config
@@ -50,7 +50,7 @@ jobs:
           cp .config openwrt/.config
           echo "✅ 已使用根目录 .config"
 
-      # 7. 三件套自动检测（增强版 + 集成脚本）
+      # 7. 三件套自动检测（增强版）
       - name: Verify DTS/mk/config alignment (Enhanced)
         run: |
           cd openwrt
