@@ -3,22 +3,21 @@
 DTS="target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts"
 
 cat > "$DTS" << 'EOF'
-// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 /dts-v1/;
 
-#include "mt7981.dtsi"
+#include "mt7981b.dtsi"
 
 / {
-    model = "SL3000 eMMC Flagship Router";
-    compatible = "sl,sl3000-emmc", "mediatek,mt7981";
+    model = "SL3000 EMMC AX3000 Router";
+    compatible = "sl,sl3000-emmc", "mediatek,mt7981b";
 
     aliases {
         serial0 = &uart0;
-        ethernet0 = &gmac0;
-        led-boot = &led_status;
-        led-failsafe = &led_status;
-        led-running = &led_status;
-        led-upgrade = &led_status;
+        led-boot = &led_power;
+        led-failsafe = &led_power;
+        led-running = &led_power;
+        led-upgrade = &led_power;
     };
 
     chosen {
@@ -26,9 +25,72 @@ cat > "$DTS" << 'EOF'
         bootargs = "console=ttyS0,115200n8";
     };
 
-    memory@40000000 {
+    memory {
         device_type = "memory";
-        reg = <0x40000000 0x20000000>; /* 512MB */
+        reg = <0x40000000 0x40000000>; /* 1GB DDR，按你实际情况可调 */
+    };
+
+    reserved-memory {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges;
+
+        /* 预留 WED / WiFi / 其他硬件加速区域，按需要启用 */
+        wed_reserved: wed@47c00000 {
+            reg = <0x47c00000 0x00400000>;
+            no-map;
+        };
+    };
+
+    leds {
+        compatible = "gpio-leds";
+
+        led_power: power {
+            label = "sl3000:green:power";
+            gpios = <&gpio 0 GPIO_ACTIVE_HIGH>; /* 占位，按实际 GPIO 改 */
+            default-state = "on";
+        };
+
+        wan {
+            label = "sl3000:green:wan";
+            gpios = <&gpio 1 GPIO_ACTIVE_HIGH>;
+        };
+
+        lan1 {
+            label = "sl3000:green:lan1";
+            gpios = <&gpio 2 GPIO_ACTIVE_HIGH>;
+        };
+
+        lan2 {
+            label = "sl3000:green:lan2";
+            gpios = <&gpio 3 GPIO_ACTIVE_HIGH>;
+        };
+
+        lan3 {
+            label = "sl3000:green:lan3";
+            gpios = <&gpio 4 GPIO_ACTIVE_HIGH>;
+        };
+
+        wifi2g {
+            label = "sl3000:green:wifi2g";
+            gpios = <&gpio 5 GPIO_ACTIVE_HIGH>;
+        };
+
+        wifi5g {
+            label = "sl3000:green:wifi5g";
+            gpios = <&gpio 6 GPIO_ACTIVE_HIGH>;
+        };
+    };
+
+    keys {
+        compatible = "gpio-keys";
+
+        reset {
+            label = "reset";
+            gpios = <&gpio 7 GPIO_ACTIVE_LOW>; /* 占位，按实际 GPIO 改 */
+            linux,code = <KEY_RESTART>;
+            debounce-interval = <60>;
+        };
     };
 };
 
@@ -42,59 +104,191 @@ cat > "$DTS" << 'EOF'
     status = "okay";
 };
 
-/* Ethernet */
-&gmac0 {
+/* Ethernet / Switch 布局：1 WAN + 3 LAN */
+&eth {
     status = "okay";
-    phy-mode = "rgmii";
+
+    mediatek,eth-mac = "mtketh";
+    mediatek,eth-ports = <0 1 2 3>;
+
+    gmac0: mac@0 {
+        compatible = "mediatek,eth-mac";
+        reg = <0>;
+        phy-mode = "sgmii";
+        phy-handle = <&wan_phy>;
+        nvmem-cells = <&macaddr_factory_4>;
+        nvmem-cell-names = "mac-address";
+    };
+
+    gmac1: mac@1 {
+        compatible = "mediatek,eth-mac";
+        reg = <1>;
+        phy-mode = "rgmii";
+        fixed-link {
+            speed = <1000>;
+            full-duplex;
+        };
+    };
 };
 
-/* Switch ports */
-&switch0 {
+&mdio {
     status = "okay";
+
+    wan_phy: ethernet-phy@0 {
+        reg = <0>;
+        /* 外置 PHY 或内置 PHY 映射，按实际改 */
+    };
+
+    lan1_phy: ethernet-phy@1 {
+        reg = <1>;
+    };
+
+    lan2_phy: ethernet-phy@2 {
+        reg = <2>;
+    };
+
+    lan3_phy: ethernet-phy@3 {
+        reg = <3>;
+    };
+};
+
+/* DSA / Switch 节点（如果是内置 GSW，可按官方 mt7981 参考板对齐） */
+&switch {
+    status = "okay";
+
     ports {
-        port@0 { reg = <0>; label = "lan1"; };
-        port@1 { reg = <1>; label = "lan2"; };
-        port@2 { reg = <2>; label = "lan3"; };
-        port@3 { reg = <3>; label = "lan4"; };
-        port@4 { reg = <4>; label = "wan"; };
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        port0: port@0 {
+            reg = <0>;
+            label = "wan";
+            phy-handle = <&wan_phy>;
+        };
+
+        port1: port@1 {
+            reg = <1>;
+            label = "lan1";
+            phy-handle = <&lan1_phy>;
+        };
+
+        port2: port@2 {
+            reg = <2>;
+            label = "lan2";
+            phy-handle = <&lan2_phy>;
+        };
+
+        port3: port@3 {
+            reg = <3>;
+            label = "lan3";
+            phy-handle = <&lan3_phy>;
+        };
+
+        cpu_port: port@6 {
+            reg = <6>;
+            label = "cpu";
+            ethernet = <&gmac1>;
+            phy-mode = "trgmii";
+            fixed-link {
+                speed = <1000>;
+                full-duplex;
+            };
+        };
     };
 };
 
-/* LED */
-&pio {
-    led_status: led_status {
-        label = "sl3000:green:status";
-        gpios = <&pio 12 GPIO_ACTIVE_HIGH>;
-        default-state = "off";
-    };
-};
-
-/* eMMC 分区 */
+/* eMMC：128GB，挂在 SDHCI 控制器上 */
 &mmc0 {
     status = "okay";
+    bus-width = <8>;
+    cap-mmc-highspeed;
+    non-removable;
+    disable-wp;
+    vmmc-supply = <&reg_3p3v>;
+    vqmmc-supply = <&reg_1p8v>;
 
-    partition@0 {
-        label = "u-boot";
-        reg = <0x00000000 0x00200000>;
+    mmc0boot0: partition@0 {
+        label = "emmc-boot0";
+        reg = <0x00000000 0x01000000>;
         read-only;
     };
 
-    partition@200000 {
-        label = "u-boot-env";
-        reg = <0x00200000 0x00100000>;
+    mmc0boot1: partition@1000000 {
+        label = "emmc-boot1";
+        reg = <0x01000000 0x01000000>;
+        read-only;
     };
 
-    partition@300000 {
-        label = "factory";
-        reg = <0x00300000 0x00100000>;
+    mmc0rpmb: partition@2000000 {
+        label = "emmc-rpmb";
+        reg = <0x02000000 0x01000000>;
+        read-only;
     };
 
-    partition@400000 {
-        label = "firmware";
-        reg = <0x00400000 0x1FC00000>;
+    mmc0user: partition@3000000 {
+        label = "emmc-user";
+        reg = <0x03000000 0x3D000000>; /* 剩余全部空间，按实际调整 */
     };
 };
-;
+
+/* SPI-NOR：32MB，用于 BL + Kernel + Recovery 等 */
+&spi0 {
+    status = "okay";
+
+    flash@0 {
+        compatible = "jedec,spi-nor";
+        reg = <0>;
+        spi-max-frequency = <50000000>;
+
+        partitions {
+            compatible = "fixed-partitions";
+            #address-cells = <1>;
+            #size-cells = <1>;
+
+            partition@0 {
+                label = "bl2";
+                reg = <0x00000000 0x00080000>;
+                read-only;
+            };
+
+            partition@80000 {
+                label = "fip";
+                reg = <0x00080000 0x00200000>;
+                read-only;
+            };
+
+            partition@280000 {
+                label = "u-boot-env";
+                reg = <0x00280000 0x00080000>;
+            };
+
+            partition@300000 {
+                label = "factory";
+                reg = <0x00300000 0x00100000>;
+            };
+
+            partition@400000 {
+                label = "firmware";
+                reg = <0x00400000 0x01C00000>;
+            };
+        };
+    };
+};
+
+/* WiFi：2.4G + 5G，AX3000 典型布局 */
+&wifi {
+    status = "okay";
+    mediatek,mtd-eeprom = <&factory 0x0000>;
+};
+
+/* 供电 / LDO 占位，按实际板级电路调整 */
+&reg_3p3v {
+    status = "okay";
+};
+
+&reg_1p8v {
+    status = "okay";
+};
 EOF
 
 git add "$DTS"
