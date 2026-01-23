@@ -6,6 +6,7 @@ cat > "$CONF" << 'EOF'
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
 CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y
+CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_sl3000-emmc=y
 
 # 内核版本
 CONFIG_LINUX_6_6=y
