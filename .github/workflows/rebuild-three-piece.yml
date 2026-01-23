@@ -1,0 +1,37 @@
+name: Rebuild SL3000 Three-Piece
+
+on:
+  workflow_dispatch:   # 手动触发
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-22.04
+
+    steps:
+      # 1. 检出仓库
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 设置执行权限
+      - name: Make scripts executable
+        run: |
+          chmod +x rebuild-three-piece.sh
+          chmod +x reset-three-piece.sh
+          chmod +x generate-dts.sh
+          chmod +x generate-mk.sh
+          chmod +x generate-config.sh
+
+      # 3. 运行一键生成三件套脚本
+      - name: Run rebuild-three-piece
+        run: |
+          ./rebuild-three-piece.sh
+
+      # 4. 保存生成的三件套作为构建产物
+      - name: Upload three-piece artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sl3000-three-piece
+          path: |
+            target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts
+            target/linux/mediatek/image/filogic.mk
+            .config
