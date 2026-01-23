@@ -76,13 +76,17 @@ jobs:
       - name: Apply router patches
         run: |
           cd openwrt
-          for p in patches/*; do
-            if [[ "$p" == *"mediatek"* || "$p" == *"network"* ]]; then
-              patch -p1 < "$p"
-            else
-              echo "跳过非路由器补丁: $p"
-            fi
-          done
+          if [ -d patches ]; then
+            for p in patches/*; do
+              if [[ "$p" == *"mediatek"* || "$p" == *"network"* ]]; then
+                patch -p1 < "$p"
+              else
+                echo "跳过非路由器补丁: $p"
+              fi
+            done
+          else
+            echo "⚠️ 无 patches 目录，跳过补丁应用"
+          fi
 
       # 10. 构建固件
       - name: Build firmware
@@ -108,3 +112,15 @@ jobs:
 
       # 13. 自动发布固件
       - name: Release firmware
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: sl3000-emmc-${{ github.run_number }}
+          name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
+          body: |
+            自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
+            - 三件套检测与修复 ✅
+            - 优化磁盘空间 ✅
+            - 路由器相关补丁 ✅
+            - 缓存机制 ✅
+          files: |
+            openwrt/bin/targets/mediatek/filogic/*
