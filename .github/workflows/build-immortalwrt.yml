@@ -42,27 +42,52 @@ jobs:
       - name: Clone ImmortalWrt source
         run: |
           git clone --depth=1 -b openwrt-24.10 https://github.com/ykm888/immortalwrt-sl3000.git openwrt
-          cd openwrt
           echo "✅ 已拉取 openwrt-24.10 分支源码"
 
-      # 6. 复制根目录 .config 到源码目录
+      # 6. 使用根目录 .config
       - name: Use root .config
         run: |
           cp .config openwrt/.config
           echo "✅ 已使用根目录 .config"
 
-      # 7. 三件套自动检测与修复
-      - name: Verify DTS/mk/config alignment
+      # 7. 三件套验证 + 自动修复
+      - name: Verify three-piece set (DTS/mk/config)
         run: |
           cd openwrt
+          echo "=== 三件套验证开始 ==="
+
           DTS="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
           MK="target/linux/mediatek/image/filogic.mk"
           CONF=".config"
-          if ! grep -q "sl3000-emmc" "$DTS" || ! grep -q "sl3000-emmc" "$MK"; then
-            echo "❌ 三件套不一致，自动修复中..."
-            sed -i 's/CONFIG_LINUX_6_12=y/CONFIG_LINUX_6_6=y/' "$CONF" || true
+
+          # DTS 检查
+          if grep -q "sl3000-emmc" "$DTS"; then
+            echo "✔ DTS 已包含 sl3000-emmc"
+          else
+            echo "❌ DTS 未包含 sl3000-emmc"
           fi
-          echo "✅ 三件套检测通过"
+
+          # mk 检查
+          if grep -q "sl3000-emmc" "$MK"; then
+            echo "✔ mk 已包含 sl3000-emmc"
+          else
+            echo "❌ mk 未包含 sl3000-emmc"
+          fi
+
+          # config 检查
+          if grep -q "DEVICE_sl3000-emmc" "$CONF"; then
+            echo "✔ .config 已启用 sl3000-emmc profile"
+          else
+            echo "❌ .config 未启用 sl3000-emmc profile"
+          fi
+
+          # 自动修复内核版本
+          if grep -q "CONFIG_LINUX_6_12=y" "$CONF"; then
+            echo "⚠️ 检测到错误内核版本，自动修复为 6.6"
+            sed -i 's/CONFIG_LINUX_6_12=y/CONFIG_LINUX_6_6=y/' "$CONF"
+          fi
+
+          echo "=== 三件套验证结束 ==="
 
       # 8. 更新 feeds
       - name: Update feeds
@@ -117,9 +142,9 @@ jobs:
           name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
           body: |
             自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
-            - 三件套检测与修复 ✅
-            - 优化磁盘空间 ✅
-            - 路由器相关补丁过滤机制 ✅
-            - 缓存机制（dl + ccache）✅
+            - 三件套验证与自动修复 ✔
+            - 路由器补丁过滤 ✔
+            - 磁盘优化 ✔
+            - 缓存机制 ✔
           files: |
             openwrt/bin/targets/mediatek/filogic/*
