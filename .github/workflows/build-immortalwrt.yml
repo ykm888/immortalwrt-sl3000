@@ -1,0 +1,64 @@
+name: Build ImmortalWrt 24.10 (SL3000 eMMC)
+
+on:
+  workflow_dispatch:   # 仅手动触发，不自动跑
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      # 1. 检出你自己的仓库
+      - name: Checkout my repo
+        uses: actions/checkout@v4
+
+      # 2. 安装依赖
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git-core libncurses5-dev \
+            zlib1g-dev gawk flex gettext wget unzip python3 python3-distutils \
+            file libssl-dev rsync
+
+      # 3. 拉取源码（你仓库里的 24.10 分支）
+      - name: Clone my ImmortalWrt repo (24.10)
+        run: |
+          git clone --depth=1 -b openwrt-24.10 https://github.com/${{ github.repository }} /mnt/openwrt
+          cd /mnt/openwrt
+          echo "✅ 已拉取自己仓库的 24.10 源码"
+
+      # 4. 准备三件套配置
+      - name: Prepare config
+        run: |
+          cd /mnt/openwrt
+          cp .github/configs/sl3000-emmc.config .config
+          echo "✅ 已加载 SL3000 eMMC 的 .config"
+
+      # 5. 更新 feeds
+      - name: Update feeds
+        run: |
+          cd /mnt/openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      # 6. 构建固件（延续工程级设置：defconfig + 并行编译 + 日志）
+      - name: Build firmware
+        run: |
+          cd /mnt/openwrt
+          make defconfig
+          make -j$(nproc) V=s | tee build.log
+          echo "✅ 构建完成"
+
+      # 7. 上传构建日志
+      - name: Upload build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /mnt/openwrt/build.log
+
+      # 8. 保存构建产物
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-sl3000-emmc
+          path: /mnt/openwrt/bin/targets/mediatek/filogic/
