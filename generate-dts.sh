@@ -15,6 +15,10 @@ cat > "$DTS" << 'EOF'
     aliases {
         serial0 = &uart0;
         ethernet0 = &gmac0;
+        led-boot = &led_status;
+        led-failsafe = &led_status;
+        led-running = &led_status;
+        led-upgrade = &led_status;
     };
 
     chosen {
@@ -24,18 +28,48 @@ cat > "$DTS" << 'EOF'
 
     memory@40000000 {
         device_type = "memory";
-        reg = <0x40000000 0x20000000>;
+        reg = <0x40000000 0x20000000>; /* 512MB */
     };
 };
 
-&uart0 { status = "okay"; };
-&watchdog { status = "okay"; };
+/* UART */
+&uart0 {
+    status = "okay";
+};
 
+/* Watchdog */
+&watchdog {
+    status = "okay";
+};
+
+/* Ethernet */
 &gmac0 {
     status = "okay";
     phy-mode = "rgmii";
 };
 
+/* Switch ports */
+&switch0 {
+    status = "okay";
+    ports {
+        port@0 { reg = <0>; label = "lan1"; };
+        port@1 { reg = <1>; label = "lan2"; };
+        port@2 { reg = <2>; label = "lan3"; };
+        port@3 { reg = <3>; label = "lan4"; };
+        port@4 { reg = <4>; label = "wan"; };
+    };
+};
+
+/* LED */
+&pio {
+    led_status: led_status {
+        label = "sl3000:green:status";
+        gpios = <&pio 12 GPIO_ACTIVE_HIGH>;
+        default-state = "off";
+    };
+};
+
+/* eMMC 分区 */
 &mmc0 {
     status = "okay";
 
@@ -60,6 +94,7 @@ cat > "$DTS" << 'EOF'
         reg = <0x00400000 0x1FC00000>;
     };
 };
+;
 EOF
 
 git add "$DTS"
