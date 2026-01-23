@@ -41,7 +41,7 @@ jobs:
       # 5. 拉取源码（openwrt-24.10 分支）
       - name: Clone ImmortalWrt source
         run: |
-          git clone --depth=1 -b openwrt-24.10 https://github.com/ykr/openwrt-24.10 openwrt
+          git clone --depth=1 -b openwrt-24.10 https://github.com/ykm888/immortalwrt-sl3000.git openwrt
           cd openwrt
           echo "✅ 已拉取 openwrt-24.10 分支源码"
 
@@ -108,15 +108,3 @@ jobs:
 
       # 13. 自动发布固件
       - name: Release firmware
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: sl3000-emmc-${{ github.run_number }}
-          name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
-          body: |
-            自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
-            - 三件套检测与修复 ✅
-            - 优化磁盘空间 ✅
-            - 路由器相关补丁 ✅
-            - 缓存机制 ✅
-          files: |
-            openwrt/bin/targets/mediatek/filogic/*
