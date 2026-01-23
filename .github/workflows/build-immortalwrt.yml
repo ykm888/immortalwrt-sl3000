@@ -1,7 +1,7 @@
 name: Build ImmortalWrt 24.10 (SL3000 eMMC Flagship)
 
 on:
-  workflow_dispatch:   # 仅手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -38,14 +38,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-immortalwrt-
 
-      # 5. 拉取源码（openwrt-24.10 分支）
+      # 5. 拉取源码
       - name: Clone ImmortalWrt source
         run: |
           git clone --depth=1 -b openwrt-24.10 https://github.com/ykm888/immortalwrt-sl3000.git openwrt
           cd openwrt
           echo "✅ 已拉取 openwrt-24.10 分支源码"
 
-      # 6. 三件套自动检测与修复
+      # 6. 复制根目录 .config 到源码目录
+      - name: Use root .config
+        run: |
+          cp .config openwrt/.config
+          echo "✅ 已使用根目录 .config"
+
+      # 7. 三件套自动检测与修复
       - name: Verify DTS/mk/config alignment
         run: |
           cd openwrt
@@ -57,13 +63,6 @@ jobs:
             sed -i 's/CONFIG_LINUX_6_12=y/CONFIG_LINUX_6_6=y/' "$CONF" || true
           fi
           echo "✅ 三件套检测通过"
-
-      # 7. 准备配置
-      - name: Prepare config
-        run: |
-          cd openwrt
-          cp .github/configs/sl3000-emmc.config .config
-          echo "✅ 已加载 SL3000 eMMC 的 .config"
 
       # 8. 更新 feeds
       - name: Update feeds
@@ -120,7 +119,7 @@ jobs:
             自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
             - 三件套检测与修复 ✅
             - 优化磁盘空间 ✅
-            - 路由器相关补丁 ✅
-            - 缓存机制 ✅
+            - 路由器相关补丁过滤机制 ✅
+            - 缓存机制（dl + ccache）✅
           files: |
             openwrt/bin/targets/mediatek/filogic/*
