@@ -35,3 +35,14 @@ jobs:
             target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts
             target/linux/mediatek/image/filogic.mk
             .config
+
+      # 5. 推送生成的三件套到仓库
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts
+          git add target/linux/mediatek/image/filogic.mk
+          git add .config
+          git commit -m "ci: auto rebuild SL3000 three-piece"
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/ykm888/immortalwrt-sl3000.git main
