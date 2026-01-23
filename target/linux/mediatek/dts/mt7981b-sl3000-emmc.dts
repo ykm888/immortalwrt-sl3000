@@ -1,0 +1,154 @@
+/dts-v1/;
+
+/include/ "mt7981b.dtsi"
+
+/ {
+    model = "SL3000 EMMC Board";
+    compatible = "sl3000,mt7981b", "mediatek,mt7981b";
+
+    aliases {
+        serial0 = &uart0;
+        ethernet0 = &gmac0;
+        ethernet1 = &gmac1;
+        led-boot = &led_status;
+        led-failsafe = &led_status;
+        led-running = &led_status;
+        led-upgrade = &led_status;
+    };
+
+    chosen {
+        stdout-path = "serial0:115200n8";
+        bootargs = "console=ttyS0,115200n8";
+    };
+
+    memory@40000000 {
+        device_type = "memory";
+        reg = <0x40000000 0x40000000>;
+    };
+
+    gpio-keys {
+        compatible = "gpio-keys";
+
+        reset {
+            label = "reset";
+            linux,code = <KEY_RESTART>;
+            gpios = <&gpio 0 GPIO_ACTIVE_LOW>;
+            debounce-interval = <60>;
+        };
+    };
+
+    gpio-leds {
+        compatible = "gpio-leds";
+
+        led_status: status {
+            label = "sl3000:green:status";
+            gpios = <&gpio 10 GPIO_ACTIVE_HIGH>;
+        };
+    };
+};
+
+/* ===========================
+ * UART
+ * =========================== */
+
+&uart0 {
+    status = "okay";
+};
+
+/* ===========================
+ * eMMC
+ * =========================== */
+
+&mmc0 {
+    status = "okay";
+    bus-width = <8>;
+    max-frequency = <52000000>;
+    cap-mmc-highspeed;
+    mmc-hs200-1_8v;
+    vqmmc-supply = <&reg_1p8v>;
+    vmmc-supply = <&reg_3p3v>;
+};
+
+/* ===========================
+ * Ethernet / Switch
+ * =========================== */
+
+&gmac0 {
+    status = "okay";
+    phy-mode = "sgmii";
+    mediatek,fixed-link = <1 1 1000 0 0>;
+    nvmem-cells = <&macaddr_factory_4>;
+    nvmem-cell-names = "mac-address";
+};
+
+&gmac1 {
+    status = "okay";
+    phy-mode = "sgmii";
+    mediatek,fixed-link = <1 1 1000 0 0>;
+    nvmem-cells = <&macaddr_factory_4>;
+    nvmem-cell-names = "mac-address";
+};
+
+/* ===========================
+ * WiFi
+ * =========================== */
+
+&wifi {
+    status = "okay";
+    nvmem-cells = <&wifi_calibration>;
+    nvmem-cell-names = "eeprom";
+};
+
+/* ===========================
+ * Switch MT7531
+ * =========================== */
+
+&mdio_bus {
+    switch@1f {
+        compatible = "mediatek,mt7531";
+        reg = <0x1f>;
+        reset-gpios = <&gpio 12 GPIO_ACTIVE_LOW>;
+    };
+};
+
+/* ===========================
+ * NVMEM / Factory
+ * =========================== */
+
+&factory {
+    compatible = "nvmem-cells";
+    #address-cells = <1>;
+    #size-cells = <1>;
+
+    macaddr_factory_4: macaddr@4 {
+        reg = <0x4 0x6>;
+    };
+
+    wifi_calibration: wifi@1000 {
+        reg = <0x1000 0x1000>;
+    };
+};
+
+/* ===========================
+ * PCIe
+ * =========================== */
+
+&pcie {
+    status = "okay";
+};
+
+/* ===========================
+ * Thermal
+ * =========================== */
+
+&thermal {
+    status = "okay";
+};
+
+/* ===========================
+ * Watchdog
+ * =========================== */
+
+&watchdog {
+    status = "okay";
+};
