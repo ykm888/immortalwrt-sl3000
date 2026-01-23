@@ -1,0 +1,180 @@
+name: Build ImmortalWrt 24.10 (SL3000 eMMC Flagship)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      # 1. 检出仓库
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 优化磁盘空间
+      - name: Optimize disk space
+        run: |
+          sudo apt-get remove -y --purge azure-cli google-cloud-sdk dotnet* powershell mono* mysql* php* android* || true
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+
+      # 3. 安装依赖
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git-core libncurses5-dev \
+            zlib1g-dev gawk flex gettext wget unzip python3 python3-distutils \
+            file libssl-dev rsync ccache
+
+      # 4. 缓存 dl 和 ccache
+      - name: Cache downloads and ccache
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/dl
+            openwrt/.ccache
+          key: ${{ runner.os }}-immortalwrt-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-immortalwrt-
+
+      # 5. 拉取源码（修复：避免 clone 自己仓库）
+      - name: Clone ImmortalWrt source
+        run: |
+          git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git openwrt
+          echo "✅ 已拉取 ImmortalWrt openwrt-24.10 源码"
+
+      # 6. 复制根目录 .config 到源码目录
+      - name: Use root .config
+        run: |
+          cp .config openwrt/.config
+          echo "✅ 已使用根目录 .config"
+
+      # 7. 三件套自动检测（增强版 + 集成脚本）
+      - name: Verify DTS/mk/config alignment (Enhanced)
+        run: |
+          cd openwrt
+
+          DTS="target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts"
+          MK="target/linux/mediatek/image/filogic.mk"
+          CONF=".config"
+          DEV="sl3000-emmc"
+
+          echo "=== 🔍 三件套完整性检查开始 ==="
+
+          # 1. 文件存在性检查
+          for f in "$DTS" "$MK" "$CONF"; do
+            if [ ! -f "$f" ]; then
+              echo "❌ 缺少关键文件: $f"
+              exit 1
+            fi
+          done
+          echo "✔ 文件存在性检查通过"
+
+          # 2. DTS 设备名检查
+          if ! grep -q "$DEV" "$DTS"; then
+            echo "❌ DTS 未包含设备名 $DEV"
+            exit 1
+          fi
+
+          # 3. mk 设备段检查
+          if ! grep -q "Device/$DEV" "$MK"; then
+            echo "❌ mk 未定义 Device/$DEV"
+            exit 1
+          fi
+          if ! grep -q "TARGET_DEVICES += $DEV" "$MK"; then
+            echo "❌ mk 未加入 TARGET_DEVICES += $DEV"
+            exit 1
+          fi
+
+          # 4. config 启用设备检查
+          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEV}=y" "$CONF"; then
+            echo "❌ config 未启用设备 $DEV"
+            exit 1
+          fi
+
+          echo "✔ DTS/mk/config 设备一致性检查通过"
+
+          # 5. 隐藏字符检查
+          if grep -q $'\xEF\xBB\xBF' "$DTS" "$MK" "$CONF"; then
+            echo "❌ 检测到 BOM，请清理后再提交"
+            exit 1
+          fi
+          if grep -q $'\r' "$DTS" "$MK" "$CONF"; then
+            echo "❌ 检测到 CRLF，请清理后再提交"
+            exit 1
+          fi
+          if grep -P -q "[\x{200B}\x{200C}\x{200D}]" "$DTS" "$MK" "$CONF"; then
+            echo "❌ 检测到零宽字符，请清理后再提交"
+            exit 1
+          fi
+
+          echo "✔ 隐藏字符检查通过"
+
+          # 6. kernel 版本一致性
+          if grep -q "CONFIG_LINUX_6_12=y" "$CONF"; then
+            echo "⚠️ 检测到 CONFIG_LINUX_6_12=y，应为 6.6，自动修复"
+            sed -i 's/CONFIG_LINUX_6_12=y/CONFIG_LINUX_6_6=y/' "$CONF"
+          fi
+
+          echo "=== ✅ 三件套增强检测全部通过 ==="
+
+      # 8. 更新 feeds
+      - name: Update feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a || true
+          ./scripts/feeds install -a
+
+      # 9. 应用路由器相关补丁
+      - name: Apply router patches
+        run: |
+          cd openwrt
+          if [ -d patches ]; then
+            for p in patches/*; do
+              if [[ "$p" == *"mediatek"* || "$p" == *"network"* ]]; then
+                patch -p1 < "$p"
+              else
+                echo "跳过非路由器补丁: $p"
+              fi
+            done
+          else
+            echo "⚠️ 无 patches 目录，跳过补丁应用"
+          fi
+
+      # 10. 构建固件
+      - name: Build firmware
+        run: |
+          cd openwrt
+          make defconfig
+          make -j$(nproc) V=s | tee build.log
+          echo "✅ 构建完成"
+
+      # 11. 上传构建日志
+      - name: Upload build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: openwrt/build.log
+
+      # 12. 保存构建产物
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-sl3000-emmc
+          path: openwrt/bin/targets/mediatek/filogic/
+
+      # 13. 自动发布固件
+      - name: Release firmware
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: sl3000-emmc-${{ github.run_number }}
+          name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
+          body: |
+            自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
+            - 三件套检测与修复（增强版） ✅
+            - 优化磁盘空间 ✅
+            - 路由器相关补丁过滤机制 ✅
+            - 缓存机制（dl + ccache）✅
+          files: |
+            openwrt/bin/targets/mediatek/filogic/*
