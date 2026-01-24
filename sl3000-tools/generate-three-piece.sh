@@ -8,6 +8,7 @@ echo "=== 🛠 生成 SL3000 eMMC 三件套（ImmortalWrt 24.10 / Linux 6.6 / Fl
 #########################################
 
 DTS="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+DTS="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
 mkdir -p target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek
 
 cat > "$DTS" << 'EOF'
@@ -57,12 +58,19 @@ cat > "$DTS" << 'EOF'
     };
 };
 
-&uart0 { status = "okay"; };
-&eth   { status = "okay"; };
+&uart0 {
+    status = "okay";
+};
+
+&eth {
+    status = "okay";
+};
+
 &wifi0 {
     status = "okay";
     mediatek,mtd-eeprom = <&factory 0x0>;
 };
+
 &mmc0 {
     status = "okay";
     bus-width = <8>;
