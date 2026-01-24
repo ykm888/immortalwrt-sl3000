@@ -1,6 +1,11 @@
 #!/bin/sh
+set -e
 
 MK="target/linux/mediatek/image/filogic.mk"
+
+echo "=== 🛠 正在生成 filogic.mk（sl‑3000‑emmc） ==="
+
+mkdir -p "$(dirname "$MK")"
 
 cat > "$MK" << 'EOF'
 # SPDX-License-Identifier: GPL-2.0-or-later OR MIT
@@ -45,21 +50,26 @@ define Device/sl-3000-emmc
   DEVICE_VENDOR := SL
   DEVICE_MODEL := 3000
   DEVICE_VARIANT := eMMC bootstrap
+
   DEVICE_DTS := mt7981b-sl-3000-emmc
   DEVICE_DTS_DIR := ../dts
+
   DEVICE_PACKAGES := kmod-usb3 kmod-mt7981-firmware mt7981-wo-firmware \
 	f2fsck mkf2fs automount
 
   IMAGES := sysupgrade.bin
+
   KERNEL := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
+
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 TARGET_DEVICES += sl-3000-emmc
-
 EOF
 
 git add "$MK"
+
 echo "✔ mk 已生成（官方架构 + sl‑3000‑emmc 完整设备段）"
