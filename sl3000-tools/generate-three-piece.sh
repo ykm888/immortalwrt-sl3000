@@ -4,10 +4,9 @@ set -e
 echo "=== 🛠 生成 SL3000 eMMC 三件套（ImmortalWrt 24.10 / Linux 6.6 / Flagship） ==="
 
 #########################################
-# 1. DTS（完整修复版）
+# 1. DTS（严格 dtc 校验通过版本）
 #########################################
 
-DTS="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
 DTS="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
 mkdir -p target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek
 
@@ -15,10 +14,9 @@ cat > "$DTS" << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
 
+#include "mt7981b.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
-#include <dt-bindings/leds/common.h>
-#include "mt7981b.dtsi"
 
 / {
     model = "SL3000 eMMC Flagship";
@@ -26,10 +24,6 @@ cat > "$DTS" << 'EOF'
 
     aliases {
         serial0 = &uart0;
-        led-boot = &led_status;
-        led-failsafe = &led_status;
-        led-running = &led_status;
-        led-upgrade = &led_status;
     };
 
     chosen {
@@ -39,7 +33,7 @@ cat > "$DTS" << 'EOF'
     leds {
         compatible = "gpio-leds";
 
-        led_status: status {
+        status {
             label = "sl3000:blue:status";
             gpios = <&pio 10 GPIO_ACTIVE_LOW>;
             default-state = "off";
@@ -92,7 +86,6 @@ MK="target/linux/mediatek/image/filogic.mk"
 mkdir -p target/linux/mediatek/image
 
 cat >> "$MK" << 'EOF'
-# SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 
 define Device/mt7981b-sl3000-emmc
   DEVICE_VENDOR := SL
@@ -103,7 +96,7 @@ define Device/mt7981b-sl3000-emmc
 
   DEVICE_PACKAGES := \
     kmod-mt7981-firmware mt7981-wo-firmware \
-    f2fsck mkf2fs automount block-mount kmod-fs-f2fs kmod-fs-ext4 kmod-fs-overlay \
+    block-mount kmod-fs-f2fs kmod-fs-ext4 kmod-fs-overlay \
     luci-theme-argon luci-app-passwall2 luci-compat kmod-tun \
     xray-core xray-plugin \
     shadowsocks-libev-config shadowsocks-libev-ss-local \
@@ -128,7 +121,7 @@ echo "✔ MK 生成完成"
 
 
 #########################################
-# 3. CONFIG（设备专用配置，生成在根目录）
+# 3. CONFIG（设备专用配置）
 #########################################
 
 CONF="mt7981b-sl3000-emmc.config"
@@ -137,7 +130,6 @@ cat > "$CONF" << 'EOF'
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
 CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y
-CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y
 
 CONFIG_LINUX_6_6=y
 
@@ -153,12 +145,14 @@ CONFIG_PACKAGE_luci-theme-argon=y
 CONFIG_PACKAGE_luci-app-passwall2=y
 CONFIG_PACKAGE_luci-compat=y
 CONFIG_PACKAGE_kmod-tun=y
+
 CONFIG_PACKAGE_xray-core=y
 CONFIG_PACKAGE_xray-plugin=y
 CONFIG_PACKAGE_shadowsocks-libev-config=y
 CONFIG_PACKAGE_shadowsocks-libev-ss-local=y
 CONFIG_PACKAGE_shadowsocks-libev-ss-redir=y
 CONFIG_PACKAGE_shadowsocks-libev-ss-server=y
+
 CONFIG_PACKAGE_chinadns-ng=y
 CONFIG_PACKAGE_dns2socks=y
 CONFIG_PACKAGE_dns2tcp=y
@@ -168,6 +162,7 @@ CONFIG_PACKAGE_dockerd=y
 CONFIG_PACKAGE_docker=y
 CONFIG_PACKAGE_docker-compose=y
 CONFIG_PACKAGE_luci-app-dockerman=y
+
 CONFIG_PACKAGE_kmod-br-netfilter=y
 CONFIG_PACKAGE_kmod-crypto-hash=y
 CONFIG_PACKAGE_kmod-veth=y
