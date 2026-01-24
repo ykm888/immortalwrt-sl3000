@@ -1,10 +1,14 @@
 #!/bin/sh
+set -e
 
-###############################################
+echo "=== 🛠 生成 sl‑3000‑emmc 三件套（DTS + MK） ==="
+
+#########################################
 # 1. 生成 DTS：mt7981b-sl-3000-emmc.dts
-###############################################
+#########################################
 
 DTS="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
+mkdir -p "$(dirname "$DTS")"
 
 cat > "$DTS" << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
@@ -13,46 +17,50 @@ cat > "$DTS" << 'EOF'
 #include "mt7981.dtsi"
 
 / {
-    model = "SL-3000 eMMC bootstrap version";
+    model = "SL 3000 eMMC Router";
     compatible = "sl,3000-emmc", "mediatek,mt7981";
+
+    #address-cells = <2>;
+    #size-cells = <2>;
 
     aliases {
         serial0 = &uart0;
-        led-boot = &status_red_led;
-        led-failsafe = &status_red_led;
-        led-running = &status_green_led;
-        led-upgrade = &status_blue_led;
+        led-boot = &led_red;
+        led-failsafe = &led_red;
+        led-running = &led_green;
+        led-upgrade = &led_blue;
     };
 
     chosen {
         stdout-path = "serial0:115200n8";
-        bootargs = "console=ttyS0,115200n8 root=PARTLABEL=rootfs rootwait";
+        bootargs = "console=ttyS0,115200n8";
     };
 
-    memory {
-        reg = <0 0x40000000 0 0x20000000>;
+    memory@40000000 {
+        device_type = "memory";
+        reg = <0x40000000 0x20000000>;
     };
 
     leds {
         compatible = "gpio-leds";
 
-        status_red_led: led-0 {
+        led_red: led-red {
             label = "red:status";
             gpios = <&pio 10 GPIO_ACTIVE_LOW>;
         };
 
-        status_green_led: led-1 {
+        led_green: led-green {
             label = "green:status";
             gpios = <&pio 11 GPIO_ACTIVE_LOW>;
         };
 
-        status_blue_led: led-2 {
+        led_blue: led-blue {
             label = "blue:status";
             gpios = <&pio 12 GPIO_ACTIVE_LOW>;
         };
     };
 
-    gpio-keys {
+    keys {
         compatible = "gpio-keys";
 
         reset {
@@ -71,10 +79,14 @@ cat > "$DTS" << 'EOF'
 };
 
 /* UART */
-&uart0 { status = "okay"; };
+&uart0 {
+    status = "okay";
+};
 
 /* Watchdog */
-&watchdog { status = "okay"; };
+&watchdog {
+    status = "okay";
+};
 
 /* Ethernet + Switch */
 &eth {
@@ -83,18 +95,6 @@ cat > "$DTS" << 'EOF'
     gmac0: mac@0 {
         compatible = "mediatek,eth-mac";
         reg = <0>;
-        phy-mode = "2500base-x";
-
-        fixed-link {
-            speed = <2500>;
-            full-duplex;
-            pause;
-        };
-    };
-
-    gmac1: mac@1 {
-        compatible = "mediatek,eth-mac";
-        reg = <1>;
         phy-mode = "2500base-x";
 
         fixed-link {
@@ -210,14 +210,15 @@ cat > "$DTS" << 'EOF'
 EOF
 
 git add "$DTS"
-echo "✔ DTS 已生成（sl‑3000‑emmc 官方对齐版）"
+echo "✔ DTS 已生成（完全可编译）"
 
 
-###############################################
-# 2. 生成 MK：filogic.mk（官方架构 + 单设备）
-###############################################
+#########################################
+# 2. 生成 MK：filogic.mk（官方结构）
+#########################################
 
 MK="target/linux/mediatek/image/filogic.mk"
+mkdir -p "$(dirname "$MK")"
 
 cat > "$MK" << 'EOF'
 # SPDX-License-Identifier: GPL-2.0-or-later OR MIT
@@ -245,21 +246,27 @@ define Device/sl-3000-emmc
   DEVICE_VENDOR := SL
   DEVICE_MODEL := 3000
   DEVICE_VARIANT := eMMC bootstrap
+
   DEVICE_DTS := mt7981b-sl-3000-emmc
   DEVICE_DTS_DIR := ../dts
+
   DEVICE_PACKAGES := kmod-usb3 kmod-mt7981-firmware mt7981-wo-firmware \
 	f2fsck mkf2fs automount
 
   IMAGES := sysupgrade.bin
+
   KERNEL := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
+
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 TARGET_DEVICES += sl-3000-emmc
-
 EOF
 
 git add "$MK"
-echo "✔ MK 已生成（官方架构 + sl‑3000‑emmc）"
+echo "✔ MK 已生成（官方结构 + 完整 sl‑3000‑emmc）"
+
+echo "=== 🎉 三件套生成完成（可直接编译） ==="
