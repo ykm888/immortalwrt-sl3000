@@ -3,7 +3,10 @@ set -e
 
 #########################################
 # SL3000 三件套生成脚本（最终修复版）
-# 解决：隐藏字符、零宽空格、NBSP、CR、BOM 污染
+# 修复内容：
+#  - 修正 include: mt7981b.dtsi → mt7981.dtsi
+#  - 去除所有隐藏字符（BOM / CR / NBSP / 零宽空格）
+#  - 保持原有结构与路径完全一致
 #########################################
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -16,7 +19,7 @@ mkdir -p "$(dirname "$DTS_OUT")"
 mkdir -p "$(dirname "$MK_OUT")"
 
 #########################################
-# 1. 生成 DTS（无 BOM / 无隐藏字符）
+# 1. 生成 DTS（修复 include + 无隐藏字符）
 #########################################
 echo "=== 🧬 生成 DTS ==="
 
@@ -24,7 +27,7 @@ cat <<'EOF' > "$DTS_OUT"
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
 
-#include "mt7981b.dtsi"
+#include "mt7981.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/leds/common.h>
@@ -81,7 +84,7 @@ CONFIG_PACKAGE_luci-app-dockerman=y
 EOF
 
 #########################################
-# 4. 清理隐藏字符（核心修复）
+# 4. 工程级隐藏字符清理（核心修复）
 #########################################
 echo "=== 🧹 清理隐藏字符（最终修复） ==="
 
@@ -97,4 +100,4 @@ clean_file "$DTS_OUT"
 clean_file "$MK_OUT"
 clean_file "$CFG_OUT"
 
-echo "✔ 三件套生成完成（无隐藏字符）"
+echo "✔ 三件套生成完成（无隐藏字符 + include 修复）"
