@@ -3,12 +3,12 @@
 define Device/mt7981b-sl3000-emmc
   DEVICE_VENDOR := SL
   DEVICE_MODEL := 3000
-  DEVICE_VARIANT := eMMC
+  DEVICE_VARIANT := eMMC Flagship
   DEVICE_DTS := mt7981b-sl3000-emmc
   DEVICE_DTS_DIR := ../files-6.6/arch/arm64/boot/dts/mediatek
 
   DEVICE_PACKAGES := kmod-usb3 kmod-mt7981-firmware mt7981-wo-firmware \
-	f2fsck mkf2fs automount
+	f2fsck mkf2fs automount block-mount kmod-fs-f2fs kmod-fs-ext4
 
   IMAGES := sysupgrade.bin
 
