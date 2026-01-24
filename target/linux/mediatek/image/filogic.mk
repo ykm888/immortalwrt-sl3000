@@ -7,6 +7,9 @@ define Device/mt7981b-sl3000-emmc
   DEVICE_DTS := mt7981b-sl3000-emmc
   DEVICE_DTS_DIR := ../files-6.6/arch/arm64/boot/dts/mediatek
 
+  # ⭐ 关键修复：没有这个字段就不会生成固件
+  SUPPORTED_DEVICES := mt7981b-sl3000-emmc
+
   DEVICE_PACKAGES := \
 	kmod-mt7981-firmware mt7981-wo-firmware \
 	f2fsck mkf2fs automount block-mount kmod-fs-f2fs kmod-fs-ext4 kmod-fs-overlay \
