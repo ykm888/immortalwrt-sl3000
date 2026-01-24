@@ -1,5 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-or-later OR MIT
-
 define Device/mt7981b-sl3000-emmc
   DEVICE_VENDOR := SL
   DEVICE_MODEL := 3000
@@ -9,7 +7,7 @@ define Device/mt7981b-sl3000-emmc
 
   DEVICE_PACKAGES := \
     kmod-mt7981-firmware mt7981-wo-firmware \
-    f2fsck mkf2fs automount block-mount kmod-fs-f2fs kmod-fs-ext4 kmod-fs-overlay \
+    block-mount kmod-fs-f2fs kmod-fs-ext4 kmod-fs-overlay \
     luci-theme-argon luci-app-passwall2 luci-compat kmod-tun \
     xray-core xray-plugin \
     shadowsocks-libev-config shadowsocks-libev-ss-local \
