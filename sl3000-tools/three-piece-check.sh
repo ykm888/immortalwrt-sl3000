@@ -8,7 +8,7 @@ MK="target/linux/mediatek/image/filogic.mk"
 CONF=".config"
 
 [ -f "$DTS" ] || { echo "❌ DTS 缺失"; exit 1; }
-[ -f "$MK" ] || { echo "❌ MK 缺失"; exit 1; }
+[ -f "$MK" ]  || { echo "❌ MK 缺失"; exit 1; }
 [ -f "$CONF" ] || { echo "❌ CONFIG 缺失"; exit 1; }
 
 echo "✔ 三件套存在且路径正确"
