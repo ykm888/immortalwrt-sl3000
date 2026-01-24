@@ -5,14 +5,12 @@ define Device/mt7981b-sl3000-emmc
   DEVICE_MODEL := 3000
   DEVICE_VARIANT := eMMC Flagship
   DEVICE_DTS := mt7981b-sl3000-emmc
-  DEVICE_DTS_DIR := ../files-6.6/arch/arm64/boot/dts/mediatek
-
   SUPPORTED_DEVICES := mt7981b-sl3000-emmc
 
   DEVICE_PACKAGES := \
     kmod-mt7981-firmware mt7981-wo-firmware \
     f2fsck mkf2fs automount block-mount kmod-fs-f2fs kmod-fs-ext4 kmod-fs-overlay \
-    luci-app-passwall2 luci-compat kmod-tun \
+    luci-theme-argon luci-app-passwall2 luci-compat kmod-tun \
     xray-core xray-plugin \
     shadowsocks-libev-config shadowsocks-libev-ss-local \
     shadowsocks-libev-ss-redir shadowsocks-libev-ss-server \
@@ -28,4 +26,5 @@ define Device/mt7981b-sl3000-emmc
 
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
+
 TARGET_DEVICES += mt7981b-sl3000-emmc
