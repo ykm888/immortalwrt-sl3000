@@ -102,8 +102,17 @@ define Device/mt7981b-sl3000-emmc
   DEVICE_DTS := mt7981b-sl3000-emmc
   DEVICE_DTS_DIR := ../files-6.6/arch/arm64/boot/dts/mediatek
 
-  DEVICE_PACKAGES := kmod-usb3 kmod-mt7981-firmware mt7981-wo-firmware \
-	f2fsck mkf2fs automount block-mount kmod-fs-f2fs kmod-fs-ext4
+  DEVICE_PACKAGES := \
+	kmod-mt7981-firmware mt7981-wo-firmware \
+	f2fsck mkf2fs automount block-mount kmod-fs-f2fs kmod-fs-ext4 \
+	luci-app-passwall2 luci-compat kmod-tun \
+	xray-core xray-plugin \
+	shadowsocks-libev-config shadowsocks-libev-ss-local \
+	shadowsocks-libev-ss-redir shadowsocks-libev-ss-server \
+	chinadns-ng dns2socks dns2tcp tcping \
+	dockerd docker docker-compose luci-app-dockerman \
+	kmod-fs-overlay kmod-br-netfilter kmod-crypto-hash \
+	kmod-veth kmod-macvlan kmod-ipvlan kmod-nf-conntrack kmod-nf-nat
 
   IMAGES := sysupgrade.bin
 
@@ -132,13 +141,44 @@ CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y
 
 CONFIG_LINUX_6_6=y
 
-CONFIG_PACKAGE_kmod-usb3=y
+# WiFi 固件
 CONFIG_PACKAGE_kmod-mt7981-firmware=y
 CONFIG_PACKAGE_mt7981-wo-firmware=y
+
+# 存储与文件系统
 CONFIG_PACKAGE_block-mount=y
 CONFIG_PACKAGE_kmod-fs-f2fs=y
 CONFIG_PACKAGE_kmod-fs-ext4=y
+CONFIG_PACKAGE_kmod-fs-overlay=y
+
+##### Passwall2 #####
+CONFIG_PACKAGE_luci-app-passwall2=y
+CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_kmod-tun=y
+CONFIG_PACKAGE_xray-core=y
+CONFIG_PACKAGE_xray-plugin=y
+CONFIG_PACKAGE_shadowsocks-libev-config=y
+CONFIG_PACKAGE_shadowsocks-libev-ss-local=y
+CONFIG_PACKAGE_shadowsocks-libev-ss-redir=y
+CONFIG_PACKAGE_shadowsocks-libev-ss-server=y
+CONFIG_PACKAGE_chinadns-ng=y
+CONFIG_PACKAGE_dns2socks=y
+CONFIG_PACKAGE_dns2tcp=y
+CONFIG_PACKAGE_tcping=y
+
+##### Docker #####
+CONFIG_PACKAGE_dockerd=y
+CONFIG_PACKAGE_docker=y
+CONFIG_PACKAGE_docker-compose=y
+CONFIG_PACKAGE_luci-app-dockerman=y
+CONFIG_PACKAGE_kmod-br-netfilter=y
+CONFIG_PACKAGE_kmod-crypto-hash=y
+CONFIG_PACKAGE_kmod-veth=y
+CONFIG_PACKAGE_kmod-macvlan=y
+CONFIG_PACKAGE_kmod-ipvlan=y
+CONFIG_PACKAGE_kmod-nf-conntrack=y
+CONFIG_PACKAGE_kmod-nf-nat=y
 EOF
 
 echo "✔ CONFIG 生成完成"
-echo "=== 🎉 三件套生成完成（24.10 / Linux 6.6 / 工程级） ==="
+echo "=== 🎉 三件套生成完成（24.10 / Linux 6.6 / 工程级旗舰版 + Passwall2 + Docker） ==="
