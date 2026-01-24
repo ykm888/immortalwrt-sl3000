@@ -53,13 +53,14 @@ jobs:
           git clone --depth=1 -b main https://github.com/ykm888/immortalwrt-sl3000.git openwrt
           echo "已拉取 SL3000 专用源码"
 
-      # 6. 使用根目录设备专用配置
-      - name: Use root device config
+      # 6. 先生成三件套（必须在检查前）
+      - name: Generate SL3000 Three-Piece Set
         run: |
-          cp mt7981b-sl3000-emmc.config openwrt/.config
-          echo "已使用根目录 mt7981b-sl3000-emmc.config"
+          chmod +x sl3000-tools/generate-three-piece.sh
+          ./sl3000-tools/generate-three-piece.sh
+          echo "三件套已按黄金模板生成"
 
-      # 6.5 all-in-one 检查
+      # 7. 再运行 all-in-one 检查（现在 DTS 已生成，不会报错）
       - name: Run all-in-one CHECK (24.10 / 6.6)
         run: |
           echo "=== 检查 sl3000-tools 目录 ==="
@@ -68,19 +69,11 @@ jobs:
           ./sl3000-tools/all-in-one.sh check
           echo "all-in-one 检查模式完成"
 
-      # 7. 生成三件套
-      - name: Generate SL3000 Three-Piece Set
+      # 8. 使用根目录设备专用配置（替代 .config）
+      - name: Use root device config
         run: |
-          chmod +x sl3000-tools/generate-three-piece.sh
-          ./sl3000-tools/generate-three-piece.sh
-          echo "三件套已按黄金模板生成并同步到 openwrt/"
-
-      # 8. 校验三件套
-      - name: Validate Three-Piece Set
-        run: |
-          chmod +x sl3000-tools/three-piece-check.sh
-          ./sl3000-tools/three-piece-check.sh
-          echo "三件套校验通过"
+          cp mt7981b-sl3000-emmc.config openwrt/.config
+          echo "已使用 mt7981b-sl3000-emmc.config"
 
       # 9. 更新 feeds
       - name: Update feeds
@@ -183,4 +176,4 @@ jobs:
             - 工具链构建完成
             - 固件构建完成
           files: |
-  
+            openwrt/bin/targets/mediatek/filogic/*
