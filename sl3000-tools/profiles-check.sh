@@ -1,24 +1,13 @@
 #!/bin/sh
 set -e
 
-echo "=== 🔍 profiles.json 设备注册检查 ==="
+echo "=== 🔍 检查 profiles.json 是否包含 SL3000 ==="
 
-# 查找 profiles.json 文件
-profile=$(find openwrt/bin/targets -name profiles.json | head -n 1)
+PROFILE="bin/targets/mediatek/filogic/profiles.json"
 
-if [ -z "$profile" ]; then
-    echo "❌ profiles.json 未找到"
-    exit 1
-fi
-
-echo "✔ profiles.json 存在: $profile"
-
-# 检查设备 ID 是否注册
-if grep -q '"id": "sl-3000-emmc"' "$profile"; then
-    echo "✔ 设备已注册 (sl-3000-emmc)"
+if grep -q "mt7981b-sl3000-emmc" "$PROFILE"; then
+    echo "✔ 设备已注册"
 else
-    echo "❌ 设备未注册 (sl-3000-emmc)"
+    echo "❌ 设备未注册（固件不会生成）"
     exit 1
 fi
-
-echo "=== ✅ profiles.json 检查完成 ==="
