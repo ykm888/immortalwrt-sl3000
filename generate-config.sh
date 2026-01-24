@@ -1,16 +1,25 @@
 #!/bin/sh
+set -e
 
 CONF=".config"
 
+echo "=== 📝 正在生成完整 .config（sl‑3000‑emmc / 24.10） ==="
+
 cat > "$CONF" << 'EOF'
-ensure_config CONFIG_TARGET_mediatek y
-ensure_config CONFIG_TARGET_mediatek_filogic y
-ensure_config CONFIG_TARGET_mediatek_filogic_DEVICE_sl-3000-emmc y
-ensure_config CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_sl-3000-emmc y
-# 内核版本
+CONFIG_TARGET_mediatek=y
+CONFIG_TARGET_mediatek_filogic=y
+CONFIG_TARGET_mediatek_filogic_DEVICE_sl-3000-emmc=y
+CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_sl-3000-emmc=y
+
+# 内核版本（24.10 = 6.6）
 CONFIG_LINUX_6_6=y
 
-# 文件系统支持
+# RootFS / 文件系统支持
+CONFIG_TARGET_ROOTFS_INITRAMFS=y
+CONFIG_TARGET_ROOTFS_SQUASHFS=y
+CONFIG_TARGET_ROOTFS_EXT4FS=y
+CONFIG_TARGET_ROOTFS_PARTSIZE=160
+
 CONFIG_PACKAGE_block-mount=y
 CONFIG_PACKAGE_automount=y
 CONFIG_PACKAGE_fdisk=y
@@ -26,7 +35,7 @@ CONFIG_PACKAGE_iperf3=y
 CONFIG_PACKAGE_curl=y
 CONFIG_PACKAGE_wget=y
 
-# 驱动支持
+# 驱动支持（MT7981 + eMMC）
 CONFIG_PACKAGE_kmod-mt7981-firmware=y
 CONFIG_PACKAGE_kmod-mt7981-eth=y
 CONFIG_PACKAGE_kmod-mt7981-wifi=y
@@ -45,4 +54,5 @@ CONFIG_BUSYBOX_CONFIG_FEATURE_EDITING_FANCY_PROMPT=y
 EOF
 
 git add "$CONF"
-echo "✔ .config 已生成"
+
+echo "✔ .config 已生成（完整配置写入成功）"
