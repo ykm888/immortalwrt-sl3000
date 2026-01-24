@@ -7,6 +7,6 @@ rm -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
 rm -f target/linux/mediatek/image/filogic.mk
 rm -f .config
 
-sh generate-three-piece.sh
+sh sl3000-tools/generate-three-piece.sh
 
 echo "=== ✔ 三件套已重建 ==="
