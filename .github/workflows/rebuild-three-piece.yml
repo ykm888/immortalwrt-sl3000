@@ -1,7 +1,7 @@
 name: Rebuild SL3000 Three-Piece
 
 on:
-  workflow_dispatch:   # 手动触发
+  workflow_dispatch:
 
 jobs:
   rebuild:
@@ -12,19 +12,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 设置执行权限
+      # 2. 设置执行权限（新的 5 个脚本）
       - name: Make scripts executable
         run: |
-          chmod +x rebuild-three-piece.sh
-          chmod +x reset-three-piece.sh
-          chmod +x generate-dts.sh
-          chmod +x generate-mk.sh
-          chmod +x generate-config.sh
+          chmod +x sl3000-tools/generate-three-piece.sh
+          chmod +x sl3000-tools/three-piece-check.sh
+          chmod +x sl3000-tools/three-piece-fix.sh
+          chmod +x sl3000-tools/three-piece-rebuild.sh
+          chmod +x sl3000-tools/profiles-check.sh
 
-      # 3. 运行一键生成三件套脚本
-      - name: Run rebuild-three-piece
+      # 3. 运行三件套重建脚本
+      - name: Run three-piece rebuild
         run: |
-          ./rebuild-three-piece.sh
+          ./sl3000-tools/three-piece-rebuild.sh
 
       # 4. 保存生成的三件套作为构建产物
       - name: Upload three-piece artifacts
@@ -32,7 +32,7 @@ jobs:
         with:
           name: sl3000-three-piece
           path: |
-            target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts
+            target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
             target/linux/mediatek/image/filogic.mk
             .config
 
@@ -41,8 +41,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts
+          git add target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
           git add target/linux/mediatek/image/filogic.mk
           git add .config
-          git commit -m "ci: auto rebuild SL3000 three-piece"
+          git commit -m "ci: auto rebuild SL3000 three-piece" || echo "No changes to commit"
           git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/ykm888/immortalwrt-sl3000.git main
