@@ -10,9 +10,7 @@ set -e
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# 兼容两种布局：
-# 1）仓库根目录有 openwrt/，脚本在 sl3000-tools/ 下
-# 2）脚本已经被拷贝到 openwrt/sl3000-tools/ 下
+# 兼容两种布局：仓库根 / openwrt 内
 if [ -d "$ROOT_DIR/../openwrt" ]; then
     OPENWRT_DIR="$ROOT_DIR/../openwrt"
 else
@@ -32,21 +30,29 @@ fix_paths() {
 }
 
 #########################################
-# 2. 自动修复：清理隐藏字符
+# 2. 自动修复：清理隐藏字符（最终修复版）
 #########################################
 clean_hidden_chars() {
-    echo "=== 🧹 自动清理隐藏字符（BOM / CRLF） ==="
+    echo "=== 🧹 自动清理隐藏字符（BOM / CRLF / 零宽空格 / NBSP） ==="
 
-    find . -type f \( -name "*.dts" -o -name "*.mk" -o -name "mt7981b-sl3000-emmc.config" \) | while read f; do
+    # 1. 清理 CRLF 和 BOM
+    find . -type f \( -name "*.dts" -o -name "*.mk" -o -name "*.config" \) | while read f; do
         sed -i 's/\r$//' "$f"
         sed -i '1s/^\xEF\xBB\xBF//' "$f"
     done
+
+    # 2. 清理 DTS 中的零宽空格、NBSP
+    sed -i 's/\xC2\xA0//g' target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/*.dts
+    sed -i 's/\xE2\x80\x8B//g' target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/*.dts
+
+    # 3. 清理 DTS 中“看似空行但含非法字符”的行
+    sed -i 's/[^[:print:]\t ]//g' target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/*.dts
 
     echo "✔ 隐藏字符清理完成"
 }
 
 #########################################
-# 3. DTS 语法检查
+# 3. DTS 语法检查（加入可视化调试）
 #########################################
 check_dts_syntax() {
     echo "=== 🔍 DTS 语法检查（显示 dtc 输出） ==="
@@ -59,10 +65,10 @@ check_dts_syntax() {
     fi
 
     echo "=== 🧾 DTS 前 20 行（CI 实际使用版本） ==="
-sed -n '1,20p' "$DTS_FILE"
+    sed -n '1,20p' "$DTS_FILE"
 
-echo "=== 🧾 DTS 前 20 行（显示不可见字符） ==="
-sed -n '1,20p' "$DTS_FILE" | sed -n 'l'
+    echo "=== 🧾 DTS 前 20 行（显示不可见字符） ==="
+    sed -n '1,20p' "$DTS_FILE" | sed -n 'l'
 
     if ! dtc -I dts -O dtb "$DTS_FILE" -o /dev/null; then
         echo "❌ DTS 语法错误：$DTS_FILE"
@@ -107,7 +113,7 @@ check_config_consistency() {
     grep -q "CONFIG_TARGET_mediatek_filogic=y" "$CFG" || { echo "❌ CONFIG 缺少 filogic"; exit 1; }
     grep -q "CONFIG_LINUX_6_6=y" "$CFG" || { echo "❌ CONFIG 未启用 Linux 6.6"; exit 1; }
     grep -q "CONFIG_PACKAGE_luci-app-passwall2=y" "$CFG" || echo "⚠ Passwall2 未启用"
-    grep -q "CONFIG_PACKAGE_docker=y" || echo "⚠ Docker 未启用"
+    grep -q "CONFIG_PACKAGE_docker=y" "$CFG" || echo "⚠ Docker 未启用"
 
     echo "✔ CONFIG 一致性检查通过"
 }
@@ -163,7 +169,6 @@ sync_three_piece() {
     cp target/linux/mediatek/image/filogic.mk \
        "$OPENWRT_DIR/target/linux/mediatek/image/"
 
-    # 修复：使用真源 config
     cp mt7981b-sl3000-emmc.config "$OPENWRT_DIR/.config"
 
     echo "✔ 三件套同步完成"
@@ -192,7 +197,6 @@ run_check() {
 run_full() {
     echo "=== 🚀 FULL 模式：完整构建固件 ==="
 
-    # 必须先生成三件套
     chmod +x "$ROOT_DIR/generate-three-piece.sh"
     "$ROOT_DIR/generate-three-piece.sh"
 
