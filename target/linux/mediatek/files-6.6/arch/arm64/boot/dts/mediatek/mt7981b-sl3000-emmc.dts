@@ -49,22 +49,10 @@
 	};
 };
 
-&uart0 {
-	status = "okay";
-};
-
-&eth {
-	status = "okay";
-	mediatek,eth-mac = "00:11:22:33:44:55";
-};
-
-&switch {
-	status = "okay";
-};
-
-&pcie {
-	status = "okay";
-};
+&uart0 { status = "okay"; };
+&eth   { status = "okay"; };
+&switch { status = "okay"; };
+&pcie { status = "okay"; };
 
 &wifi {
 	status = "okay";
