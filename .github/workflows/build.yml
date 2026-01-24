@@ -51,27 +51,25 @@ jobs:
           cp .config openwrt/.config
           echo "已使用根目录 .config"
 
-      # 6.5 运行 all-in-one 检查模式（不构建，只体检三件套环境）
+      # 6.5 all-in-one 检查模式（必须在仓库根目录运行）
       - name: Run all-in-one CHECK (24.10 / 6.6)
         run: |
           chmod +x sl3000-tools/all-in-one.sh
           ./sl3000-tools/all-in-one.sh check
           echo "all-in-one 检查模式完成"
 
-      # 7. 运行三件套生成器（黄金模板）
+      # 7. 生成三件套（必须在仓库根目录运行）
       - name: Generate SL3000 Three-Piece Set
         run: |
-          cd openwrt
-          chmod +x ../sl3000-tools/generate-three-piece.sh
-          ../sl3000-tools/generate-three-piece.sh
-          echo "三件套已按黄金模板生成"
+          chmod +x sl3000-tools/generate-three-piece.sh
+          ./sl3000-tools/generate-three-piece.sh
+          echo "三件套已按黄金模板生成并同步到 openwrt/"
 
-      # 8. 三件套校验（使用正式校验脚本）
+      # 8. 校验三件套（必须在仓库根目录运行）
       - name: Validate Three-Piece Set
         run: |
-          cd openwrt
-          chmod +x ../sl3000-tools/three-piece-check.sh
-          ../sl3000-tools/three-piece-check.sh
+          chmod +x sl3000-tools/three-piece-check.sh
+          ./sl3000-tools/three-piece-check.sh
           echo "三件套校验通过"
 
       # 9. 更新 feeds
@@ -170,8 +168,8 @@ jobs:
           name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
           body: |
             自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
-            - all-in-one.sh CHECK 模式通过
-            - 三件套按黄金模板生成并校验
+            - 三件套按黄金模板生成并同步
+            - 校验通过
             - 工具链构建完成
             - 固件构建完成
           files: |
