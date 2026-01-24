@@ -8,9 +8,11 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1. 检出仓库
+      # 1. 检出仓库（必须 fetch-depth: 0，否则会拉到旧版本）
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # 2. 优化磁盘空间
       - name: Optimize disk space
@@ -19,7 +21,7 @@ jobs:
           sudo apt-get autoremove -y
           sudo apt-get clean
 
-      # 3. 安装依赖（补上 dtc）
+      # 3. 安装依赖
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -51,21 +53,21 @@ jobs:
           cp .config openwrt/.config
           echo "已使用根目录 .config"
 
-      # 6.5 all-in-one 检查模式（必须在仓库根目录运行）
+      # 6.5 all-in-one 检查（必须在根目录运行）
       - name: Run all-in-one CHECK (24.10 / 6.6)
         run: |
           chmod +x sl3000-tools/all-in-one.sh
           ./sl3000-tools/all-in-one.sh check
           echo "all-in-one 检查模式完成"
 
-      # 7. 生成三件套（必须在仓库根目录运行）
+      # 7. 生成三件套（必须在根目录运行）
       - name: Generate SL3000 Three-Piece Set
         run: |
           chmod +x sl3000-tools/generate-three-piece.sh
           ./sl3000-tools/generate-three-piece.sh
           echo "三件套已按黄金模板生成并同步到 openwrt/"
 
-      # 8. 校验三件套（必须在仓库根目录运行）
+      # 8. 校验三件套（必须在根目录运行）
       - name: Validate Three-Piece Set
         run: |
           chmod +x sl3000-tools/three-piece-check.sh
