@@ -1,9 +1,10 @@
 #!/bin/sh
+set -e
 
 MK="target/linux/mediatek/image/filogic.mk"
-DEV="sl3000-emmc"
+DEV="sl-3000-emmc"
 
-echo "=== 🔍 mk 校验开始 ==="
+echo "=== 🔍 mk 校验开始（$DEV） ==="
 
 # 1. 文件存在性
 if [ ! -f "$MK" ]; then
@@ -38,4 +39,4 @@ if grep -P -q "[\x{200B}\x{200C}\x{200D}]" "$MK"; then
   exit 1
 fi
 
-echo "✔ mk 校验通过"
+echo "✔ mk 校验通过（结构正确、无隐藏字符）"
