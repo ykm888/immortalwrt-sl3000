@@ -1,10 +1,10 @@
 #!/bin/sh
 set -e
 
-echo "=== 🛠 生成 SL3000 eMMC 三件套（24.10 / Linux 6.6 / 最终修复版） ==="
+echo "=== 🛠 生成 SL3000 eMMC 三件套（ImmortalWrt 24.10 / Linux 6.6 / Flagship） ==="
 
 #########################################
-# 1. DTS（完全修复版，适配 24.10 / 6.6）
+# 1. DTS（完整修复版）
 #########################################
 
 DTS="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
@@ -63,7 +63,6 @@ cat > "$DTS" << 'EOF'
 
 &eth {
     status = "okay";
-    mediatek,eth-mac = "00:11:22:33:44:55";
 };
 
 &wifi0 {
@@ -81,17 +80,17 @@ cat > "$DTS" << 'EOF'
 };
 EOF
 
-echo "✔ DTS 生成完成（已通过 6.6 语法修复）"
+echo "✔ DTS 生成完成"
 
 
 #########################################
-# 2. MK（最终修复版）
+# 2. MK（官方结构）
 #########################################
 
 MK="target/linux/mediatek/image/filogic.mk"
 mkdir -p target/linux/mediatek/image
 
-cat > "$MK" << 'EOF'
+cat >> "$MK" << 'EOF'
 # SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 
 define Device/mt7981b-sl3000-emmc
@@ -99,14 +98,12 @@ define Device/mt7981b-sl3000-emmc
   DEVICE_MODEL := 3000
   DEVICE_VARIANT := eMMC Flagship
   DEVICE_DTS := mt7981b-sl3000-emmc
-  DEVICE_DTS_DIR := ../files-6.6/arch/arm64/boot/dts/mediatek
-
   SUPPORTED_DEVICES := mt7981b-sl3000-emmc
 
   DEVICE_PACKAGES := \
     kmod-mt7981-firmware mt7981-wo-firmware \
     f2fsck mkf2fs automount block-mount kmod-fs-f2fs kmod-fs-ext4 kmod-fs-overlay \
-    luci-app-passwall2 luci-compat kmod-tun \
+    luci-theme-argon luci-app-passwall2 luci-compat kmod-tun \
     xray-core xray-plugin \
     shadowsocks-libev-config shadowsocks-libev-ss-local \
     shadowsocks-libev-ss-redir shadowsocks-libev-ss-server \
@@ -122,17 +119,19 @@ define Device/mt7981b-sl3000-emmc
 
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
+
 TARGET_DEVICES += mt7981b-sl3000-emmc
 EOF
 
-echo "✔ MK 生成完成（SUPPORTED_DEVICES 已修复）"
+echo "✔ MK 生成完成"
 
 
 #########################################
 # 3. CONFIG（完整工程级版本）
 #########################################
 
-CONF=".config"
+CONF="target/linux/mediatek/mt7981b-sl3000-emmc.config"
+mkdir -p target/linux/mediatek
 
 cat > "$CONF" << 'EOF'
 CONFIG_TARGET_mediatek=y
@@ -150,6 +149,7 @@ CONFIG_PACKAGE_kmod-fs-f2fs=y
 CONFIG_PACKAGE_kmod-fs-ext4=y
 CONFIG_PACKAGE_kmod-fs-overlay=y
 
+CONFIG_PACKAGE_luci-theme-argon=y
 CONFIG_PACKAGE_luci-app-passwall2=y
 CONFIG_PACKAGE_luci-compat=y
 CONFIG_PACKAGE_kmod-tun=y
@@ -178,4 +178,4 @@ CONFIG_PACKAGE_kmod-nf-nat=y
 EOF
 
 echo "✔ CONFIG 生成完成"
-echo "=== 🎉 三件套生成完成（24.10 / Linux 6.6 / 最终修复版） ==="
+echo "=== 🎉 三件套生成完成（ImmortalWrt 24.10 / Linux 6.6 / Flagship） ==="
