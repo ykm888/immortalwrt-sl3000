@@ -51,15 +51,15 @@ jobs:
           cp .config openwrt/.config
           echo "已使用根目录 .config"
 
-      # 7. 运行三件套自动生成器（你放在根目录的脚本）
-      - name: Generate SL3000 eMMC Three-Piece Set
+      # 7. 运行黄金模板三件套生成器（替代旧 Auto Fix）
+      - name: Generate SL3000 eMMC Three-Piece Set (Golden Template)
         run: |
           cd openwrt
           chmod +x ../generate_sl3000_emmc.sh
           ../generate_sl3000_emmc.sh
-          echo "三件套已自动生成"
+          echo "三件套已按黄金模板生成"
 
-      # 8. 三件套增强检测
+      # 8. 三件套增强检测（只检测，不修复）
       - name: Enhanced Three-Piece Check
         run: |
           cd openwrt
@@ -82,12 +82,10 @@ jobs:
 
           echo "=== 隐藏字符检查 ==="
           if grep -q "$(printf '\r')" "$DTS" "$MK" "$CONF"; then
-            echo "检测到 CRLF"
-            exit 1
+            echo "检测到 CRLF"; exit 1;
           fi
           if grep -q "$(printf '\xEF\xBB\xBF')" "$DTS" "$MK" "$CONF"; then
-            echo "检测到 BOM"
-            exit 1
+            echo "检测到 BOM"; exit 1;
           fi
 
           echo "=== 三件套检测全部通过 ==="
@@ -188,7 +186,7 @@ jobs:
           name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
           body: |
             自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
-            - 三件套自动生成
+            - 三件套按黄金模板生成
             - 三件套检测通过
             - 工具链构建完成
             - 固件构建完成
