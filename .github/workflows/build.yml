@@ -14,12 +14,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # 1.1 调试：打印当前目录结构
-      - name: Debug list files
-        run: |
-          echo "=== 当前目录结构 ==="
-          ls -R .
-
       # 2. 优化磁盘空间
       - name: Optimize disk space
         run: |
@@ -52,45 +46,40 @@ jobs:
           rm -rf openwrt
           git clone --depth=1 -b main https://github.com/ykm888/immortalwrt-sl3000.git openwrt
           echo "已拉取 SL3000 专用源码"
-          ls -R openwrt
 
       # 6. 拷贝工具和设备配置到 openwrt
-      - name: Copy SL3000 tools and config into OpenWrt
+      - name: Copy SL3000 tools and config
         run: |
           cp -r sl3000-tools openwrt/
           cp mt7981b-sl3000-emmc.config openwrt/
           echo "已拷贝 sl3000-tools 和设备配置到 openwrt/"
 
-      # 7. 先生成三件套（在 openwrt 里执行）
+      # 7. 生成三件套（必须在 openwrt 内执行）
       - name: Generate SL3000 Three-Piece Set
         working-directory: openwrt
         run: |
           chmod +x sl3000-tools/generate-three-piece.sh
           ./sl3000-tools/generate-three-piece.sh
-          echo "三件套已按黄金模板生成（openwrt/ 内）"
+          echo "三件套已按黄金模板生成"
 
-      # 8. 运行 all-in-one 检查（现在 DTS 已生成，不会报错）
-      - name: Run all-in-one CHECK (24.10 / 6.6)
+      # 8. 运行 all-in-one 检查
+      - name: Run all-in-one CHECK
         working-directory: openwrt
         run: |
-          echo "=== 检查 sl3000-tools 目录（openwrt/ 内） ==="
-          ls -R sl3000-tools
           chmod +x sl3000-tools/all-in-one.sh
           ./sl3000-tools/all-in-one.sh check
-          echo "all-in-one 检查模式完成"
 
-      # 8.1 调试：打印 DTS 前 20 行（CI 实际使用的版本）
+      # 8.1 调试：打印 DTS 前 20 行
       - name: Debug DTS head
         working-directory: openwrt
         run: |
-          echo "=== DTS 前 20 行（CI 实际使用） ==="
+          echo "=== DTS 前 20 行 ==="
           sed -n '1,20p' target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts || echo "DTS 不存在"
 
-      # 9. 使用根目录设备专用配置（替代 .config）
+      # 9. 使用设备专用配置
       - name: Use root device config
         run: |
           cp mt7981b-sl3000-emmc.config openwrt/.config
-          echo "已使用 mt7981b-sl3000-emmc.config 作为 openwrt/.config"
 
       # 10. 更新 feeds
       - name: Update feeds
@@ -99,88 +88,39 @@ jobs:
           ./scripts/feeds update -a || true
           ./scripts/feeds install -a
 
-      # 11. 应用路由器相关补丁
-      - name: Apply router-only patches
-        working-directory: openwrt
-        run: |
-          if [ -d patches ]; then
-            if ls patches/* >/dev/null 2>&1; then
-              echo "=== 开始应用路由器相关补丁 ==="
-              for p in patches/*; do
-                case "$p" in
-                  *mediatek*|*network*|*wifi*|*ethernet*|*router*)
-                    echo "应用补丁: $p"
-                    patch -p1 < "$p"
-                    ;;
-                  *)
-                    echo "跳过非路由器补丁: $p"
-                    ;;
-                esac
-              done
-            else
-              echo "patches/ 目录为空，跳过补丁应用"
-            fi
-          else
-            echo "无 patches 目录，跳过补丁应用"
-          fi
-
-      # 12. 自动裁剪非路由器软件包
-      - name: Remove non-router packages
-        working-directory: openwrt
-        run: |
-          sed -i '/CONFIG_PACKAGE_kmod-sound/d' .config
-          sed -i '/CONFIG_PACKAGE_alsa/d' .config
-          sed -i '/CONFIG_PACKAGE_pulseaudio/d' .config
-          sed -i '/CONFIG_PACKAGE_p910nd/d' .config
-          sed -i '/CONFIG_PACKAGE_usb-printer/d' .config
-          sed -i '/CONFIG_PACKAGE_kmod-bluetooth/d' .config
-          sed -i '/CONFIG_PACKAGE_bluez/d' .config
-          sed -i '/CONFIG_PACKAGE_kmod-video/d' .config
-          sed -i '/CONFIG_PACKAGE_motion/d' .config
-          sed -i '/CONFIG_PACKAGE_luci-theme-openwrt-2020/d' .config
-          sed -i '/CONFIG_PACKAGE_luci-app-qos/d' .config
-          sed -i '/CONFIG_PACKAGE_kmod-usb-audio/d' .config
-          sed -i '/CONFIG_PACKAGE_kmod-usb-video/d' .config
-          sed -i '/CONFIG_PACKAGE_kmod-ledtrig-audio/d' .config
-          sed -i '/^$/d' .config
-          echo "=== 非路由器软件包裁剪完成 ==="
-
-      # 13. 规范化配置
+      # 11. 规范化配置
       - name: Normalize config
         working-directory: openwrt
         run: |
           make defconfig
-          echo "defconfig 完成"
 
-      # 14. 构建工具链
+      # 12. 构建工具链
       - name: Build toolchain
         working-directory: openwrt
         run: |
           make toolchain/install -j$(nproc) V=s
-          echo "工具链构建完成"
 
-      # 15. 构建固件
+      # 13. 构建固件
       - name: Build firmware
         working-directory: openwrt
         run: |
           make -j$(nproc) V=s | tee build.log
-          echo "固件构建完成"
 
-      # 16. 上传构建日志
+      # 14. 上传构建日志
       - name: Upload build log
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: openwrt/build.log
 
-      # 17. 上传固件产物
+      # 15. 上传固件产物
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-sl3000-emmc
           path: openwrt/bin/targets/mediatek/filogic/
 
-      # 18. 自动发布固件
+      # 16. 自动发布固件
       - name: Release firmware
         uses: softprops/action-gh-release@v1
         with:
@@ -188,8 +128,8 @@ jobs:
           name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
           body: |
             自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
-            - 三件套按黄金模板生成并同步（openwrt/ 内）
-            - 校验通过
+            - 三件套按黄金模板生成并同步
+            - DTS 检查通过
             - 工具链构建完成
             - 固件构建完成
           files: |
