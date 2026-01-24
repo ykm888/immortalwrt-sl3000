@@ -1,14 +1,24 @@
 #!/bin/bash
 set -e
 
-echo "=== 🛠 生成 SL3000 eMMC 三件套（合并脚本 / ImmortalWrt 24.10 / Linux 6.6） ==="
+echo "=== 🛠 生成 SL3000 eMMC 三件套（工程旗舰版 / ImmortalWrt 24.10 / Linux 6.6） ==="
+
+#########################################
+# 0. 目录准备（与 three-piece-fix/all-in-one 完全一致）
+#########################################
+
+DTS_DIR="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
+MK_DIR="target/linux/mediatek/image"
+CONF_FILE="mt7981b-sl3000-emmc.config"
+
+mkdir -p "$DTS_DIR"
+mkdir -p "$MK_DIR"
 
 #########################################
 # 1. DTS（严格 dtc 校验通过）
 #########################################
 
-DTS="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-mkdir -p target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek
+DTS="$DTS_DIR/mt7981b-sl3000-emmc.dts"
 
 cat > "$DTS" << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
@@ -17,6 +27,7 @@ cat > "$DTS" << 'EOF'
 #include "mt7981b.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
 
 / {
     model = "SL3000 eMMC Flagship";
@@ -24,6 +35,10 @@ cat > "$DTS" << 'EOF'
 
     aliases {
         serial0 = &uart0;
+        led-boot = &led_status;
+        led-failsafe = &led_status;
+        led-running = &led_status;
+        led-upgrade = &led_status;
     };
 
     chosen {
@@ -33,7 +48,7 @@ cat > "$DTS" << 'EOF'
     leds {
         compatible = "gpio-leds";
 
-        status {
+        led_status: status {
             label = "sl3000:blue:status";
             gpios = <&pio 10 GPIO_ACTIVE_LOW>;
             default-state = "off";
@@ -75,15 +90,14 @@ cat > "$DTS" << 'EOF'
 };
 EOF
 
-echo "✔ DTS 生成完成"
+echo "✔ DTS 生成完成：$DTS"
 
 
 #########################################
-# 2. MK（官方结构）
+# 2. MK（官方结构 / 与 profiles.json 对齐）
 #########################################
 
-MK="target/linux/mediatek/image/filogic.mk"
-mkdir -p target/linux/mediatek/image
+MK="$MK_DIR/filogic.mk"
 
 cat > "$MK" << 'EOF'
 define Device/mt7981b-sl3000-emmc
@@ -116,16 +130,14 @@ endef
 TARGET_DEVICES += mt7981b-sl3000-emmc
 EOF
 
-echo "✔ MK 生成完成"
+echo "✔ MK 生成完成：$MK"
 
 
 #########################################
-# 3. CONFIG（根目录真源）
+# 3. CONFIG（根目录真源 / 与设备名 & 内核对齐）
 #########################################
 
-CONF="mt7981b-sl3000-emmc.config"
-
-cat > "$CONF" << 'EOF'
+cat > "$CONF_FILE" << 'EOF'
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
 CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y
@@ -171,6 +183,11 @@ CONFIG_PACKAGE_kmod-nf-conntrack=y
 CONFIG_PACKAGE_kmod-nf-nat=y
 EOF
 
-echo "✔ CONFIG 生成完成"
+echo "✔ CONFIG 生成完成：$CONF_FILE"
 
-echo "=== 🎉 三件套生成完成（合并脚本） ==="
+
+#########################################
+# 4. 收尾提示
+#########################################
+
+echo "=== 🎉 SL3000 三件套生成完成（工程旗舰版） ==="
