@@ -57,7 +57,9 @@ cat > "$DTS" << 'EOF'
     };
 };
 
-&uart0 { status = "okay"; };
+&uart0 {
+    status = "okay";
+};
 
 &eth {
     status = "okay";
