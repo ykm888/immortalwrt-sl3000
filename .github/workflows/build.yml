@@ -38,7 +38,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-immortalwrt-
 
-      # 5. 拉取 SL3000 专用源码（修复：先删除 openwrt）
+      # 5. 拉取 SL3000 专用源码
       - name: Clone ImmortalWrt source
         run: |
           rm -rf openwrt
@@ -51,44 +51,21 @@ jobs:
           cp .config openwrt/.config
           echo "已使用根目录 .config"
 
-      # 7. 运行黄金模板三件套生成器（替代旧 Auto Fix）
-      - name: Generate SL3000 eMMC Three-Piece Set (Golden Template)
+      # 7. 运行三件套生成器（黄金模板）
+      - name: Generate SL3000 Three-Piece Set
         run: |
           cd openwrt
-          chmod +x ../generate_sl3000_emmc.sh
-          ../generate_sl3000_emmc.sh
+          chmod +x ../sl3000-tools/generate-three-piece.sh
+          ../sl3000-tools/generate-three-piece.sh
           echo "三件套已按黄金模板生成"
 
-      # 8. 三件套增强检测（只检测，不修复）
-      - name: Enhanced Three-Piece Check
+      # 8. 三件套校验（使用正式校验脚本）
+      - name: Validate Three-Piece Set
         run: |
           cd openwrt
-
-          DTS="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
-          MK="target/linux/mediatek/image/filogic.mk"
-          CONF=".config"
-          DEV="sl-3000-emmc"
-
-          echo "=== 三件套存在性检查 ==="
-          for f in "$DTS" "$MK" "$CONF"; do
-            [ -f "$f" ] || { echo "缺少文件: $f"; exit 1; }
-          done
-
-          echo "=== 三件套一致性检查 ==="
-          grep -q 'compatible.*sl,3000-emmc' "$DTS" || { echo "DTS compatible 不匹配"; exit 1; }
-          grep -q "Device/$DEV" "$MK" || { echo "mk 未定义设备段"; exit 1; }
-          grep -q "TARGET_DEVICES += $DEV" "$MK" || { echo "mk 未加入设备"; exit 1; }
-          grep -q "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEV}=y" "$CONF" || { echo "config 未启用设备"; exit 1; }
-
-          echo "=== 隐藏字符检查 ==="
-          if grep -q "$(printf '\r')" "$DTS" "$MK" "$CONF"; then
-            echo "检测到 CRLF"; exit 1;
-          fi
-          if grep -q "$(printf '\xEF\xBB\xBF')" "$DTS" "$MK" "$CONF"; then
-            echo "检测到 BOM"; exit 1;
-          fi
-
-          echo "=== 三件套检测全部通过 ==="
+          chmod +x ../sl3000-tools/three-piece-check.sh
+          ../sl3000-tools/three-piece-check.sh
+          echo "三件套校验通过"
 
       # 9. 更新 feeds
       - name: Update feeds
@@ -97,7 +74,7 @@ jobs:
           ./scripts/feeds update -a || true
           ./scripts/feeds install -a
 
-      # 10. 过滤并应用路由器相关补丁
+      # 10. 应用路由器相关补丁
       - name: Apply router-only patches
         run: |
           cd openwrt
