@@ -19,13 +19,13 @@ jobs:
           sudo apt-get autoremove -y
           sudo apt-get clean
 
-      # 3. 安装依赖
+      # 3. 安装依赖（补上 dtc）
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential git-core libncurses5-dev \
             zlib1g-dev gawk flex gettext wget unzip python3 python3-distutils \
-            file libssl-dev rsync ccache
+            file libssl-dev rsync ccache device-tree-compiler
 
       # 4. 缓存 dl 和 ccache
       - name: Cache downloads and ccache
@@ -50,6 +50,13 @@ jobs:
         run: |
           cp .config openwrt/.config
           echo "已使用根目录 .config"
+
+      # 6.5 运行 all-in-one 检查模式（不构建，只体检三件套环境）
+      - name: Run all-in-one CHECK (24.10 / 6.6)
+        run: |
+          chmod +x sl3000-tools/all-in-one.sh
+          ./sl3000-tools/all-in-one.sh check
+          echo "all-in-one 检查模式完成"
 
       # 7. 运行三件套生成器（黄金模板）
       - name: Generate SL3000 Three-Piece Set
@@ -163,8 +170,8 @@ jobs:
           name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
           body: |
             自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
-            - 三件套按黄金模板生成
-            - 三件套检测通过
+            - all-in-one.sh CHECK 模式通过
+            - 三件套按黄金模板生成并校验
             - 工具链构建完成
             - 固件构建完成
           files: |
