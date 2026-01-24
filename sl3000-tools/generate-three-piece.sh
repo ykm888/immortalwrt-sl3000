@@ -4,22 +4,31 @@ set -e
 #########################################
 # SL3000 三件套生成脚本（最终修复版）
 # 修复内容：
-#  - 修正 include: mt7981b.dtsi → mt7981.dtsi
+#  - DTS include 修正：mt7981b.dtsi → mt7981.dtsi
 #  - 去除所有隐藏字符（BOM / CR / NBSP / 零宽空格）
-#  - 保持原有结构与路径完全一致
+#  - 生成后自动同步到 openwrt 源码（关键）
+#  - 完全延续你原有路径结构
 #########################################
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# 仓库根目录三件套输出路径
 DTS_OUT="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
 MK_OUT="target/linux/mediatek/image/filogic.mk"
 CFG_OUT="mt7981b-sl3000-emmc.config"
+
+# openwrt 源码路径（CI 中必须同步）
+if [ -d "$ROOT_DIR/../openwrt" ]; then
+    OPENWRT_DIR="$ROOT_DIR/../openwrt"
+else
+    OPENWRT_DIR="$ROOT_DIR/.."
+fi
 
 mkdir -p "$(dirname "$DTS_OUT")"
 mkdir -p "$(dirname "$MK_OUT")"
 
 #########################################
-# 1. 生成 DTS（修复 include + 无隐藏字符）
+# 1. 生成 DTS（include 修正 + 无隐藏字符）
 #########################################
 echo "=== 🧬 生成 DTS ==="
 
@@ -100,4 +109,16 @@ clean_file "$DTS_OUT"
 clean_file "$MK_OUT"
 clean_file "$CFG_OUT"
 
-echo "✔ 三件套生成完成（无隐藏字符 + include 修复）"
+#########################################
+# 5. 同步三件套到 openwrt 源码（关键）
+#########################################
+echo "=== 🔄 同步三件套到 openwrt 源码 ==="
+
+mkdir -p "$OPENWRT_DIR/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
+mkdir -p "$OPENWRT_DIR/target/linux/mediatek/image"
+
+cp "$DTS_OUT" "$OPENWRT_DIR/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/"
+cp "$MK_OUT"  "$OPENWRT_DIR/target/linux/mediatek/image/"
+cp "$CFG_OUT" "$OPENWRT_DIR/.config"
+
+echo "✔ 三件套生成 + 清理 + 同步完成（最终修复版）"
