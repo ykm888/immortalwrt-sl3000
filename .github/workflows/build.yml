@@ -50,64 +50,36 @@ jobs:
           cp .config openwrt/.config
           echo "已使用根目录 .config"
 
-      # 7. 三件套自动修复 + 检测
-      - name: Auto Fix + Enhanced Three-Piece Check
+      # 7. 运行三件套自动生成器（你放在根目录的脚本）
+      - name: Generate SL3000 eMMC Three-Piece Set
+        run: |
+          cd openwrt
+          chmod +x ../generate_sl3000_emmc.sh
+          ../generate_sl3000_emmc.sh
+          echo "三件套已自动生成"
+
+      # 8. 三件套增强检测
+      - name: Enhanced Three-Piece Check
         run: |
           cd openwrt
 
-          DTS="target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts"
+          DTS="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
           MK="target/linux/mediatek/image/filogic.mk"
           CONF=".config"
-          DEV="sl3000-emmc"
+          DEV="sl-3000-emmc"
 
-          echo "=== 自动修复 config ==="
-          ensure_config() {
-            key="$1"
-            val="$2"
-            if ! grep -q "^$key=" "$CONF"; then
-              echo "$key=$val" >> "$CONF"
-              echo "补齐: $key"
-            fi
-          }
-          ensure_config CONFIG_TARGET_mediatek y
-          ensure_config CONFIG_TARGET_mediatek_filogic y
-          ensure_config CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc y
-          ensure_config CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_sl3000-emmc y
-          ensure_config CONFIG_LINUX_6_6 y
-
-          echo "=== 自动修复 mk ==="
-          if ! grep -q "Device/$DEV" "$MK"; then
-            echo "" >> "$MK"
-            echo "define Device/sl3000-emmc" >> "$MK"
-            echo "  DEVICE_VENDOR := SL" >> "$MK"
-            echo "  DEVICE_MODEL := 3000" >> "$MK"
-            echo "  DEVICE_VARIANT := EMMC" >> "$MK"
-            echo "  DEVICE_PACKAGES := kmod-mt7981-eth kmod-mt7981-wifi kmod-usb3" >> "$MK"
-            echo "endef" >> "$MK"
-            echo "TARGET_DEVICES += sl3000-emmc" >> "$MK"
-            echo "补齐 sl3000-emmc 设备定义"
-          fi
-
-          echo "=== 三件套增强检测开始 ==="
-
+          echo "=== 三件套存在性检查 ==="
           for f in "$DTS" "$MK" "$CONF"; do
-            if [ ! -f "$f" ]; then
-              echo "缺少关键文件: $f"
-              exit 1
-            fi
+            [ -f "$f" ] || { echo "缺少文件: $f"; exit 1; }
           done
-          echo "文件存在性检查通过"
 
-          grep -q "$DEV" "$DTS" || { echo "DTS 未包含设备名"; exit 1; }
+          echo "=== 三件套一致性检查 ==="
+          grep -q 'compatible.*sl,3000-emmc' "$DTS" || { echo "DTS compatible 不匹配"; exit 1; }
           grep -q "Device/$DEV" "$MK" || { echo "mk 未定义设备段"; exit 1; }
           grep -q "TARGET_DEVICES += $DEV" "$MK" || { echo "mk 未加入设备"; exit 1; }
           grep -q "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_${DEV}=y" "$CONF" || { echo "config 未启用设备"; exit 1; }
 
-          # 修复点：模糊匹配 compatible，不再要求完全匹配
-          grep -q 'compatible.*sl3000-emmc' "$DTS" || { echo "DTS 未包含 compatible sl3000-emmc"; exit 1; }
-
-          echo "设备一致性检查通过"
-
+          echo "=== 隐藏字符检查 ==="
           if grep -q "$(printf '\r')" "$DTS" "$MK" "$CONF"; then
             echo "检测到 CRLF"
             exit 1
@@ -116,99 +88,77 @@ jobs:
             echo "检测到 BOM"
             exit 1
           fi
-          echo "隐藏字符检查通过"
 
-          echo "=== 三件套增强检测全部通过 ==="
+          echo "=== 三件套检测全部通过 ==="
 
-      # 8. 更新 feeds
+      # 9. 更新 feeds
       - name: Update feeds
         run: |
           cd openwrt
           ./scripts/feeds update -a || true
           ./scripts/feeds install -a
 
-      # 9. 过滤并应用路由器相关补丁
+      # 10. 应用补丁
       - name: Apply router-only patches
         run: |
           cd openwrt
           if [ -d patches ]; then
-            if ls patches/* >/dev/null 2>&1; then
-              echo "=== 开始应用路由器相关补丁 ==="
-              for p in patches/*; do
-                case "$p" in
-                  *mediatek*|*network*|*wifi*|*ethernet*|*router*)
-                    echo "应用补丁: $p"
-                    patch -p1 < "$p"
-                    ;;
-                  *)
-                    echo "跳过非路由器补丁: $p"
-                    ;;
-                esac
-              done
-            else
-              echo "patches/ 目录为空，跳过补丁应用"
-            fi
-          else
-            echo "无 patches 目录，跳过补丁应用"
+            for p in patches/*; do
+              case "$p" in
+                *mediatek*|*network*|*wifi*|*ethernet*|*router*)
+                  echo "应用补丁: $p"
+                  patch -p1 < "$p"
+                  ;;
+              esac
+            done
           fi
 
-      # 10. 自动裁剪非路由器软件包
+      # 11. 裁剪非路由器软件包
       - name: Remove non-router packages
         run: |
           cd openwrt
           sed -i '/CONFIG_PACKAGE_kmod-sound/d' .config
           sed -i '/CONFIG_PACKAGE_alsa/d' .config
           sed -i '/CONFIG_PACKAGE_pulseaudio/d' .config
-          sed -i '/CONFIG_PACKAGE_p910nd/d' .config
           sed -i '/CONFIG_PACKAGE_usb-printer/d' .config
           sed -i '/CONFIG_PACKAGE_kmod-bluetooth/d' .config
-          sed -i '/CONFIG_PACKAGE_bluez/d' .config
           sed -i '/CONFIG_PACKAGE_kmod-video/d' .config
           sed -i '/CONFIG_PACKAGE_motion/d' .config
-          sed -i '/CONFIG_PACKAGE_luci-theme-openwrt-2020/d' .config
-          sed -i '/CONFIG_PACKAGE_luci-app-qos/d' .config
-          sed -i '/CONFIG_PACKAGE_kmod-usb-audio/d' .config
-          sed -i '/CONFIG_PACKAGE_kmod-usb-video/d' .config
-          sed -i '/CONFIG_PACKAGE_kmod-ledtrig-audio/d' .config
           sed -i '/^$/d' .config
-          echo "=== 非路由器软件包裁剪完成 ==="
 
-      # 11. 规范化配置
+      # 12. defconfig
       - name: Normalize config
         run: |
           cd openwrt
           make defconfig
-          echo "defconfig 完成"
 
-      # 12. 构建工具链
+      # 13. 构建工具链
       - name: Build toolchain
         run: |
           cd openwrt
           make toolchain/install -j$(nproc) V=s
-          echo "工具链构建完成"
 
-      # 13. 构建固件
+      # 14. 构建固件
       - name: Build firmware
         run: |
           cd openwrt
           make -j$(nproc) V=s | tee build.log
-          echo "固件构建完成"
 
-      # 14. 上传构建日志
+      # 15. 上传构建日志
       - name: Upload build log
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: openwrt/build.log
 
-      # 15. 上传固件产物
+      # 16. 上传固件产物
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-sl3000-emmc
           path: openwrt/bin/targets/mediatek/filogic/
 
-      # 16. 自动发布固件
+      # 17. 自动发布固件
       - name: Release firmware
         uses: softprops/action-gh-release@v1
         with:
@@ -216,9 +166,9 @@ jobs:
           name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
           body: |
             自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
-            - 三件套检测与修复（增强版）已通过
+            - 三件套自动生成
+            - 三件套检测通过
             - 工具链构建完成
             - 固件构建完成
-            - 自动发布成功
           files: |
             openwrt/bin/targets/mediatek/filogic/*
