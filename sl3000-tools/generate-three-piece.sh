@@ -20,7 +20,7 @@ cat > "$DTS" << 'EOF'
 
 / {
 	model = "SL 3000 eMMC Router";
-	compatible = "sl,3000-emmc", "mediatek,mt7981";
+	compatible = "sl-3000-emmc", "mediatek,mt7981";
 
 	#address-cells = <2>;
 	#size-cells = <2>;
