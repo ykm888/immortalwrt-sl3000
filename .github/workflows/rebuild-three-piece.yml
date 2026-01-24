@@ -21,9 +21,10 @@ jobs:
           chmod +x sl3000-tools/three-piece-rebuild.sh
           chmod +x sl3000-tools/profiles-check.sh
 
-      # 3. 运行三件套重建脚本
+      # 3. 运行三件套重建脚本（关键：必须在仓库根目录执行）
       - name: Run three-piece rebuild
         run: |
+          cd $GITHUB_WORKSPACE
           ./sl3000-tools/three-piece-rebuild.sh
 
       # 4. 保存生成的三件套作为构建产物
