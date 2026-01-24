@@ -57,19 +57,12 @@ cat > "$DTS" << 'EOF'
     };
 };
 
-&uart0 {
-    status = "okay";
-};
-
-&eth {
-    status = "okay";
-};
-
+&uart0 { status = "okay"; };
+&eth   { status = "okay"; };
 &wifi0 {
     status = "okay";
     mediatek,mtd-eeprom = <&factory 0x0>;
 };
-
 &mmc0 {
     status = "okay";
     bus-width = <8>;
