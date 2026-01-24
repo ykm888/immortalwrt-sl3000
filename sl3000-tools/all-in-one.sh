@@ -59,6 +59,8 @@ check_dts_syntax() {
     fi
 
     echo "=== 🧾 DTS 前 20 行（CI 实际使用版本） ==="
+    echo "=== 🧾 DTS 前 20 行（显示不可见字符） ==="
+    sed -n '1,20p' "$DTS_FILE" | sed -n 'l'
     sed -n '1,20p' "$DTS_FILE"
 
     if ! dtc -I dts -O dtb "$DTS_FILE" -o /dev/null; then
