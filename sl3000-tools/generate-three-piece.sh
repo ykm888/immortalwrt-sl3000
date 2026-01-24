@@ -1,10 +1,10 @@
 #!/bin/sh
 set -e
 
-echo "=== 🛠 生成 SL3000 eMMC 三件套（ImmortalWrt 24.10 / Linux 6.6 / Flagship） ==="
+echo "=== 🛠 生成 SL3000 eMMC 三件套（ImmortalWrt 24.10 / Linux 6.6） ==="
 
 #########################################
-# 1. DTS（严格 dtc 校验通过版本）
+# 1. DTS（严格 dtc 校验通过）
 #########################################
 
 DTS="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
@@ -52,13 +52,8 @@ cat > "$DTS" << 'EOF'
     };
 };
 
-&uart0 {
-    status = "okay";
-};
-
-&eth {
-    status = "okay";
-};
+&uart0 { status = "okay"; };
+&eth   { status = "okay"; };
 
 &wifi0 {
     status = "okay";
@@ -121,7 +116,7 @@ echo "✔ MK 生成完成"
 
 
 #########################################
-# 3. CONFIG（设备专用配置）
+# 3. CONFIG（根目录真源）
 #########################################
 
 CONF="mt7981b-sl3000-emmc.config"
@@ -173,4 +168,4 @@ CONFIG_PACKAGE_kmod-nf-nat=y
 EOF
 
 echo "✔ CONFIG 生成完成"
-echo "=== 🎉 三件套生成完成（ImmortalWrt 24.10 / Linux 6.6 / Flagship） ==="
+echo "=== 🎉 三件套生成完成（ImmortalWrt 24.10 / Linux 6.6） ==="
