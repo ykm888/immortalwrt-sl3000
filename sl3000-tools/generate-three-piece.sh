@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 
 echo "=== 🛠 生成 SL3000 eMMC 三件套（ImmortalWrt 24.10 / Linux 6.6） ==="
@@ -11,12 +11,7 @@ DTS="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000
 mkdir -p target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek
 
 cat > "$DTS" << 'EOF'
-// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
-
-#include "mt7981b.dtsi"
-#include <dt-bindings/gpio/gpio.h>
-#include <dt-bindings/input/input.h>
 
 / {
     model = "SL3000 eMMC Flagship";
@@ -29,31 +24,19 @@ cat > "$DTS" << 'EOF'
     chosen {
         stdout-path = "serial0:115200n8";
     };
-
-    leds {
-        compatible = "gpio-leds";
-
-        status {
-            label = "sl3000:blue:status";
-            gpios = <&pio 10 GPIO_ACTIVE_LOW>;
-            default-state = "off";
-        };
-    };
-
-    keys {
-        compatible = "gpio-keys";
-
-        reset {
-            label = "reset";
-            linux,code = <KEY_RESTART>;
-            gpios = <&pio 9 GPIO_ACTIVE_LOW>;
-            debounce-interval = <60>;
-        };
-    };
 };
 
-&uart0 { status = "okay"; };
-&eth   { status = "okay"; };
+#include "mt7981b.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+
+&uart0 {
+    status = "okay";
+};
+
+&eth {
+    status = "okay";
+};
 
 &wifi0 {
     status = "okay";
@@ -80,8 +63,7 @@ echo "✔ DTS 生成完成"
 MK="target/linux/mediatek/image/filogic.mk"
 mkdir -p target/linux/mediatek/image
 
-cat >> "$MK" << 'EOF'
-
+cat > "$MK" << 'EOF'
 define Device/mt7981b-sl3000-emmc
   DEVICE_VENDOR := SL
   DEVICE_MODEL := 3000
@@ -168,4 +150,5 @@ CONFIG_PACKAGE_kmod-nf-nat=y
 EOF
 
 echo "✔ CONFIG 生成完成"
+
 echo "=== 🎉 三件套生成完成（ImmortalWrt 24.10 / Linux 6.6） ==="
