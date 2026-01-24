@@ -9,7 +9,15 @@ set -e
 #########################################
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-OPENWRT_DIR="$ROOT_DIR/../openwrt"
+
+# 兼容两种布局：
+# 1）仓库根目录有 openwrt/，脚本在 sl3000-tools/ 下
+# 2）脚本已经被拷贝到 openwrt/sl3000-tools/ 下
+if [ -d "$ROOT_DIR/../openwrt" ]; then
+    OPENWRT_DIR="$ROOT_DIR/../openwrt"
+else
+    OPENWRT_DIR="$ROOT_DIR/.."
+fi
 
 #########################################
 # 1. 自动修复：路径修复
@@ -44,6 +52,14 @@ check_dts_syntax() {
     echo "=== 🔍 DTS 语法检查（显示 dtc 输出） ==="
 
     DTS_FILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+
+    if [ ! -f "$DTS_FILE" ]; then
+        echo "❌ DTS 文件不存在：$DTS_FILE"
+        exit 1
+    fi
+
+    echo "=== 🧾 DTS 前 20 行（CI 实际使用版本） ==="
+    sed -n '1,20p' "$DTS_FILE"
 
     if ! dtc -I dts -O dtb "$DTS_FILE" -o /dev/null; then
         echo "❌ DTS 语法错误：$DTS_FILE"
@@ -88,7 +104,7 @@ check_config_consistency() {
     grep -q "CONFIG_TARGET_mediatek_filogic=y" "$CFG" || { echo "❌ CONFIG 缺少 filogic"; exit 1; }
     grep -q "CONFIG_LINUX_6_6=y" "$CFG" || { echo "❌ CONFIG 未启用 Linux 6.6"; exit 1; }
     grep -q "CONFIG_PACKAGE_luci-app-passwall2=y" "$CFG" || echo "⚠ Passwall2 未启用"
-    grep -q "CONFIG_PACKAGE_docker=y" "$CFG" || echo "⚠ Docker 未启用"
+    grep -q "CONFIG_PACKAGE_docker=y" || echo "⚠ Docker 未启用"
 
     echo "✔ CONFIG 一致性检查通过"
 }
@@ -173,7 +189,7 @@ run_check() {
 run_full() {
     echo "=== 🚀 FULL 模式：完整构建固件 ==="
 
-    # 修复：必须先生成三件套
+    # 必须先生成三件套
     chmod +x "$ROOT_DIR/generate-three-piece.sh"
     "$ROOT_DIR/generate-three-piece.sh"
 
