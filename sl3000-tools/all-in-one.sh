@@ -29,7 +29,7 @@ fix_paths() {
 clean_hidden_chars() {
     echo "=== 🧹 自动清理隐藏字符（BOM / CRLF） ==="
 
-    find . -type f \( -name "*.dts" -o -name "*.mk" -o -name ".config" \) | while read f; do
+    find . -type f \( -name "*.dts" -o -name "*.mk" -o -name "mt7981b-sl3000-emmc.config" \) | while read f; do
         sed -i 's/\r$//' "$f"
         sed -i '1s/^\xEF\xBB\xBF//' "$f"
     done
@@ -83,7 +83,7 @@ check_mk_structure() {
 check_config_consistency() {
     echo "=== 🔍 CONFIG 一致性检查 ==="
 
-    CFG=".config"
+    CFG="mt7981b-sl3000-emmc.config"
 
     grep -q "CONFIG_TARGET_mediatek_filogic=y" "$CFG" || { echo "❌ CONFIG 缺少 filogic"; exit 1; }
     grep -q "CONFIG_LINUX_6_6=y" "$CFG" || { echo "❌ CONFIG 未启用 Linux 6.6"; exit 1; }
@@ -145,7 +145,7 @@ sync_three_piece() {
     cp target/linux/mediatek/image/filogic.mk \
        "$OPENWRT_DIR/target/linux/mediatek/image/"
 
-    cp .config "$OPENWRT_DIR/.config"
+    cp .config "$OPENWRT_DIR/mt7981b-sl3000-emmc.config"
 
     echo "✔ 三件套同步完成"
 }
