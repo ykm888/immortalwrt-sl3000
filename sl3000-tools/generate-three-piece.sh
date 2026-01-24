@@ -120,11 +120,10 @@ echo "✔ MK 生成完成"
 
 
 #########################################
-# 3. CONFIG（设备专用配置）
+# 3. CONFIG（设备专用配置，生成在根目录）
 #########################################
 
-CONF="target/linux/mediatek/mt7981b-sl3000-emmc.config"
-mkdir -p target/linux/mediatek
+CONF="mt7981b-sl3000-emmc.config"
 
 cat > "$CONF" << 'EOF'
 CONFIG_TARGET_mediatek=y
