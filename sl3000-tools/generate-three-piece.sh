@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-echo "=== 🛠 生成 SL3000 eMMC 三件套（24.10 / Linux 6.6） ==="
+echo "=== 🛠 生成 SL3000 eMMC 三件套（24.10 / Linux 6.6 / 最终修复版） ==="
 
 #########################################
 # 1. DTS（完整工程级版本）
@@ -86,7 +86,7 @@ echo "✔ DTS 生成完成"
 
 
 #########################################
-# 2. MK（完整工程级版本）
+# 2. MK（最终修复版：加入 SUPPORTED_DEVICES）
 #########################################
 
 MK="target/linux/mediatek/image/filogic.mk"
@@ -101,6 +101,9 @@ define Device/mt7981b-sl3000-emmc
   DEVICE_VARIANT := eMMC Flagship
   DEVICE_DTS := mt7981b-sl3000-emmc
   DEVICE_DTS_DIR := ../files-6.6/arch/arm64/boot/dts/mediatek
+
+  # ⭐ 关键修复：没有这个字段就不会生成固件
+  SUPPORTED_DEVICES := mt7981b-sl3000-emmc
 
   DEVICE_PACKAGES := \
 	kmod-mt7981-firmware mt7981-wo-firmware \
@@ -124,7 +127,7 @@ endef
 TARGET_DEVICES += mt7981b-sl3000-emmc
 EOF
 
-echo "✔ MK 生成完成"
+echo "✔ MK 生成完成（SUPPORTED_DEVICES 已修复）"
 
 
 #########################################
@@ -181,4 +184,4 @@ CONFIG_PACKAGE_kmod-nf-nat=y
 EOF
 
 echo "✔ CONFIG 生成完成"
-echo "=== 🎉 三件套生成完成（24.10 / Linux 6.6 / 工程级旗舰版 + Passwall2 + Docker） ==="
+echo "=== 🎉 三件套生成完成（24.10 / Linux 6.6 / 最终修复版 + Passwall2 + Docker） ==="
