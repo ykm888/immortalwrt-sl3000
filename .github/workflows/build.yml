@@ -8,11 +8,17 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1. 检出仓库（必须 fetch-depth: 0，否则会拉到旧版本）
+      # 1. 检出仓库（必须 fetch-depth: 0）
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # 1.1 调试：打印当前目录结构（关键）
+      - name: Debug list files
+        run: |
+          echo "=== 当前目录结构 ==="
+          ls -R .
 
       # 2. 优化磁盘空间
       - name: Optimize disk space
@@ -56,6 +62,8 @@ jobs:
       # 6.5 all-in-one 检查（必须在根目录运行）
       - name: Run all-in-one CHECK (24.10 / 6.6)
         run: |
+          echo "=== 检查 sl3000-tools 目录 ==="
+          ls -R sl3000-tools
           chmod +x sl3000-tools/all-in-one.sh
           ./sl3000-tools/all-in-one.sh check
           echo "all-in-one 检查模式完成"
