@@ -7,8 +7,17 @@ define Device/mt7981b-sl3000-emmc
   DEVICE_DTS := mt7981b-sl3000-emmc
   DEVICE_DTS_DIR := ../files-6.6/arch/arm64/boot/dts/mediatek
 
-  DEVICE_PACKAGES := kmod-usb3 kmod-mt7981-firmware mt7981-wo-firmware \
-	f2fsck mkf2fs automount block-mount kmod-fs-f2fs kmod-fs-ext4
+  DEVICE_PACKAGES := \
+	kmod-mt7981-firmware mt7981-wo-firmware \
+	f2fsck mkf2fs automount block-mount kmod-fs-f2fs kmod-fs-ext4 \
+	luci-app-passwall2 luci-compat kmod-tun \
+	xray-core xray-plugin \
+	shadowsocks-libev-config shadowsocks-libev-ss-local \
+	shadowsocks-libev-ss-redir shadowsocks-libev-ss-server \
+	chinadns-ng dns2socks dns2tcp tcping \
+	dockerd docker docker-compose luci-app-dockerman \
+	kmod-fs-overlay kmod-br-netfilter kmod-crypto-hash \
+	kmod-veth kmod-macvlan kmod-ipvlan kmod-nf-conntrack kmod-nf-nat
 
   IMAGES := sysupgrade.bin
 
