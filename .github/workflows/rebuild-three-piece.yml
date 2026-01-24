@@ -24,7 +24,6 @@ jobs:
       # 3. 运行三件套重建脚本
       - name: Run three-piece rebuild
         run: |
-          cd $GITHUB_WORKSPACE
           ./sl3000-tools/three-piece-rebuild.sh
 
       # 4. 保存生成的三件套作为构建产物（24.10 正确路径）
@@ -48,4 +47,5 @@ jobs:
           git add .config
 
           git commit -m "ci: auto rebuild SL3000 three-piece" || echo "No changes to commit"
+
           git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/ykm888/immortalwrt-sl3000.git main
