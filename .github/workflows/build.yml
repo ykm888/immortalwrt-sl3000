@@ -38,9 +38,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-immortalwrt-
 
-      # 5. 拉取 SL3000 专用源码
+      # 5. 拉取 SL3000 专用源码（修复：先删除 openwrt）
       - name: Clone ImmortalWrt source
         run: |
+          rm -rf openwrt
           git clone --depth=1 -b main https://github.com/ykm888/immortalwrt-sl3000.git openwrt
           echo "已拉取 SL3000 专用源码"
 
@@ -98,51 +99,72 @@ jobs:
           ./scripts/feeds update -a || true
           ./scripts/feeds install -a
 
-      # 10. 应用补丁
+      # 10. 过滤并应用路由器相关补丁
       - name: Apply router-only patches
         run: |
           cd openwrt
           if [ -d patches ]; then
-            for p in patches/*; do
-              case "$p" in
-                *mediatek*|*network*|*wifi*|*ethernet*|*router*)
-                  echo "应用补丁: $p"
-                  patch -p1 < "$p"
-                  ;;
-              esac
-            done
+            if ls patches/* >/dev/null 2>&1; then
+              echo "=== 开始应用路由器相关补丁 ==="
+              for p in patches/*; do
+                case "$p" in
+                  *mediatek*|*network*|*wifi*|*ethernet*|*router*)
+                    echo "应用补丁: $p"
+                    patch -p1 < "$p"
+                    ;;
+                  *)
+                    echo "跳过非路由器补丁: $p"
+                    ;;
+                esac
+              done
+            else
+              echo "patches/ 目录为空，跳过补丁应用"
+            fi
+          else
+            echo "无 patches 目录，跳过补丁应用"
           fi
 
-      # 11. 裁剪非路由器软件包
+      # 11. 自动裁剪非路由器软件包
       - name: Remove non-router packages
         run: |
           cd openwrt
           sed -i '/CONFIG_PACKAGE_kmod-sound/d' .config
           sed -i '/CONFIG_PACKAGE_alsa/d' .config
           sed -i '/CONFIG_PACKAGE_pulseaudio/d' .config
+          sed -i '/CONFIG_PACKAGE_p910nd/d' .config
           sed -i '/CONFIG_PACKAGE_usb-printer/d' .config
           sed -i '/CONFIG_PACKAGE_kmod-bluetooth/d' .config
+          sed -i '/CONFIG_PACKAGE_bluez/d' .config
           sed -i '/CONFIG_PACKAGE_kmod-video/d' .config
           sed -i '/CONFIG_PACKAGE_motion/d' .config
+          sed -i '/CONFIG_PACKAGE_luci-theme-openwrt-2020/d' .config
+          sed -i '/CONFIG_PACKAGE_luci-app-qos/d' .config
+          sed -i '/CONFIG_PACKAGE_kmod-usb-audio/d' .config
+          sed -i '/CONFIG_PACKAGE_kmod-usb-video/d' .config
+          sed -i '/CONFIG_PACKAGE_kmod-ledtrig-audio/d' .config
           sed -i '/^$/d' .config
+          echo "=== 非路由器软件包裁剪完成 ==="
 
-      # 12. defconfig
+      # 12. 规范化配置
       - name: Normalize config
         run: |
           cd openwrt
           make defconfig
+          echo "defconfig 完成"
 
       # 13. 构建工具链
       - name: Build toolchain
         run: |
           cd openwrt
           make toolchain/install -j$(nproc) V=s
+          echo "工具链构建完成"
 
       # 14. 构建固件
       - name: Build firmware
         run: |
           cd openwrt
           make -j$(nproc) V=s | tee build.log
+          echo "固件构建完成"
 
       # 15. 上传构建日志
       - name: Upload build log
