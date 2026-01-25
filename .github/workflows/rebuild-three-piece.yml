@@ -35,23 +35,12 @@ jobs:
           fi
           echo "✅ Script found"
 
-      # 4. Auto-detect files-6.x and create dirs
-      - name: Auto Create Parent Directories
+      # 4. Auto-detect files-6.x (NO touch, NO create empty files)
+      - name: Detect files-6.x
         run: |
           FILES_DIR=$(ls -d target/linux/mediatek/files-* | head -n 1)
+          echo "FILES_DIR=$FILES_DIR" >> $GITHUB_ENV
           echo "Detected FILES_DIR = $FILES_DIR"
-
-          DTS_FILE="$FILES_DIR/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-          MK_FILE="target/linux/mediatek/image/filogic.mk"
-          CFG_FILE=".config"
-
-          mkdir -p "$(dirname "$DTS_FILE")"
-          touch "$DTS_FILE"
-          touch "$CFG_FILE"
-
-          echo "DTS_FILE=$DTS_FILE" >> $GITHUB_ENV
-          echo "MK_FILE=$MK_FILE" >> $GITHUB_ENV
-          echo "CFG_FILE=$CFG_FILE" >> $GITHUB_ENV
 
       # 5. Add execute permission
       - name: Add Execute Permission
@@ -62,10 +51,11 @@ jobs:
         run: |
           bash -x sl3000-tools/generate-three-piece.sh 2>&1 | tee sl3000-run.log
 
-      # 7. Strict verify
+      # 7. Strict verify (use detected files-6.x)
       - name: Strict Verify Three-Piece
         run: |
-          FILES_DIR=$(ls -d target/linux/mediatek/files-* | head -n 1)
+          FILES_DIR="${FILES_DIR:-$(ls -d target/linux/mediatek/files-* | head -n 1)}"
+
           DTS_FILE="$FILES_DIR/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
           MK_FILE="target/linux/mediatek/image/filogic.mk"
           CFG_FILE=".config"
@@ -91,6 +81,10 @@ jobs:
 
           echo "=== SL3000 MK Segment ==="
           grep -A20 "define Device/mt7981b-sl3000-emmc" "$MK_FILE"
+
+          echo "DTS_FILE=$DTS_FILE" >> $GITHUB_ENV
+          echo "MK_FILE=$MK_FILE" >> $GITHUB_ENV
+          echo "CFG_FILE=$CFG_FILE" >> $GITHUB_ENV
 
       # 8. Upload artifacts
       - name: Upload Three-Piece & Logs
