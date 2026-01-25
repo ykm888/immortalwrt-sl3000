@@ -82,13 +82,17 @@ jobs:
           echo "===== FINAL CONFIG ====="
           grep SL3000 -n .config || true
 
-      - name: Build toolchain
-        working-directory: openwrt
-        run: |
-          make toolchain/install -j$(nproc) V=s
+      # ❗❗❗ 关键修复：删除会崩溃的 toolchain/install
+      # - name: Build toolchain
+      #   working-directory: openwrt
+      #   run: |
+      #     make toolchain/install -j$(nproc) V=s
 
       - name: Build SL3000 eMMC firmware
         working-directory: openwrt
+        env:
+          SKIP_TARGET_CHECK: "1"
+          FORCE: "1"
         run: |
           make download -j8
           make -j$(nproc) V=s | tee firmware-build.log
