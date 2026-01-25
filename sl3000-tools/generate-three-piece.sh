@@ -9,9 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-DTS_OUT="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-MK_OUT="target/linux/mediatek/image/filogic.mk"
-CFG_OUT=".config"
+DTS_OUT="$REPO_ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+MK_OUT="$REPO_ROOT/target/linux/mediatek/image/filogic.mk"
+CFG_OUT="$REPO_ROOT/.config"
 
 mkdir -p "$(dirname "$DTS_OUT")"
 mkdir -p "$(dirname "$MK_OUT")"
@@ -83,4 +83,4 @@ printf '%s\n' \
 > "$CFG_OUT"
 clean_file "$CFG_OUT"
 
-echo "✔ 三件套生成完成"
+echo "✔ 三件套生成完成（DTS / MK / .config 已全部写入正确路径）"
