@@ -56,18 +56,31 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-sl3000-2410
 
-      - name: Copy SL3000 Three-Piece Set (from repo)
-        run: |
-          cp -r repo/sl3000-tools openwrt/
-          cp repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts openwrt/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
-          cp repo/target/linux/mediatek/image/filogic.mk openwrt/target/linux/mediatek/image/
-          cp repo/.config openwrt/.config
-
       - name: Update & install feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a || true
           ./scripts/feeds install -a
+
+      - name: Make defconfig (base)
+        working-directory: openwrt
+        run: |
+          make defconfig
+
+      - name: Copy SL3000 Three-Piece Set (from repo)
+        run: |
+          cp repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts \
+             openwrt/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
+          cp repo/target/linux/mediatek/image/filogic.mk \
+             openwrt/target/linux/mediatek/image/
+          cp repo/.config openwrt/.config
+
+      - name: Make defconfig (finalize three-piece)
+        working-directory: openwrt
+        run: |
+          make defconfig
+          echo "===== FINAL CONFIG ====="
+          grep SL3000 -n .config || true
 
       - name: Build toolchain
         working-directory: openwrt
