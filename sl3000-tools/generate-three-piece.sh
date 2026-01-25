@@ -2,22 +2,17 @@
 set -e
 
 #########################################
-# SL3000 三件套生成脚本（最终修复版）
-# 目录结构基于仓库根目录（无 openwrt/）
+# SL3000 工程级总控脚本（最终版）
+# - 与 printf 版 generate-three-piece.sh 完全配套
+# - 只使用仓库根目录 target/
 #########################################
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$ROOT_DIR/.."
 
-# 强制进入仓库根目录
-cd "$ROOT_DIR/.."
-
-# 三件套输出路径（仓库根目录）
-DTS_OUT="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-MK_OUT="target/linux/mediatek/image/filogic.mk"
-CFG_OUT=".config"
-
-mkdir -p "$(dirname "$DTS_OUT")"
-mkdir -p "$(dirname "$MK_OUT")"
+DTS_FILE="$REPO_ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+MK_FILE="$REPO_ROOT/target/linux/mediatek/image/filogic.mk"
+CFG_FILE="$REPO_ROOT/.config"
 
 clean_file() {
     local f="$1"
@@ -31,62 +26,67 @@ clean_file() {
     mv "$f.clean" "$f"
 }
 
-echo "=== 🧬 生成 DTS ==="
-cat <<'EOF' > "$DTS_OUT"
-// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
-/dts-v1/;
+fix_paths() {
+    mkdir -p "$REPO_ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
+    mkdir -p "$REPO_ROOT/target/linux/mediatek/image"
+}
 
-#include "mt7981.dtsi"
-#include <dt-bindings/gpio/gpio.h>
-#include <dt-bindings/input/input.h>
-#include <dt-bindings/leds/common.h>
+check_dts_syntax() {
+    echo "=== 🔍 DTS 语法检查 ==="
+    sed -n '1,20p' "$DTS_FILE"
+    sed -n '1,20p' "$DTS_FILE" | sed -n 'l'
 
-/ {
-    model = "SL3000 eMMC Flagship";
-    compatible = "sl,sl3000-emmc", "mediatek,mt7981b";
+    dtc -I dts -O dtb "$DTS_FILE" -o /dev/null
+    echo "✔ DTS 语法检查通过"
+}
 
-    aliases {
-        serial0 = &uart0;
-        led-boot = &led_status;
-        led-failsafe = &led_status;
-        led-running = &led_status;
-        led-upgrade = &led_status;
-    };
+check_mk() {
+    echo "=== 🔍 MK 结构检查 ==="
+    grep -q "Device/mt7981b-sl3000-emmc" "$MK_FILE"
+    grep -q "TARGET_DEVICES" "$MK_FILE"
+    echo "✔ MK 检查通过"
+}
 
-    chosen {
-        stdout-path = "serial0:115200n8";
-    };
-};
-EOF
+check_config() {
+    echo "=== 🔍 CONFIG 检查 ==="
+    grep -q "CONFIG_TARGET_mediatek_filogic=y" "$CFG_FILE"
+    grep -q "CONFIG_LINUX_6_6=y" "$CFG_FILE"
+    echo "✔ CONFIG 检查通过"
+}
 
-echo "=== 🧬 生成 MK ==="
-cat <<'EOF' > "$MK_OUT"
-define Device/mt7981b-sl3000-emmc
-  DEVICE_VENDOR := SL
-  DEVICE_MODEL := SL3000 eMMC Flagship
-  DEVICE_PACKAGES := kmod-usb3 kmod-mt7981-firmware \
-        luci-app-passwall2 docker dockerd luci-app-dockerman
-  IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
-endef
-TARGET_DEVICES += mt7981b-sl3000-emmc
-EOF
+clean_all() {
+    clean_file "$DTS_FILE"
+    clean_file "$MK_FILE"
+    clean_file "$CFG_FILE"
+}
 
-echo "=== 🧬 生成 CONFIG ==="
-cat <<'EOF' > "$CFG_OUT"
-CONFIG_TARGET_mediatek=y
-CONFIG_TARGET_mediatek_filogic=y
-CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y
-CONFIG_LINUX_6_6=y
+run_check() {
+    fix_paths
+    clean_all
+    check_dts_syntax
+    check_mk
+    check_config
+    echo "=== ✅ CHECK 完成 ==="
+}
 
-CONFIG_PACKAGE_luci-app-passwall2=y
-CONFIG_PACKAGE_docker=y
-CONFIG_PACKAGE_dockerd=y
-CONFIG_PACKAGE_luci-app-dockerman=y
-EOF
+run_full() {
+    chmod +x "$ROOT_DIR/generate-three-piece.sh"
+    "$ROOT_DIR/generate-three-piece.sh"
 
-echo "=== 🧹 清理隐藏字符 ==="
-clean_file "$DTS_OUT"
-clean_file "$MK_OUT"
-clean_file "$CFG_OUT"
+    run_check
 
-echo "✔ 三件套生成完成（仓库根目录）"
+    cd "$REPO_ROOT"
+    make defconfig
+    make -j"$(nproc)"
+}
+
+case "$1" in
+    check) run_check ;;
+    full)  run_full ;;
+    *)
+        echo "用法："
+        echo "  ./all-in-one.sh check"
+        echo "  ./all-in-one.sh full"
+        exit 1
+        ;;
+esac
