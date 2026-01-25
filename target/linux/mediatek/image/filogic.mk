@@ -3385,6 +3385,8 @@ TARGET_DEVICES += mt7981b-sl3000-emmc
 
 TARGET_DEVICES += mt7981b-sl3000-emmc
 
+TARGET_DEVICES += mt7981b-sl3000-emmc
+
 define Device/mt7981b-sl3000-emmc
 	DEVICE_VENDOR := SL
 	DEVICE_MODEL := SL3000 eMMC Engineering Flagship
@@ -3393,6 +3395,7 @@ define Device/mt7981b-sl3000-emmc
 	IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
 endef
 TARGET_DEVICES += mt7981b-sl3000-emmc
+
 
 
 
