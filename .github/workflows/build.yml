@@ -84,7 +84,7 @@ jobs:
       - name: Generate SL3000 Three-Piece Set (运行你的生成脚本)
         working-directory: openwrt
         run: |
-          # 执行三件套生成脚本，自动生成DTS/MK/CONFIG
+          # 执行三件套生成脚本，自动生成DTS/MK/CONFIG（已修复依赖警告）
           ./sl3000-tools/generate-three-piece.sh
           # 验证DTS生成结果，快速排查路径/文件问题
           if [ -f "target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" ]; then
@@ -95,21 +95,27 @@ jobs:
             exit 1
           fi
 
-      - name: Normalize config (核心：让自定义三件套配置生效)
+      - name: Normalize config & init CCACHE (核心修复：解决.ccache/ccache.conf不存在)
         working-directory: openwrt
         run: |
-          # 加载自定义.config并标准化，覆盖默认配置
-          make defconfig V=s
-          # 配置ccache缓存大小，适配云构建磁盘限制
+          # 第一步：提前创建.ccache目录，避免配置文件写入失败（致命错误修复）
+          mkdir -p .ccache
+          chmod 777 .ccache
+          # 第二步：配置ccache缓存大小，适配云构建磁盘限制
           echo 'max_size = 10G' > .ccache/ccache.conf
-          ccache -C && ccache -z
-          echo "✅ 自定义配置已标准化，ccache初始化完成"
+          echo 'compression = true' >> .ccache/ccache.conf
+          echo 'cache_dir = .ccache' >> .ccache/ccache.conf
+          # 第三步：初始化ccache，清空旧缓存/统计
+          ccache -C && ccache -z && ccache -s
+          # 第四步：加载自定义.config并标准化，覆盖默认配置
+          make defconfig V=s
+          echo "✅ 自定义配置已标准化，CCACHE初始化完成（解决配置文件不存在错误）"
 
       - name: Build toolchain (与自定义配置匹配，解耦编译)
         working-directory: openwrt
         run: |
-          # 构建工具链，单独解耦提升后续编译效率
-          make toolchain/install -j$(($(nproc)+1)) V=s | tee toolchain-build.log
+          # 构建工具链，单独解耦提升后续编译效率；保守并发，避免OOM
+          make toolchain/install -j$(nproc) V=s | tee toolchain-build.log
           # 统计ccache使用情况，排查缓存生效问题
           ccache -s
           echo "✅ 工具链构建完成"
@@ -117,8 +123,8 @@ jobs:
       - name: Build SL3000 eMMC firmware (防OOM+完整日志)
         working-directory: openwrt
         run: |
-          # 并发数适配2核4G Runner，避免OOM；开启调试，捕获所有日志
-          make -j$(($(nproc)+1)) V=s CONFIG_DEBUG_SECTION_MISMATCH=y | tee firmware-build.log
+          # 保守并发数（适配2核4G Runner），彻底避免OOM；开启调试，捕获所有日志
+          make -j$(nproc) V=s CONFIG_DEBUG_SECTION_MISMATCH=y | tee firmware-build.log
           # 再次统计ccache，查看缓存命中率
           ccache -s
           echo "✅ 固件编译完成"
@@ -153,6 +159,7 @@ jobs:
             📦 内置：Docker/Passwall2/SSR Plus+/eMMC文件系统支持
             📝 构建日志：查看Artifacts → sl3000-build-logs
             ⚙️ 内核版本：Linux 6.6 (ImmortalWrt 24.10)
+            ✅ 修复：CCACHE配置缺失/依赖缺失警告/DTS语法/乱码
           files: openwrt/bin/targets/mediatek/filogic/*
           prerelease: true  # 预发布标记，避免正式版污染
           draft: false
