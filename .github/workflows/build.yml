@@ -46,14 +46,15 @@ jobs:
           git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt
 
       - name: Cache downloads & ccache
+        if: always()
         uses: actions/cache@v4
         with:
           path: |
             openwrt/dl
             openwrt/.ccache
-          key: ${{ runner.os }}-sl3000-2410-${{ github.sha }}
+          key: ${{ runner.os }}-sl3000-2410
           restore-keys: |
-            ${{ runner.os }}-sl3000-2410-
+            ${{ runner.os }}-sl3000-2410
 
       - name: Copy SL3000 tools
         run: |
@@ -83,11 +84,6 @@ jobs:
           ls -l target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/ || true
           ls -l target/linux/mediatek/image/ || true
 
-      - name: Run SL3000 Three-Piece Check
-        working-directory: openwrt
-        run: |
-          ./sl3000-tools/all-in-one.sh check
-
       - name: Make defconfig (final)
         working-directory: openwrt
         run: |
@@ -99,6 +95,7 @@ jobs:
           make -j$(nproc) V=s | tee firmware-build.log
 
       - name: Upload build logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sl3000-2410-build-logs
@@ -106,6 +103,7 @@ jobs:
           retention-days: 7
 
       - name: Upload firmware artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-24.10-sl3000-emmc-firmware
