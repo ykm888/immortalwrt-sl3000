@@ -3,37 +3,28 @@ set -e
 
 #########################################
 # SL3000 工程级总控脚本（最终版）
-# - 与 printf 版 generate-three-piece.sh 完全配套
-# - 使用仓库根目录 target/
 #########################################
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$ROOT_DIR/.."
 
 DTS_FILE="$REPO_ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+DTS_DIR="$REPO_ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
 MK_FILE="$REPO_ROOT/target/linux/mediatek/image/filogic.mk"
 CFG_FILE="$REPO_ROOT/.config"
 
 #########################################
-# 清理隐藏字符（最关键）
+# 清理隐藏字符
 #########################################
 clean_file() {
     local f="$1"
     [ -f "$f" ] || return 0
 
-    # 删除 CR
     sed -i 's/\r$//' "$f"
-
-    # 删除 BOM
     sed -i '1s/^\xEF\xBB\xBF//' "$f"
-
-    # 删除 NBSP
     sed -i 's/\xC2\xA0//g' "$f"
-
-    # 删除零宽空格
     sed -i 's/\xE2\x80\x8B//g' "$f"
 
-    # 删除所有 C0/C1 控制字符（核心）
     tr -d '\000-\011\013\014\016-\037\177' < "$f" > "$f.clean"
     mv "$f.clean" "$f"
 }
@@ -48,12 +39,12 @@ clean_all() {
 # 路径修复
 #########################################
 fix_paths() {
-    mkdir -p "$REPO_ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
+    mkdir -p "$DTS_DIR"
     mkdir -p "$REPO_ROOT/target/linux/mediatek/image"
 }
 
 #########################################
-# DTS 语法检查
+# DTS 语法检查（最终修复版）
 #########################################
 check_dts_syntax() {
     echo "=== 🔍 DTS 语法检查 ==="
@@ -64,7 +55,11 @@ check_dts_syntax() {
     echo "--- DTS 前 20 行（显示不可见字符） ---"
     sed -n '1,20p' "$DTS_FILE" | sed -n 'l'
 
-    dtc -I dts -O dtb "$DTS_FILE" -o /dev/null
+    echo "--- 使用 cpp 预处理后再检查 ---"
+
+    # ⭐ 关键修复：cpp 预处理 + dtc
+    cpp -P -I"$DTS_DIR" "$DTS_FILE" | dtc -I dts -O dtb -o /dev/null -
+
     echo "✔ DTS 语法检查通过"
 }
 
