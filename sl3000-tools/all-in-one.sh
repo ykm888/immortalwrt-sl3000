@@ -3,16 +3,15 @@ set -e
 
 #########################################
 # SL3000 工程级总控脚本（最终修复版）
+# 基于仓库根目录（无 openwrt/）
 #########################################
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$ROOT_DIR/.."
 
-# 强制使用 openwrt 源码目录
-OPENWRT_DIR="$ROOT_DIR/../openwrt"
-
-DTS_FILE="$OPENWRT_DIR/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-MK_FILE="$OPENWRT_DIR/target/linux/mediatek/image/filogic.mk"
-CFG_FILE="$OPENWRT_DIR/.config"
+DTS_FILE="$REPO_ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+MK_FILE="$REPO_ROOT/target/linux/mediatek/image/filogic.mk"
+CFG_FILE="$REPO_ROOT/.config"
 
 clean_file() {
     local f="$1"
@@ -27,8 +26,8 @@ clean_file() {
 }
 
 fix_paths() {
-    mkdir -p "$OPENWRT_DIR/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
-    mkdir -p "$OPENWRT_DIR/target/linux/mediatek/image"
+    mkdir -p "$REPO_ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
+    mkdir -p "$REPO_ROOT/target/linux/mediatek/image"
 }
 
 clean_hidden_chars() {
@@ -58,7 +57,7 @@ run_full() {
 
     run_check
 
-    cd "$OPENWRT_DIR"
+    cd "$REPO_ROOT"
     make defconfig
     make -j"$(nproc)"
 }
