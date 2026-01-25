@@ -1,4 +1,4 @@
-name: Rebuild SL3000 Three-Piece
+name: Rebuild SL3000 Three-Piece (Only)
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1. 检出仓库（锁定 main）
+      # 1. 检出仓库
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -19,35 +19,15 @@ jobs:
       - name: Make scripts executable
         run: |
           chmod +x sl3000-tools/generate-three-piece.sh
-          chmod +x sl3000-tools/all-in-one.sh
+          chmod +x sl3000-tools/all-in-one-light.sh
 
-      # ⭐ 3. 更新 feeds（DTS include 必须存在）
-      - name: Update feeds
-        run: |
-          ./scripts/feeds update -a || true
-          ./scripts/feeds install -a
-
-      # ⭐ 4. 生成默认配置（确保 .config 存在）
-      - name: Normalize config
-        run: |
-          make defconfig
-
-      # ⭐ 5. 构建工具链（生成 build_dir + kernel include）
-      - name: Build toolchain
-        run: |
-          make toolchain/install -j$(nproc) V=s
-
-      # ⭐ 6. 生成三件套（DTS / MK / CONFIG）
-      - name: Generate three-piece
+      # 3. 运行三件套生成 + 轻量检查（不依赖 toolchain）
+      - name: Rebuild three-piece
         run: |
           ./sl3000-tools/generate-three-piece.sh
+          ./sl3000-tools/all-in-one-light.sh
 
-      # ⭐ 7. 运行 DTS 检查（此时环境已准备好）
-      - name: Run all-in-one CHECK
-        run: |
-          ./sl3000-tools/all-in-one.sh check
-
-      # 8. 上传三件套产物
+      # 4. 上传三件套产物
       - name: Upload three-piece artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -57,7 +37,7 @@ jobs:
             target/linux/mediatek/image/filogic.mk
             .config
 
-      # 9. 推送三件套到仓库
+      # 5. 推送三件套到仓库
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
