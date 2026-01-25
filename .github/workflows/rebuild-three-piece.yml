@@ -1,10 +1,10 @@
-name: Rebuild SL3000 Three-Piece (Only) - Protect Official filogic.mk
-# 适配最强隐藏字符清理脚本，已修复DTS语法+Git Rebase未暂存更改冲突
-
+name: Rebuild SL3000 Three-Piece (Final)
+# 适配SL3000(MT7981B eMMC) | 乱码修复+DTS语法修复+Git冲突修复+隐藏字符清理
+# 配套脚本：sl3000-tools/generate-three-piece.sh (最新乱码修复版)
 on:
   workflow_dispatch:
 
-# 最小权限：仅满足Git提交推送+Artifact上传
+# 最小必要权限：Git提交推送+Artifact上传
 permissions:
   contents: write
   actions: read
@@ -16,94 +16,89 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: ${{ github.workspace }}  # 强制所有步骤在仓库根目录执行
+        working-directory: ${{ github.workspace }}  # 强制统一工作目录，避免路径问题
 
     steps:
-      # 1. 检出仓库：完整Git历史，保留凭据用于推送
-      - name: Checkout repository
+      # 1. 检出仓库：完整Git历史+保留凭据，支持后续push/pull
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: true
 
-      # 2. 安装核心依赖：dtc（DTS校验）+ dos2unix（隐藏字符清理核心）
-      - name: Install core dependencies (dtc + dos2unix)
+      # 2. 安装核心依赖：dtc(DTS校验)+dos2unix(编码/换行清理)+iconv(乱码修复)
+      - name: Install Core Dependencies
         run: |
+          set -euo pipefail
           sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends device-tree-compiler dos2unix
-          dtc --version && echo "✅ dtc安装成功"
-          dos2unix --version && echo "✅ dos2unix安装成功"
+          sudo apt-get install -y --no-install-recommends device-tree-compiler dos2unix libc-bin
+          # 验证依赖安装成功
+          dtc --version && echo "✅ dtc installed"
+          dos2unix --version && echo "✅ dos2unix installed"
+          iconv --version && echo "✅ iconv installed"
 
-      # 3. 强校验：工具目录/核心脚本是否存在
-      - name: Check script & directory existence
+      # 3. 强校验：工具目录/核心生成脚本是否存在，缺失则终止
+      - name: Check Script & Directory Exists
         run: |
           set -euo pipefail
           if [ ! -d "sl3000-tools" ]; then
-            echo "❌ 错误：sl3000-tools 目录不存在"
+            echo "❌ Error: sl3000-tools directory not found"
             exit 1
           fi
           if [ ! -f "sl3000-tools/generate-three-piece.sh" ]; then
-            echo "❌ 错误：generate-three-piece.sh 脚本不存在"
+            echo "❌ Error: generate-three-piece.sh not found in sl3000-tools"
             exit 1
           fi
-          echo "✅ 脚本&工具目录检查通过"
+          echo "✅ Script & directory check passed"
 
-      # 4. 自动创建：DTS/CONFIG兜底 + MK仅创父目录（保护官方filogic.mk）
-      - name: Auto create dir/file (Protect official filogic.mk)
+      # 4. 自动创建目录：仅创父目录，保护官方filogic.mk，不覆盖任何已有文件
+      - name: Auto Create Parent Dir (Protect Official filogic.mk)
         run: |
           set -euo pipefail
-          # 定义三件套路径
+          # 定义三件套路径，与脚本完全对齐
           DTS_FILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
           MK_FILE="target/linux/mediatek/image/filogic.mk"
           CFG_FILE=".config"
 
-          # 通用：递归创建所有父目录（确保路径存在）
+          # 递归创建所有父目录，确保路径存在
           for FILE in $DTS_FILE $MK_FILE $CFG_FILE; do
             DIR=$(dirname "$FILE")
             if [ ! -d "$DIR" ]; then
-              mkdir -p "$DIR" && echo "✅ 自动创建目录：$DIR"
+              mkdir -p "$DIR" && echo "✅ Created dir: $DIR"
             fi
           done
 
-          # DTS：自定义文件，不存在则创建空文件
-          if [ ! -f "$DTS_FILE" ]; then
-            touch "$DTS_FILE" && echo "✅ 自动创建空文件：$DTS_FILE"
-          else
-            echo "ℹ DTS文件已存在，跳过创建：$DTS_FILE"
-          fi
+          # 兜底创建空文件：仅DTS/CONFIG，MK不主动创建（保护官方）
+          [ ! -f "$DTS_FILE" ] && touch "$DTS_FILE" && echo "✅ Created empty DTS: $DTS_FILE"
+          [ ! -f "$CFG_FILE" ] && touch "$CFG_FILE" && echo "✅ Created empty CONFIG: $CFG_FILE"
 
-          # CONFIG：自定义文件，不存在则创建空文件
-          if [ ! -f "$CFG_FILE" ]; then
-            touch "$CFG_FILE" && echo "✅ 自动创建空文件：$CFG_FILE"
-          else
-            echo "ℹ CONFIG文件已存在，跳过创建：$CFG_FILE"
-          fi
-
-          # MK：官方配置文件，仅检查存在，不创建/覆盖（核心保护）
+          # 检查官方filogic.mk，存在则提示，不存在则创建空文件（后续脚本仅追加SL3000段）
           if [ -f "$MK_FILE" ]; then
-            echo "✅ 检测到官方filogic.mk，完整保留：$MK_FILE"
+            echo "✅ Detected official filogic.mk, fully protected"
           else
-            echo "⚠ 未检测到filogic.mk，后续脚本将创建空文件并仅追加SL3000段"
-            touch "$MK_FILE"
+            touch "$MK_FILE" && echo "⚠ No official filogic.mk, created empty file (only append SL3000 segment)"
           fi
-          echo "=== 目录/文件兜底创建完成（已保护官方filogic.mk）==="
+          echo "✅ Env init done (no overwrite any official file)"
 
-      # 5. 脚本权限：给工具目录所有sh脚本加755执行权限，无遗漏
-      - name: Add execute permission for all scripts
-        run: |
-          chmod 755 sl3000-tools/*.sh
-          ls -al sl3000-tools/ && echo "✅ 所有脚本已设置755执行权限"
-
-      # 6. 执行生成脚本：调试模式+日志捕获，自带最强清理+DTS语法修复
-      - name: Run SL3000 three-piece generator (Ultra Clean + DTS Fix)
+      # 5. 脚本权限：给工具目录所有sh脚本加755执行权限，通配符兜底无遗漏
+      - name: Add Execute Permission for All Scripts
         run: |
           set -euo pipefail
-          echo "=== 开始执行三件套生成脚本（最强隐藏字符清理+DTS语法修复）==="
-          bash -x sl3000-tools/generate-three-piece.sh 2>&1 | tee sl3000-workflow-run.log
-          echo "✅ 三件套生成+清理+语法修复完成"
+          chmod 755 sl3000-tools/*.sh
+          ls -al sl3000-tools/ | grep ".sh"
+          echo "✅ All scripts in sl3000-tools set to 755 permission"
 
-      # 7. 强校验：DTS/CONFIG存在非空 + MK含SL3000段（核心验证）
-      - name: Strict verify three-piece files
+      # 6. 执行生成脚本：调试模式+日志双捕获，整合乱码/隐藏字符/DTS语法修复
+      - name: Run SL3000 Three-Piece Generate Script (Final Version)
+        run: |
+          set -euo pipefail
+          echo "=== Start generate three-piece (garble fix + DTS fix + ultra clean) ==="
+          # 执行脚本并捕获日志，调试模式+输出到文件
+          bash -x sl3000-tools/generate-three-piece.sh 2>&1 | tee sl3000-workflow-run.log
+          echo "✅ Three-piece generate & clean & fix completed"
+
+      # 7. 终极强校验：存在性+非空+MK段校验，一步失败即终止
+      - name: Strict Verify Three-Piece Files
         run: |
           set -euo pipefail
           # 定义路径和校验标识
@@ -112,81 +107,80 @@ jobs:
           CFG_FILE=".config"
           MK_SEGMENT="mt7981b-sl3000-emmc"
 
-          # 校验DTS/CONFIG：存在且非空
+          # 校验1：DTS/CONFIG 存在且非空
           for FILE in $DTS_FILE $CFG_FILE; do
             if [ -f "$FILE" ] && [ -s "$FILE" ]; then
-              echo "✅ 验证通过：$FILE（存在且非空）"
+              echo "✅ Verify pass: $FILE (exists and non-empty)"
             else
-              echo "❌ 验证失败：$FILE（不存在或为空文件）"
+              echo "❌ Verify fail: $FILE (not exists or empty)"
               exit 1
             fi
           done
 
-          # 校验MK：存在非空 + 含SL3000设备段（双重验证）
+          # 校验2：MK 存在非空 + 包含SL3000设备段（核心，保护官方配置的同时确认生成有效）
           if [ -f "$MK_FILE" ] && [ -s "$MK_FILE" ]; then
             if grep -q "$MK_SEGMENT" "$MK_FILE"; then
-              echo "✅ 验证通过：$MK_FILE（官方配置完整+含SL3000设备段）"
+              echo "✅ Verify pass: $MK_FILE (official config protected + SL3000 segment exists)"
               # 打印SL3000段内容，方便云构建调试
-              echo "=== SL3000设备段内容 ==="
+              echo "=== SL3000 Device Segment Content ==="
               grep -A20 "define Device/$MK_SEGMENT" "$MK_FILE"
             else
-              echo "❌ 验证失败：$MK_FILE中未找到SL3000设备段"
+              echo "❌ Verify fail: $MK_FILE no SL3000 segment"
               exit 1
             fi
           else
-            echo "❌ 验证失败：$MK_FILE（不存在或为空文件）"
+            echo "❌ Verify fail: $MK_FILE (not exists or empty)"
             exit 1
           fi
 
-      # 8. 上传产物：三件套文件 + 所有日志（方便下载/调试/本地使用）
-      - name: Upload three-piece artifacts + logs
+      # 8. 上传产物：三件套文件+所有日志，保留30天，方便下载/调试/本地使用
+      - name: Upload Three-Piece & Logs
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-three-piece-files (Ultra Clean + DTS Fix)
+          name: sl3000-three-piece-final (no-garble + DTS-fix)
           path: |
             target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts
             target/linux/mediatek/image/filogic.mk
             .config
             sl3000-tools/sl3000-three-piece-generate.log
             sl3000-workflow-run.log
-          retention-days: 30  # 产物/日志保留30天
+          retention-days: 30
 
-      # 9. Git提交+推送：修复Rebase未暂存更改冲突（核心修改步骤）
-      - name: Commit and push three-piece changes (Fix Rebase Conflict)
+      # 9. Git提交推送：彻底解决Rebase冲突，处理未暂存更改，无变更则跳过
+      - name: Git Commit & Push (Fix Rebase Conflict)
         run: |
           set -euo pipefail
-          # 标准化Git配置
+          # 标准化Git配置，使用GitHub Actions Bot
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --global pull.rebase true  # 拉取时自动变基，解决冲突
+          git config --global pull.rebase true  # 开启变基，解决分支冲突
 
-          # 定义三件套路径
+          # 定义三件套路径，与脚本/校验步骤完全对齐
           DTS_FILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
           MK_FILE="target/linux/mediatek/image/filogic.mk"
           CFG_FILE=".config"
 
-          # 第一步：强制添加修改的文件到暂存区
+          # 关键步骤1：强制添加文件到暂存区（避免.gitignore过滤配置文件）
           git add -f "$DTS_FILE" "$MK_FILE" "$CFG_FILE"
 
-          # 第二步：暂存本地所有修改（解决未暂存更改无法rebase的核心）
-          # 无修改时stash也不会报错，容错处理
-          git stash push -m "temp stash sl3000 three-piece changes" || true
+          # 关键步骤2：暂存本地修改，解决「未暂存更改无法Rebase」的核心问题
+          git stash push -m "temp stash sl3000 three-piece (final)" || true
 
-          # 第三步：拉取远程最新代码（rebase模式）
+          # 关键步骤3：拉取远程最新代码，变基模式整合，无冲突则直接拉取
           git pull origin ${{ github.ref_name }}
 
-          # 第四步：恢复之前暂存的本地修改
+          # 关键步骤4：恢复本地暂存的修改，保留三件套的自定义变更
           git stash pop || true
 
-          # 第五步：重新添加文件（pop后暂存区会清空，需重新添加）
+          # 关键步骤5：重新添加文件（pop后暂存区会清空，需重新添加）
           git add -f "$DTS_FILE" "$MK_FILE" "$CFG_FILE"
 
-          # 第六步：提交修改，无变更则跳过
-          git commit -m "ci: rebuild SL3000 three-piece (ultra clean+DTS fix) [Protect official filogic.mk]" || {
-            echo "ℹ 无文件变更，跳过提交"
+          # 关键步骤6：提交，无变更则跳过（避免空提交）
+          git commit -m "ci: rebuild SL3000 three-piece (final) | no-garble + DTS-fix + ultra-clean" || {
+            echo "ℹ No file changes, skip commit & push"
             exit 0
           }
 
-          # 第七步：推送到远程仓库
+          # 关键步骤7：推送到远程仓库，完成更新
           git push origin ${{ github.ref_name }}
-          echo "✅ 三件套已成功提交并推送到远程仓库：${{ github.ref_name }}"
+          echo "✅ Three-piece successfully committed & pushed to ${{ github.ref_name }}"
