@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 ###############################################
 # 绝对定位仓库根目录（你的仓库根就是 OpenWrt 根）
@@ -9,25 +9,23 @@ cd "$ROOT"
 
 SCRIPT_DIR="$ROOT/sl3000-tools"
 LOG="$SCRIPT_DIR/sl3000-three-piece.log"
-> "$LOG"
+: > "$LOG"
 exec > >(tee -a "$LOG") 2>&1
 
 echo "[INFO] ROOT = $ROOT"
 
 ###############################################
-# 自动检测 files-6.x（适配 6.6 / 6.12 / 6.1）
+# 锁死 24.10 + kernel 6.6 路径（你的仓库结构）
 ###############################################
-FILES_DIR=$(ls -d target/linux/mediatek/files-* | head -n 1)
-if [ -z "$FILES_DIR" ]; then
-  echo "[FATAL] files-6.x not found"
-  exit 1
-fi
-echo "[INFO] FILES_DIR = $FILES_DIR"
-
-DTS_DIR="$ROOT/$FILES_DIR/arch/arm64/boot/dts/mediatek"
+DTS_DIR="$ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
 DTS="$DTS_DIR/mt7981b-sl3000-emmc.dts"
 MK="$ROOT/target/linux/mediatek/image/filogic.mk"
 CFG="$ROOT/.config"
+
+echo "[INFO] DTS_DIR = $DTS_DIR"
+echo "[INFO] DTS     = $DTS"
+echo "[INFO] MK      = $MK"
+echo "[INFO] CFG     = $CFG"
 
 mkdir -p "$DTS_DIR"
 
@@ -47,10 +45,9 @@ echo "=== Stage 1: Clean old MK entries ==="
 # 删除旧 define/endef（宽松匹配）
 sed -i '/define Device\/mt7981b-sl3000-emmc/,/endef/d' "$MK"
 
-# 删除所有旧 TARGET_DEVICES 行（宽松匹配）
+# 删除所有旧的 TARGET_DEVICES 行（宽松匹配）
 sed -i '/TARGET_DEVICES[[:space:]]\+.*mt7981b-sl3000-emmc/d' "$MK"
 
-# 清理 CRLF
 clean_crlf "$MK"
 
 ###############################################
@@ -238,9 +235,9 @@ echo "[OK] CONFIG generated → $CFG"
 ###############################################
 echo "=== Stage 5: Validation ==="
 
-[ -f "$DTS" ] || { echo "[FATAL] DTS missing"; exit 1; }
+[ -s "$DTS" ] || { echo "[FATAL] DTS missing or empty"; exit 1; }
+[ -s "$CFG" ] || { echo "[FATAL] CONFIG missing or empty"; exit 1; }
 grep -q "mt7981b-sl3000-emmc" "$MK" || { echo "[FATAL] MK missing device block"; exit 1; }
-grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG" || { echo "[FATAL] CONFIG missing device"; exit 1; }
 
 echo "=== Three-piece generation complete ==="
 echo "[OUT] DTS: $DTS"
