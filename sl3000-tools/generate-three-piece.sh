@@ -203,12 +203,12 @@ fi
 
 echo "=== Stage 6: Pre-check Stage 2 (after toolchain) ==="
 
-# 生成 profiles.json（24.10 必须用这个）
-make -j1 V=s json_overview_image_info >/dev/null 2>&1 || true
+# 用内核构建链验证 DTS/MK/.config 是否真正生效
+make -j1 V=s target/linux/compile >/dev/null 2>&1 || true
 
-# profiles.json 实际路径在 bin/targets/*/*/
-if ! grep -R "mt7981b-sl3000-emmc" -n bin/targets/*/*/profiles.json >/dev/null 2>&1; then
-    echo "Device not registered"
+# 检查内核构建产物中是否出现对应 dtb（或 image dtb）
+if ! find build_dir/target-*/linux-*/ -name 'mt7981b-sl3000-emmc*.dtb' | grep -q .; then
+    echo "Device not registered in kernel build (no mt7981b-sl3000-emmc dtb found)"
     exit 1
 fi
 
