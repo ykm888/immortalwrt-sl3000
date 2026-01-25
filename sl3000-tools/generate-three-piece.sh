@@ -20,9 +20,8 @@ clean() {
     sed -i 's/[[:cntrl:]]//g' "$1"
 }
 
-echo "=== Stage 1: Pre-check before generation ==="
+echo "=== Stage 1: Pre-clean MK ==="
 
-if [ -f "$DTS" ]; then rm -f "$DTS"; fi
 if grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK"; then
     sed -i '/^define Device\/mt7981b-sl3000-emmc$/,/^endef$/d' "$MK"
 fi
@@ -96,16 +95,16 @@ EOF
 
 clean "$DTS"
 
-echo "=== Stage 3: Generate MK ==="
+echo "=== Stage 3: Generate MK (TAB correct) ==="
 
 cat >> "$MK" << 'EOF'
 
 define Device/mt7981b-sl3000-emmc
-  DEVICE_VENDOR := SL
-  DEVICE_MODEL := SL3000 eMMC Engineering Flagship
-  DEVICE_DTS := mt7981b-sl3000-emmc
-  DEVICE_PACKAGES := kmod-mt7981-firmware kmod-fs-ext4 block-mount
-  IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
+	DEVICE_VENDOR := SL
+	DEVICE_MODEL := SL3000 eMMC Engineering Flagship
+	DEVICE_DTS := mt7981b-sl3000-emmc
+	DEVICE_PACKAGES := kmod-mt7981-firmware kmod-fs-ext4 block-mount
+	IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
 endef
 TARGET_DEVICES += mt7981b-sl3000-emmc
 
