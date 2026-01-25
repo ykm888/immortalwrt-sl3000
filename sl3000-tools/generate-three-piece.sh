@@ -3,14 +3,15 @@ set -e
 
 #########################################
 # SL3000 三件套生成脚本（最终修复版）
+# 目录结构基于仓库根目录（无 openwrt/）
 #########################################
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# 强制进入 openwrt 源码目录（dtc 实际使用的目录）
-cd "$ROOT_DIR/../openwrt"
+# 强制进入仓库根目录
+cd "$ROOT_DIR/.."
 
-# 三件套输出路径（dtc 实际使用的路径）
+# 三件套输出路径（仓库根目录）
 DTS_OUT="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
 MK_OUT="target/linux/mediatek/image/filogic.mk"
 CFG_OUT=".config"
@@ -88,4 +89,4 @@ clean_file "$DTS_OUT"
 clean_file "$MK_OUT"
 clean_file "$CFG_OUT"
 
-echo "✔ 三件套生成完成（openwrt 源码目录内）"
+echo "✔ 三件套生成完成（仓库根目录）"
