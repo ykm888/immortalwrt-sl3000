@@ -1,53 +1,117 @@
-name: Rebuild SL3000 Three-Piece
+name: Build ImmortalWrt 24.10 (SL3000 eMMC Flagship)
 
 on:
   workflow_dispatch:
 
 jobs:
-  rebuild:
+  build:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1. 检出仓库
       - name: Checkout repository
-      uses: actions/checkout@v4
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # 2. 设置执行权限
-      - name: Make scripts executable
+      - name: Optimize disk space
+        run: |
+          sudo apt-get remove -y --purge azure-cli google-cloud-sdk dotnet* powershell mono* mysql* php* android* || true
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git-core libncurses5-dev \
+            zlib1g-dev gawk flex gettext wget unzip python3 python3-distutils \
+            file libssl-dev rsync ccache device-tree-compiler
+
+      - name: Cache downloads and ccache
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/dl
+            openwrt/.ccache
+          key: ${{ runner.os }}-immortalwrt-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-immortalwrt-
+
+      - name: Clone ImmortalWrt source
+        run: |
+          rm -rf openwrt
+          git clone --depth=1 -b main https://github.com/ykm888/immortalwrt-sl3000.git openwrt
+
+      - name: Copy SL3000 tools
+        run: |
+          cp -r sl3000-tools openwrt/
+
+      - name: Generate SL3000 Three-Piece Set
+        working-directory: openwrt
         run: |
           chmod +x sl3000-tools/generate-three-piece.sh
-          chmod +x sl3000-tools/three-piece-check.sh
-          chmod +x sl3000-tools/three-piece-rebuild.sh
-          chmod +x sl3000-tools/all-in-one.sh
-          chmod +x sl3000-tools/profiles-check.sh
+          ./sl3000-tools/generate-three-piece.sh
 
-      # 3. 运行三件套重建脚本
-      - name: Run three-piece rebuild
-        working-directory: ${{ github.workspace }}
+      - name: Run all-in-one CHECK
+        working-directory: openwrt
         run: |
-          ./sl3000-tools/three-piece-rebuild.sh
+          chmod +x sl3000-tools/all-in-one.sh
+          ./sl3000-tools/all-in-one.sh check
 
-      # 4. 保存生成的三件套作为构建产物
-      - name: Upload three-piece artifacts
+      - name: Debug DTS head (CI 实际使用版本)
+        working-directory: openwrt
+        run: |
+          echo "=== CI 实际使用的 DTS 前 20 行 ==="
+          sed -n '1,20p' target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts || echo "DTS 文件不存在"
+
+      # ⭐ 使用三件套生成的 .config（最终标准）
+      - name: Use generated .config
+        working-directory: openwrt
+        run: |
+          echo "✔ 已使用三件套生成的 .config"
+
+      - name: Update feeds
+        working-directory: openwrt
+        run: |
+          ./scripts/feeds update -a || true
+          ./scripts/feeds install -a
+
+      - name: Normalize config
+        working-directory: openwrt
+        run: |
+          make defconfig
+
+      - name: Build toolchain
+        working-directory: openwrt
+        run: |
+          make toolchain/install -j$(nproc) V=s
+
+      - name: Build firmware
+        working-directory: openwrt
+        run: |
+          make -j$(nproc) V=s | tee build.log
+
+      - name: Upload build log
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-three-piece
-          path: |
-            target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts
-            target/linux/mediatek/image/filogic.mk
-            .config
+          name: build-log
+          path: openwrt/build.log
 
-      # 5. 推送生成的三件套到仓库
-      - name: Commit and push changes
-        working-directory: ${{ github.workspace }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-sl3000-emmc
+          path: openwrt/bin/targets/mediatek/filogic/
 
-          git add target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts
-          git add target/linux/mediatek/image/filogic.mk
-          git add .config
-
-          git commit -m "ci: auto rebuild SL3000 three-piece" || echo "No changes to commit"
-
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/ykm888/immortalwrt-sl3000.git main
+      - name: Release firmware
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: sl3000-emmc-${{ github.run_number }}-${{ github.run_id }}
+          name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
+          body: |
+            自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
+            - 三件套按黄金模板生成并同步
+            - DTS 检查通过
+            - 工具链构建完成
+            - 固件构建完成
+          files: |
+            openwrt/bin/targets/mediatek/filogic/*
