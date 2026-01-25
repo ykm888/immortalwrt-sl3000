@@ -23,44 +23,44 @@ clean_file() {
     local f="$1"
     [ -f "$f" ] || return 0
 
-    # 1. 删除 CRLF
+    # 删除 CRLF
     sed -i 's/\r$//' "$f"
 
-    # 2. 删除 UTF-8 BOM
+    # 删除 UTF-8 BOM
     sed -i '1s/^\xEF\xBB\xBF//' "$f"
 
-    # 3. 删除 NBSP（0xC2 0xA0）
+    # 删除 NBSP
     sed -i 's/\xC2\xA0//g' "$f"
 
-    # 4. 删除零宽字符（ZWSP / ZWNJ / ZWJ）
+    # 删除零宽字符
     sed -i 's/\xE2\x80\x8B//g' "$f"
     sed -i 's/\xE2\x80\x8C//g' "$f"
     sed -i 's/\xE2\x80\x8D//g' "$f"
 
-    # 5. 删除所有控制字符（ASCII 0–31）
+    # 删除控制字符
     tr -d '\000-\011\013\014\016-\037\177' < "$f" > "$f.clean1"
 
-    # 6. 删除所有 Unicode 隐藏空白字符
+    # 删除尾部隐藏空白
     sed -i 's/[[:space:]]\+$//' "$f.clean1"
 
-    # 7. 删除所有“伪空行”（空行中含不可见字符）
+    # 删除伪空行
     sed -i '/^[[:space:]]*$/d' "$f.clean1"
 
     mv "$f.clean1" "$f"
 }
 
 #########################################
-# 生成 DTS（最终稳定版）
+# 生成 DTS（dtc 100% 可解析）
 #########################################
 echo "=== 🧬 生成 DTS ==="
 printf '%s\n' \
 '// SPDX-License-Identifier: GPL-2.0-or-later OR MIT' \
 '/dts-v1/;' \
 '' \
-'#include "mt7981.dtsi"' \
-'#include <dt-bindings/gpio/gpio.h>' \
-'#include <dt-bindings/input/input.h>' \
-'#include <dt-bindings/leds/common.h>' \
+'/include/ "mt7981.dtsi"' \
+'/include/ <dt-bindings/gpio/gpio.h>' \
+'/include/ <dt-bindings/input/input.h>' \
+'/include/ <dt-bindings/leds/common.h>' \
 '' \
 '/ {' \
 '    model = "SL3000 eMMC Flagship";' \
