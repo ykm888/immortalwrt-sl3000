@@ -1,4 +1,4 @@
-name: Build OpenWrt 24.10 SL3000 eMMC (Auto Three-Piece)
+name: Build OpenWrt 24.10 SL3000 eMMC (Firmware Only)
 
 on:
   workflow_dispatch:
@@ -56,10 +56,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-sl3000-2410
 
-      - name: Copy SL3000 tools
+      - name: Copy SL3000 Three-Piece Set (from repo)
         run: |
           cp -r repo/sl3000-tools openwrt/
-          chmod +x openwrt/sl3000-tools/*.sh
+          cp repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts openwrt/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
+          cp repo/target/linux/mediatek/image/filogic.mk openwrt/target/linux/mediatek/image/
+          cp repo/.config openwrt/.config
 
       - name: Update & install feeds
         working-directory: openwrt
@@ -67,31 +69,15 @@ jobs:
           ./scripts/feeds update -a || true
           ./scripts/feeds install -a
 
-      - name: Make defconfig (base)
-        working-directory: openwrt
-        run: |
-          make defconfig
-
       - name: Build toolchain
         working-directory: openwrt
         run: |
           make toolchain/install -j$(nproc) V=s
 
-      - name: Generate SL3000 Three-Piece Set
-        working-directory: openwrt
-        run: |
-          ./sl3000-tools/generate-three-piece.sh
-          ls -l target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/ || true
-          ls -l target/linux/mediatek/image/ || true
-
-      - name: Make defconfig (final)
-        working-directory: openwrt
-        run: |
-          make defconfig
-
       - name: Build SL3000 eMMC firmware
         working-directory: openwrt
         run: |
+          make download -j8
           make -j$(nproc) V=s | tee firmware-build.log
 
       - name: Upload build logs
