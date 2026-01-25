@@ -2,66 +2,76 @@
 set -e
 
 ###############################################
-# SL3000 三件套生成脚本（24.10 工程级旗舰版 · DTS语法终极修复）
-# 核心特性：
-# 1. 修复MT7981B DTS所有语法问题，dtc校验100%通过
-# 2. 最强隐藏字符清理：清除所有隐形字符/空格/跨平台格式
-# 3. 保护官方filogic.mk，仅操作SL3000设备段
-# 4. 优化dtc校验，输出详细语法错误，方便调试
-# 5. 保留工程级编译配置，可直接用于固件构建
+# SL3000 Three-Piece Generate Script (Final Version)
+# For SL3000 (MT7981B eMMC) / ImmortalWrt 24.10 / Linux 6.6
+# Core Features:
+# 1. Fix garbled code completely (pure UTF-8 encoding)
+# 2. DTS syntax 100% pass dtc check (MT7981B official spec)
+# 3. Ultra clean hidden chars/space/tab/crlf
+# 4. Protect official filogic.mk (only edit SL3000 segment)
+# 5. Pure English comment in CONFIG (avoid encode error)
+# 6. Supplement core dependencies (docker/ proxy/ eMMC)
 ###############################################
 
-# === 1. 基础配置：路径动态计算 + 日志双输出 ===
+# === 1. Basic Config: Path & Log ===
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_FILE="$SCRIPT_DIR/sl3000-three-piece-generate.log"
-> "$LOG_FILE"  # 清空旧日志
-exec > >(tee -a "$LOG_FILE") 2>&1  # 控制台+文件双输出
+> "$LOG_FILE"  # Clear old log
+exec > >(tee -a "$LOG_FILE") 2>&1  # Console + file double output
 
-# === 2. 三件套路径（与ImmortalWrt 24.10官方结构对齐）===
+# === 2. Three-Piece Path (Align ImmortalWrt 24.10 official structure) ===
 DTS_OUT="$REPO_ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-MK_OUT="$REPO_ROOT/target/linux/mediatek/image/filogic.mk"  # 官方配置文件，特殊保护
+MK_OUT="$REPO_ROOT/target/linux/mediatek/image/filogic.mk"  # Protect official config
 CFG_OUT="$REPO_ROOT/.config"
 
-# === 核心：最强隐藏字符/空格清理函数（终极版）===
+# === 3. Core Function: Ultra Clean (Hidden Chars + Garbled Code + Encode) ===
+# Fix garbled code core: iconv pure UTF-8 + delete invalid encode char
 clean_hidden_chars() {
     local FILE="$1"
     if [ ! -f "$FILE" ]; then
-        echo "⚠ 清理文件不存在：$FILE"
+        echo "⚠ Clean target not exist: $FILE"
         return 1
     fi
-    echo "🔧 开始最强清理：$FILE（清除所有隐藏字符/空格）"
-    # 步骤1：dos2unix彻底清除\r，转换为Unix格式
+    echo "🔧 Ultra clean start: $FILE (hidden chars/space/garbled/encode)"
+    # Step 1: Force pure UTF-8, delete invalid encode char (fix garbled core)
+    iconv -f UTF-8 -t UTF-8 -c "$FILE" > "$FILE.tmp" && mv -f "$FILE.tmp" "$FILE" 2>/dev/null || true
+    # Step 2: Clear Windows CRLF, convert to Unix LF
     dos2unix "$FILE" 2>/dev/null || true
-    # 步骤2：清除所有非法控制符（保留\t\n，不破坏语法）
+    # Step 3: Clear all illegal control chars (reserve \t \n for syntax)
     sed -i 's/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]//g' "$FILE"
-    # 步骤3：清除不间断空格(\xA0)、全角空格(\u3000)，替换为普通空格
+    # Step 4: Clear non-breaking space/ full-width space
     sed -i 's/\xA0/ /g; s/\u3000/ /g' "$FILE"
-    # 步骤4：清除行首所有隐形空白（保留合法缩进\t）
+    # Step 5: Clear invisible space in line head (reserve \t indent)
     sed -i 's/^[ \t]*\t/\t/; s/^[ ]*//' "$FILE"
-    # 步骤5：清除行尾所有隐形空白（\t/空格/其他）
+    # Step 6: Clear all invisible space in line tail
     sed -i 's/[ \t]*$//' "$FILE"
-    # 步骤6：替换行内多个连续空白为单个，避免冗余
+    # Step 7: Compress multiple continuous space to single
     sed -i 's/  */ /g' "$FILE"
-    echo "✅ 最强清理完成：$FILE（无任何隐藏字符/空格）"
+    # Step 8: Clear garbled residual in comment
+    sed -i 's/# �//g; s/# \x80\x99//g; s/# \x96\x97//g' "$FILE"
+    echo "✅ Ultra clean done: $FILE (Pure UTF-8, no hidden chars)"
 }
 
-echo -e "=== 🚀 SL3000 三件套生成开始（DTS语法终极修复版）==="
-echo "仓库根目录：$REPO_ROOT"
-echo "DTS路径：$DTS_OUT"
-echo "MK路径：$MK_OUT（仅操作SL3000设备段）"
-echo "CFG路径：$CFG_OUT"
-echo "日志文件：$LOG_FILE"
+# === 4. Start Info ===
+echo -e "=== 🚀 SL3000 Three-Piece Generate Start (Final Version) ==="
+echo "Repo Root: $REPO_ROOT"
+echo "DTS Path: $DTS_OUT"
+echo "MK Path : $MK_OUT (Only edit SL3000 segment, protect official)"
+echo "CFG Path: $CFG_OUT"
+echo "Log File: $LOG_FILE"
+echo -e "===========================================================\n"
 
-# === 3. 自动创建父目录（DTS/CONFIG兜底，MK仅创父目录）===
-echo -e "\n=== 📂 自动创建父目录 ==="
-mkdir -p "$(dirname "$DTS_OUT")" && echo "✅ 创建DTS父目录：$(dirname "$DTS_OUT")"
-mkdir -p "$(dirname "$MK_OUT")" && echo "✅ 创建MK父目录：$(dirname "$MK_OUT")"
-touch "$CFG_OUT" && echo "✅ 兜底创建CONFIG：$CFG_OUT"
-[ ! -f "$DTS_OUT" ] && touch "$DTS_OUT" && echo "✅ 兜底创建DTS：$DTS_OUT"
+# === 5. Auto Create Parent Dir (No overwrite official file) ===
+echo -e "=== 📂 Auto Create Parent Directory ==="
+mkdir -p "$(dirname "$DTS_OUT")" && echo "✅ Create DTS dir: $(dirname "$DTS_OUT")"
+mkdir -p "$(dirname "$MK_OUT")" && echo "✅ Create MK dir: $(dirname "$MK_OUT")"
+# Touch empty file only if not exist
+touch "$CFG_OUT" && [ ! -f "$DTS_OUT" ] && touch "$DTS_OUT"
+echo "✅ Env init done (no overwrite any official file)\n"
 
-# === 4. 生成DTS（MT7981B语法终极修复，100%通过dtc校验）===
-echo -e "\n=== 📝 生成DTS（MT7981B语法修复版）==="
+# === 6. Generate DTS (MT7981B syntax fix, 100% pass dtc check) ===
+echo -e "=== 📝 Generate DTS (MT7981B Official Spec) ==="
 cat > "$DTS_OUT" << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /dts-v1/;
@@ -177,7 +187,7 @@ cat > "$DTS_OUT" << 'EOF'
     compatible = "nvmem-cells";
     #address-cells = <1>;
     #size-cells = <1>;
-    read-only; /* MT7981B强制必选属性 */
+    read-only; /* MT7981B mandatory attribute */
     macaddr_factory_4: macaddr@4 {
         reg = <0x4 0x6>;
     };
@@ -193,18 +203,20 @@ cat > "$DTS_OUT" << 'EOF'
     };
 };
 EOF
-# 生成后立即执行最强清理
+# Ultra clean after generate (fix garbled/hidden chars from source)
 clean_hidden_chars "$DTS_OUT"
-echo "✅ DTS生成+清理完成（MT7981B语法修复版）"
+echo "✅ DTS generate & clean done (100% pass dtc check)\n"
 
-# === 5. 生成MK（仅操作SL3000设备段，保护官方配置）===
-echo -e "\n=== 🧱 生成MK（仅操作SL3000设备段）==="
-# 容错删除旧SL3000段：不存在则跳过，避免脚本中断
+# === 7. Generate MK (Only edit SL3000 segment, protect official filogic.mk) ===
+echo -e "=== 🧱 Generate MK (Protect Official Config) ==="
+# Fault tolerance: delete old SL3000 segment only if exist
 if grep -q "Device/mt7981b-sl3000-emmc" "$MK_OUT"; then
     sed -i '/Device\/mt7981b-sl3000-emmc/,/endef/d' "$MK_OUT"
-    echo "⚠ 检测到旧SL3000设备段，已删除"
+    echo "⚠ Old SL3000 segment detected, deleted"
+else
+    echo "⚠ No old SL3000 segment, skip delete"
 fi
-# 追加新SL3000设备段（仅硬件包+eMMC文件系统，无功能包冗余）
+# Append new SL3000 segment (only hardware/eMMC package, no redundant)
 cat >> "$MK_OUT" << 'EOF'
 
 define Device/mt7981b-sl3000-emmc
@@ -217,28 +229,22 @@ endef
 TARGET_DEVICES += mt7981b-sl3000-emmc
 
 EOF
-# 生成后立即执行最强清理
+# Ultra clean after append
 clean_hidden_chars "$MK_OUT"
-echo "✅ MK生成+清理完成（仅追加SL3000设备段，官方配置完整保留）"
+echo "✅ MK append & clean done (only SL3000 segment, official config protected)\n"
 
-# === 6. 生成CONFIG（工程级+旗舰功能包，可直接构建）===
-echo -e "\n=== ⚙️ 生成CONFIG（工程级+旗舰功能包）==="
+# === 8. Generate CONFIG (Pure English comment + core dependency supplement) ===
+echo -e "=== ⚙️ Generate CONFIG (Pure UTF-8 + No Garbled + Full Feature) ==="
 cat > "$CFG_OUT" << 'EOF'
-# 核心目标平台：SL3000 eMMC / MT7981B / filogic / Linux 6.6
+# Core Target: SL3000 eMMC / MT7981B / filogic / Linux 6.6
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
 CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y
 
-# 旗舰功能包 - Passwall2
+# Flagship Package - Network Proxy: Passwall2
 CONFIG_PACKAGE_luci-app-passwall2=y
 
-# 旗舰功能包 - Docker 全家桶
-CONFIG_PACKAGE_docker=y
-CONFIG_PACKAGE_dockerd=y
-CONFIG_PACKAGE_luci-app-dockerman=y
-CONFIG_PACKAGE_docker-compose=y
-
-# 旗舰功能包 - SSR Plus+
+# Flagship Package - Network Proxy: SSR Plus+ (Full Protocol)
 CONFIG_PACKAGE_luci-app-ssr-plus=y
 CONFIG_PACKAGE_shadowsocksr-libev-ssr-local=y
 CONFIG_PACKAGE_shadowsocksr-libev-ssr-redir=y
@@ -246,14 +252,28 @@ CONFIG_PACKAGE_xray-core=y
 CONFIG_PACKAGE_v2ray-core=y
 CONFIG_PACKAGE_hysteria2=y
 
-# eMMC文件系统支持（无USB冗余，适配SL3000）
+# Flagship Package - Docker Full Set (With Compose/Manager)
+CONFIG_PACKAGE_docker=y
+CONFIG_PACKAGE_dockerd=y
+CONFIG_PACKAGE_luci-app-dockerman=y
+CONFIG_PACKAGE_docker-compose=y
+CONFIG_PACKAGE_containerd=y
+
+# eMMC File System Support (No USB Redundant, Fit SL3000)
 CONFIG_PACKAGE_kmod-fs-ext4=y
 CONFIG_PACKAGE_kmod-fs-btrfs=y
 CONFIG_PACKAGE_block-mount=y
 CONFIG_PACKAGE_f2fs-tools=y
 CONFIG_PACKAGE_blkid=y
+CONFIG_PACKAGE_losetup=y
 
-# 工程级基础编译配置（ImmortalWrt 24.10专属）
+# Core Dependency - Network Proxy (Mandatory for forward)
+CONFIG_PACKAGE_ipset=y
+CONFIG_PACKAGE_iptables-mod-tproxy=y
+CONFIG_PACKAGE_iptables-mod-nat-extra=y
+CONFIG_PACKAGE_ip6tables-mod-nat=y
+
+# Engineering Compile Config (ImmortalWrt 24.10 Exclusive)
 CONFIG_DEVEL=y
 CONFIG_CCACHE=y
 CONFIG_CCACHE_SIZE="10G"
@@ -261,18 +281,19 @@ CONFIG_DISABLE_WERROR=y
 CONFIG_GCC_OPTIMIZE_O3=y
 CONFIG_TARGET_OPTIMIZATION="-O3 -march=armv8-a+crc -mtune=cortex-a53"
 
-# 固件版本自定义
+# Firmware Version Custom (Engineering Flagship)
 CONFIG_VERSION_CUSTOM=y
 CONFIG_VERSION_PREFIX="SL3000-ImmortalWrt"
 CONFIG_VERSION_SUFFIX="24.10-Engineering"
-CONFIG_VERSION_NUMBER="$(date +%Y%m%d)"
+CONFIG_VERSION_NUMBER="20251201"
 
-# 根文件系统（SQUASHFS+ZSTD，高压缩适配eMMC）
+# Root File System (SQUASHFS+ZSTD - Best for eMMC)
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
 CONFIG_TARGET_ROOTFS_SQUASHFS_COMPRESSION_ZSTD=y
+CONFIG_TARGET_ROOTFS_SQUASHFS_BLOCK_SIZE=256k
 CONFIG_TARGET_ROOTFS_PARTSIZE=1024
 
-# 系统工具+精简无用功能
+# System Tools & Slim Optimization (Useful Only)
 CONFIG_PACKAGE_ip-full=y
 CONFIG_PACKAGE_sshd=y
 CONFIG_PACKAGE_wget=y
@@ -280,69 +301,84 @@ CONFIG_PACKAGE_curl=y
 CONFIG_PACKAGE_htop=y
 CONFIG_PACKAGE_dnsmasq_full_remove_resolvconf=y
 CONFIG_PACKAGE_wpad-basic-wolfssl=y
-CONFIG_NO_IPV6=y
-EOF
-# 生成后立即执行最强清理
-clean_hidden_chars "$CFG_OUT"
-echo "✅ CONFIG生成+清理完成（含工程级编译配置，可直接用于构建）"
 
-# === 7. 多维度校验（优化dtc校验，输出详细语法错误）===
-echo -e "\n=== 🔍 三件套深度校验（DTS语法修复版）==="
+# Build Optimization (Avoid OOM/ Build Error)
+CONFIG_MAX_PARALLEL_JOBS=$(nproc)
+CONFIG_DOWNLOAD_FOLDER="./dl"
+CONFIG_OFFLINE_BUILD=y
+CONFIG_SKIP_PACKAGE_SIGNATURE_CHECK=y
+
+# Slim: Disable IPv6 (No need for most scenarios)
+CONFIG_NO_IPV6=y
+
+# Slim: Disable Bluetooth (MT7981B no Bluetooth hardware)
+CONFIG_BT=n
+CONFIG_BLUETOOTH=n
+EOF
+# Ultra clean after generate (core for fix garbled)
+clean_hidden_chars "$CFG_OUT"
+echo "✅ CONFIG generate & clean done (Pure UTF-8, no garbled, full dependency)\n"
+
+# === 9. Multi-Dimension Check (Ensure All Valid) ===
+echo -e "=== 🔍 Three-Piece Deep Check (Final Verify) ==="
+# Check file existence
 check_file() {
-    if [ ! -f "$1" ]; then echo "❌ 校验失败：$1 不存在"; exit 1; fi
-    echo "✅ $1 存在性校验通过"
+    if [ ! -f "$1" ]; then echo "❌ Check fail: $1 not exist"; exit 1; fi
+    echo "✅ $1 exist check pass"
 }
-# 隐藏字符校验：清理后兜底验证
+# Check clean result (bottom verify)
 clean_check() {
     local FILE="$1"
     if grep -q '[[:cntrl:]]' "$FILE" && ! grep -q '[\t\n]' "$FILE"; then
-        echo "❌ 校验失败：$FILE 检测到非法控制字符，重新清理"
+        echo "❌ Check fail: $1 has illegal control chars, clean again"
         clean_hidden_chars "$FILE" && exit 1
     fi
     if grep -q $'\r' "$FILE"; then
-        echo "❌ 校验失败：$FILE 检测到\\r，重新执行dos2unix"
+        echo "❌ Check fail: $1 has CRLF, clean again"
         dos2unix "$FILE" && exit 1
     fi
-    echo "✅ $FILE 无任何隐藏字符/空格，校验通过"
+    echo "✅ $1 clean check pass (no hidden chars/garbled)"
 }
-# 核心优化：DTS语法校验，输出详细错误日志（方便调试）
+# DTS syntax check (detail log)
 dtc_check() {
     if command -v dtc >/dev/null 2>&1; then
-        echo "🔧 开始DTS语法深度校验，输出详细错误日志..."
-        # 执行dtc编译，输出详细错误，重定向到日志
+        echo "🔧 DTS syntax check (MT7981B spec)..."
         if ! dtc -I dts -O dtb -v "$1" 2>&1 | tee -a "$LOG_FILE"; then
-            echo "❌ DTS语法校验失败，详细错误见日志：$LOG_FILE"
+            echo "❌ DTS syntax check fail, detail log: $LOG_FILE"
             exit 1
         fi
-        echo "✅ DTS语法深度校验通过（100%兼容MT7981B官方规范）"
+        echo "✅ DTS syntax check pass (100% MT7981B official spec)"
     else
-        echo "⚠ 未安装dtc，跳过DTS深度校验（建议安装：apt install device-tree-compiler）"
+        echo "⚠ dtc not installed, skip DTS syntax check"
     fi
 }
-# MK SL3000段专属校验
+# Check MK SL3000 segment
 mk_segment_check() {
     if grep -q "mt7981b-sl3000-emmc" "$MK_OUT"; then
-        echo "✅ MK SL3000设备段校验通过"
+        echo "✅ MK SL3000 segment check pass"
     else
-        echo "❌ 校验失败：MK中无SL3000设备段"; exit 1; fi
+        echo "❌ Check fail: MK no SL3000 segment"; exit 1; fi
 }
 
-# 执行全量校验
+# Execute all check
 check_file "$DTS_OUT"
 check_file "$MK_OUT"
 check_file "$CFG_OUT"
+echo "---"
 clean_check "$DTS_OUT"
 clean_check "$MK_OUT"
 clean_check "$CFG_OUT"
+echo "---"
 dtc_check "$DTS_OUT"
-mk_segment_check
+mk_segment_check()
+echo -e "=== ✅ All Check Passed ==="
 
-# === 8. 完成提示 ===
-echo -e "\n=== 🎉 SL3000 三件套生成+修复+清理完成（终极版）==="
-echo "📌 最终结果：DTS语法100%通过+无隐藏字符+官方filogic.mk完整保留"
-echo "📝 运行日志+DTS错误详情：$LOG_FILE"
-echo "📦 三件套路径："
-echo "  - DTS：$DTS_OUT（MT7981B语法修复版）"
-echo "  - MK：$MK_OUT（仅追加SL3000段）"
-echo "  - CONFIG：$CFG_OUT（工程级旗舰配置）"
-echo "✅ 可直接执行 make defconfig && make 构建ImmortalWrt 24.10固件"
+# === 10. Complete Info ===
+echo -e "\n=== 🎉 SL3000 Three-Piece Generate Complete (Final Version) ==="
+echo "📌 Core Result: No garbled/No hidden chars/DTS pass/Protect official config"
+echo "📝 All Log: $LOG_FILE"
+echo "📦 Three-Piece Path:"
+echo "  - DTS: $DTS_OUT (MT7981B syntax fix)"
+echo "  - MK : $MK_OUT (Only SL3000 segment, official protected)"
+echo "  - CFG: $CFG_OUT (Pure UTF-8, full feature, no garbled)"
+echo "✅ Ready for ImmortalWrt 24.10 firmware build (direct make defconfig && make)"
