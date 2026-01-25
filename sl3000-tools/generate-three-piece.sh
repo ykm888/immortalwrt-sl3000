@@ -7,19 +7,13 @@ set -e
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# 关键：统一在仓库根目录下工作
-cd "$ROOT_DIR/.."
+# 强制进入 openwrt 源码目录（dtc 实际使用的目录）
+cd "$ROOT_DIR/../openwrt"
 
-# 下面所有路径都相对于“仓库根”
+# 三件套输出路径（dtc 实际使用的路径）
 DTS_OUT="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
 MK_OUT="target/linux/mediatek/image/filogic.mk"
-CFG_OUT="mt7981b-sl3000-emmc.config"
-
-if [ -d "openwrt" ]; then
-    OPENWRT_DIR="openwrt"
-else
-    OPENWRT_DIR="."
-fi
+CFG_OUT=".config"
 
 mkdir -p "$(dirname "$DTS_OUT")"
 mkdir -p "$(dirname "$MK_OUT")"
@@ -36,7 +30,7 @@ clean_file() {
     mv "$f.clean" "$f"
 }
 
-echo "=== 🧬 生成DTS ==="
+echo "=== 🧬 生成 DTS ==="
 cat <<'EOF' > "$DTS_OUT"
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
@@ -64,7 +58,7 @@ cat <<'EOF' > "$DTS_OUT"
 };
 EOF
 
-echo "=== 🧬 生成MK ==="
+echo "=== 🧬 生成 MK ==="
 cat <<'EOF' > "$MK_OUT"
 define Device/mt7981b-sl3000-emmc
   DEVICE_VENDOR := SL
@@ -76,7 +70,7 @@ endef
 TARGET_DEVICES += mt7981b-sl3000-emmc
 EOF
 
-echo "=== 🧬 生成配置 ==="
+echo "=== 🧬 生成 CONFIG ==="
 cat <<'EOF' > "$CFG_OUT"
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
@@ -89,26 +83,9 @@ CONFIG_PACKAGE_dockerd=y
 CONFIG_PACKAGE_luci-app-dockerman=y
 EOF
 
-echo "=== 🧹清理隐藏字符（最终修复）==="
+echo "=== 🧹 清理隐藏字符 ==="
 clean_file "$DTS_OUT"
 clean_file "$MK_OUT"
 clean_file "$CFG_OUT"
 
-echo "=== 🔄 同步三件套到openwrt 源码 ==="
-
-sync_file() {
-    local SRC="$1"
-    local DST="$OPENWRT_DIR/$1"
-    mkdir -p "$(dirname "$DST")"
-    if [ "$(realpath "$SRC")" = "$(realpath "$DST")" ]; then
-        echo "⚠ 跳过同步（源文件与目标文件相同）：$SRC"
-    else
-        cp "$SRC" "$DST"
-    fi
-}
-
-sync_file "$DTS_OUT"
-sync_file "$MK_OUT"
-sync_file "$CFG_OUT"
-
-echo "✔ 三件套生成 + 清理 + 同步完成（最终修复版）"
+echo "✔ 三件套生成完成（openwrt 源码目录内）"
