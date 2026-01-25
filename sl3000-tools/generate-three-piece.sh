@@ -96,25 +96,30 @@ EOF
 
 clean_crlf "$DTS"
 
-echo "=== Stage 3: Insert MK device block at correct position ==="
+echo "=== Stage 3: Insert MK device block after last TARGET_DEVICES ==="
 
 TMP_MK="$MK.tmp"
 
 awk '
-    # 在 BuildImage 之前插入
-    index($0, "BuildImage") > 0 {
-        print ""
-        print "define Device/mt7981b-sl3000-emmc"
-        print "\tDEVICE_VENDOR := SL"
-        print "\tDEVICE_MODEL := SL3000 eMMC Engineering Flagship"
-        print "\tDEVICE_DTS := mt7981b-sl3000-emmc"
-        print "\tDEVICE_PACKAGES := kmod-mt7981-firmware kmod-fs-ext4 block-mount"
-        print "\tIMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata"
-        print "endef"
-        print "TARGET_DEVICES += mt7981b-sl3000-emmc"
-        print ""
+    /^TARGET_DEVICES \+=/ { last = NR }
+    { lines[NR] = $0 }
+    END {
+        for (i = 1; i <= NR; i++) {
+            print lines[i]
+            if (i == last) {
+                print ""
+                print "define Device/mt7981b-sl3000-emmc"
+                print "\tDEVICE_VENDOR := SL"
+                print "\tDEVICE_MODEL := SL3000 eMMC Engineering Flagship"
+                print "\tDEVICE_DTS := mt7981b-sl3000-emmc"
+                print "\tDEVICE_PACKAGES := kmod-mt7981-firmware kmod-fs-ext4 block-mount"
+                print "\tIMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata"
+                print "endef"
+                print "TARGET_DEVICES += mt7981b-sl3000-emmc"
+                print ""
+            }
+        }
     }
-    { print }
 ' "$MK" > "$TMP_MK"
 
 mv "$TMP_MK" "$MK"
@@ -193,12 +198,17 @@ clean_crlf "$CFG"
 echo "=== Stage 5: Validation ==="
 
 [ -f "$DTS" ] || { echo "DTS missing"; exit 1; }
+
 grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK" || {
     echo "MK invalid: device block not found"
     sed -n '1,200p' "$MK"
     exit 1
 }
-grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG" || { echo "CONFIG invalid"; exit 1; }
+
+grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG" || {
+    echo "CONFIG invalid"
+    exit 1
+}
 
 echo "=== Three-piece generation complete ==="
 echo "$DTS"
