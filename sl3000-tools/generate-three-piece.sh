@@ -23,44 +23,32 @@ clean_file() {
     local f="$1"
     [ -f "$f" ] || return 0
 
-    # 删除 CRLF
     sed -i 's/\r$//' "$f"
-
-    # 删除 UTF-8 BOM
     sed -i '1s/^\xEF\xBB\xBF//' "$f"
-
-    # 删除 NBSP
     sed -i 's/\xC2\xA0//g' "$f"
-
-    # 删除零宽字符
     sed -i 's/\xE2\x80\x8B//g' "$f"
     sed -i 's/\xE2\x80\x8C//g' "$f"
     sed -i 's/\xE2\x80\x8D//g' "$f"
 
-    # 删除控制字符
     tr -d '\000-\011\013\014\016-\037\177' < "$f" > "$f.clean1"
-
-    # 删除尾部隐藏空白
     sed -i 's/[[:space:]]\+$//' "$f.clean1"
-
-    # 删除伪空行
     sed -i '/^[[:space:]]*$/d' "$f.clean1"
 
     mv "$f.clean1" "$f"
 }
 
 #########################################
-# 生成 DTS（dtc 100% 可解析）
+# 生成 DTS（dtc 需要 cpp 预处理）
 #########################################
 echo "=== 🧬 生成 DTS ==="
 printf '%s\n' \
 '// SPDX-License-Identifier: GPL-2.0-or-later OR MIT' \
 '/dts-v1/;' \
 '' \
-'/include/ "mt7981.dtsi"' \
-'/include/ <dt-bindings/gpio/gpio.h>' \
-'/include/ <dt-bindings/input/input.h>' \
-'/include/ <dt-bindings/leds/common.h>' \
+'#include "mt7981.dtsi"' \
+'#include <dt-bindings/gpio/gpio.h>' \
+'#include <dt-bindings/input/input.h>' \
+'#include <dt-bindings/leds/common.h>' \
 '' \
 '/ {' \
 '    model = "SL3000 eMMC Flagship";' \
@@ -82,7 +70,7 @@ printf '%s\n' \
 clean_file "$DTS_OUT"
 
 #########################################
-# 生成 MK（最终稳定版）
+# 生成 MK
 #########################################
 echo "=== 🧬 生成 MK ==="
 printf '%s\n' \
@@ -99,7 +87,7 @@ printf '%s\n' \
 clean_file "$MK_OUT"
 
 #########################################
-# 生成 CONFIG（最终稳定版）
+# 生成 CONFIG
 #########################################
 echo "=== 🧬 生成 CONFIG ==="
 printf '%s\n' \
