@@ -2,7 +2,7 @@
 set -e
 
 ###############################################
-# SL3000 Three-Piece Generate Script (Final Version)
+# SL3000 Three-Piece Generate Script (Final Fixed Version)
 # For SL3000 (MT7981B eMMC) / ImmortalWrt 24.10 / Linux 6.6
 # Core Features:
 # 1. Fix garbled code completely (pure UTF-8 encoding)
@@ -11,6 +11,7 @@ set -e
 # 4. Protect official filogic.mk (only edit SL3000 segment)
 # 5. Pure English comment in CONFIG (avoid encode error)
 # 6. Supplement core dependencies (docker/ proxy/ eMMC)
+# 7. Fix syntax error: function call extra parentheses
 ###############################################
 
 # === 1. Basic Config: Path & Log ===
@@ -54,7 +55,7 @@ clean_hidden_chars() {
 }
 
 # === 4. Start Info ===
-echo -e "=== 🚀 SL3000 Three-Piece Generate Start (Final Version) ==="
+echo -e "=== 🚀 SL3000 Three-Piece Generate Start (Final Fixed Version) ==="
 echo "Repo Root: $REPO_ROOT"
 echo "DTS Path: $DTS_OUT"
 echo "MK Path : $MK_OUT (Only edit SL3000 segment, protect official)"
@@ -360,7 +361,7 @@ mk_segment_check() {
         echo "❌ Check fail: MK no SL3000 segment"; exit 1; fi
 }
 
-# Execute all check
+# Execute all check (FIXED: remove extra parentheses for mk_segment_check)
 check_file "$DTS_OUT"
 check_file "$MK_OUT"
 check_file "$CFG_OUT"
@@ -370,11 +371,11 @@ clean_check "$MK_OUT"
 clean_check "$CFG_OUT"
 echo "---"
 dtc_check "$DTS_OUT"
-mk_segment_check()
+mk_segment_check  # ✅ Core fix: deleted extra parentheses
 echo -e "=== ✅ All Check Passed ==="
 
 # === 10. Complete Info ===
-echo -e "\n=== 🎉 SL3000 Three-Piece Generate Complete (Final Version) ==="
+echo -e "\n=== 🎉 SL3000 Three-Piece Generate Complete (Final Fixed Version) ==="
 echo "📌 Core Result: No garbled/No hidden chars/DTS pass/Protect official config"
 echo "📝 All Log: $LOG_FILE"
 echo "📦 Three-Piece Path:"
