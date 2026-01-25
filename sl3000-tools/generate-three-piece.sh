@@ -1,20 +1,33 @@
 #!/bin/bash
 set -e
 
-# === 固定定位 OpenWrt 根目录（无论脚本放哪里都能找到） ===
-ROOT="$(git rev-parse --show-toplevel)"
+# 仓库根就是 OpenWrt 根（你的日志已经证明）
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-SCRIPT_DIR="$ROOT/scripts"
+SCRIPT_DIR="$ROOT/sl3000-tools"
 LOG="$SCRIPT_DIR/sl3000-three-piece.log"
 > "$LOG"
 exec > >(tee -a "$LOG") 2>&1
 
-# === 三件套路径 ===
-DTS_DIR="$ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
+echo "[INFO] ROOT = $ROOT"
+
+# 自动探测 files-6.x 目录（兼容 6.6 / 6.12 等）
+FILES_DIR=$(ls -d target/linux/mediatek/files-* | head -n 1)
+if [ -z "$FILES_DIR" ]; then
+  echo "[FATAL] target/linux/mediatek/files-* not found"
+  exit 1
+fi
+echo "[INFO] FILES_DIR = $FILES_DIR"
+
+DTS_DIR="$ROOT/$FILES_DIR/arch/arm64/boot/dts/mediatek"
 DTS="$DTS_DIR/mt7981b-sl3000-emmc.dts"
 MK="$ROOT/target/linux/mediatek/image/filogic.mk"
 CFG="$ROOT/.config"
+
+echo "[INFO] DTS_DIR = $DTS_DIR"
+echo "[INFO] MK      = $MK"
+echo "[INFO] CFG     = $CFG"
 
 mkdir -p "$DTS_DIR"
 
@@ -25,9 +38,13 @@ clean_crlf() {
 
 echo "=== Stage 1: Clean old MK entries ==="
 
+if [ ! -f "$MK" ]; then
+  echo "[FATAL] filogic.mk not found at $MK"
+  exit 1
+fi
+
 # 删除旧设备段
 sed -i '/^define Device\/mt7981b-sl3000-emmc$/,/^endef$/d' "$MK"
-
 # 删除旧注册行
 sed -i '/^TARGET_DEVICES \+= mt7981b-sl3000-emmc$/d' "$MK"
 
@@ -99,6 +116,7 @@ cat > "$DTS" << 'EOF'
 EOF
 
 clean_crlf "$DTS"
+echo "[OK] DTS generated at $DTS"
 
 echo "=== Stage 3: Insert MK device block ==="
 
@@ -128,6 +146,7 @@ awk '
 
 mv "$TMP_MK" "$MK"
 clean_crlf "$MK"
+echo "[OK] MK patched at $MK"
 
 echo "=== Stage 4: Generate CONFIG ==="
 
@@ -198,23 +217,24 @@ CONFIG_SL3000_CUSTOM_CONFIG=y
 EOF
 
 clean_crlf "$CFG"
+echo "[OK] CONFIG generated at $CFG"
 
 echo "=== Stage 5: Validation ==="
 
-[ -f "$DTS" ] || { echo "DTS missing"; exit 1; }
+[ -f "$DTS" ] || { echo "[FATAL] DTS missing: $DTS"; exit 1; }
 
 grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK" || {
-    echo "MK invalid: device block not found"
+    echo "[FATAL] MK invalid: device block not found"
     sed -n '1,200p' "$MK"
     exit 1
 }
 
 grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG" || {
-    echo "CONFIG invalid"
+    echo "[FATAL] CONFIG invalid (device not selected)"
     exit 1
 }
 
 echo "=== Three-piece generation complete ==="
-echo "$DTS"
-echo "$MK"
-echo "$CFG"
+echo "[OUT] DTS: $DTS"
+echo "[OUT] MK : $MK"
+echo "[OUT] CFG: $CFG"
