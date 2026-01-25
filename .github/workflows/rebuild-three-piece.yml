@@ -8,22 +8,71 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+      # 1. 检出仓库
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: List repo structure (debug)
+      # 2. 强制切换到仓库根目录（关键修复点）
+      - name: Ensure working directory
         run: |
-          echo "=== 当前仓库结构 ==="
-          ls -R .
+          echo "当前目录:"
+          pwd
+          echo "列出仓库根目录:"
+          ls -al .
 
-      - name: Make scripts executable
+      # 3. 检查脚本是否存在（关键调试点）
+      - name: Check script exists
         run: |
-          chmod +x sl3000-tools/generate-three-piece.sh
-          chmod +x sl3000-tools/all-in-one-light.sh
+          echo "检查 sl3000-tools 目录:"
+          ls -al sl3000-tools || echo "❌ sl3000-tools 目录不存在"
+          echo "检查 generate-three-piece.sh:"
+          ls -al sl3000-tools/generate-three-piece.sh || echo "❌ generate-three-piece.sh 不存在"
 
+      # 4. 添加执行权限（使用 755，永远有效）
+      - name: Add execute permission
+        run: |
+          chmod 755 sl3000-tools/generate-three-piece.sh
+          chmod 755 sl3000-tools/all-in-one-light.sh
+          echo "权限检查:"
+          ls -al sl3000-tools
+
+      # 5. 执行三件套生成脚本（关键步骤）
       - name: Run three-piece generator
         run: |
-          echo "=== 执行 generate-three-piece.sh ==="
-          ./sl3000-tools/generate-three-piece.sh
+          echo "=== 开始执行 generate-three-piece.sh ==="
+          bash -x sl3000-tools/generate-three-piece.sh
+
+      # 6. 检查三件套是否生成（关键验证）
+      - name: Verify three-piece output
+        run: |
+          echo "=== 检查 DTS ==="
+          ls -al target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
+          echo "=== 检查 MK ==="
+          ls -al target/linux/mediatek/image/
+          echo "=== 检查 CONFIG ==="
+          ls -al .config || echo ".config 不存在"
+
+      # 7. 上传三件套产物
+      - name: Upload three-piece artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sl3000-three-piece
+          path: |
+            target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts
+            target/linux/mediatek/image/filogic.mk
+            .config
+
+      # 8. 提交三件套到仓库
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -f target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts
+          git add -f target/linux/mediatek/image/filogic.mk
+          git add -f .config
+
+          git commit -m "ci: auto rebuild SL3000 three-piece" || echo "No changes to commit"
+          git push
