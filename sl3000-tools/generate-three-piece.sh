@@ -2,10 +2,10 @@
 set -e
 
 ###############################################
-# SL3000 三件套生成脚本（24.10 工程级最强旗舰版）
+# SL3000 三件套生成脚本（24.10 工程级最强旗舰版 · 最终修复版）
 # - DTS：官方结构 + 工程旗舰版
-# - MK：无 USB + Docker + Passwall2 + SSR Plus+
-# - CONFIG：自动启用 Docker + Passwall2 + SSR Plus+
+# - MK：强制覆盖旧段（无 USB + Docker + Passwall2 + SSR Plus+）
+# - CONFIG：覆盖生成（Docker + Passwall2 + SSR Plus+）
 # - 三件套自动创建 / 覆盖
 # - 24.10 / Linux 6.6 固定结构
 ###############################################
@@ -25,28 +25,15 @@ echo "MK_OUT  = $MK_OUT"
 echo "CFG_OUT = $CFG_OUT"
 
 ###############################################
-# 1. 自动创建三件套（不存在 → 创建；存在 → 保留再覆盖/追加）
+# 1. 自动创建三件套（不存在 → 创建）
 ###############################################
 
-# DTS
-if [ ! -f "$DTS_OUT" ]; then
-    echo "⚠ DTS 不存在，自动创建"
-    mkdir -p "$(dirname "$DTS_OUT")"
-    touch "$DTS_OUT"
-fi
+mkdir -p "$(dirname "$DTS_OUT")"
+mkdir -p "$(dirname "$MK_OUT")"
 
-# MK
-if [ ! -f "$MK_OUT" ]; then
-    echo "⚠ MK 不存在，自动创建"
-    mkdir -p "$(dirname "$MK_OUT")"
-    touch "$MK_OUT"
-fi
-
-# CONFIG
-if [ ! -f "$CFG_OUT" ]; then
-    echo "⚠ CONFIG 不存在，自动创建"
-    touch "$CFG_OUT"
-fi
+touch "$DTS_OUT"
+touch "$MK_OUT"
+touch "$CFG_OUT"
 
 ###############################################
 # 2. 生成 DTS（官方结构 + 工程旗舰版）
@@ -79,11 +66,14 @@ EOF
 echo "✔ DTS 已生成（官方工程旗舰版）"
 
 ###############################################
-# 3. 追加 MK（无 USB + Docker + Passwall2 + SSR Plus+）
+# 3. 生成 MK（强制覆盖旧段）
 ###############################################
-echo "=== 追加 MK（工程级最强旗舰版） ==="
+echo "=== 生成 MK（工程级最强旗舰版） ==="
 
-if ! grep -q "Device/mt7981b-sl3000-emmc" "$MK_OUT"; then
+# 删除旧的 SL3000 设备段
+sed -i '/Device\/mt7981b-sl3000-emmc/,/endef/d' "$MK_OUT"
+
+# 追加新的旗舰版设备段
 cat >> "$MK_OUT" << 'EOF'
 
 define Device/mt7981b-sl3000-emmc
@@ -100,10 +90,8 @@ endef
 TARGET_DEVICES += mt7981b-sl3000-emmc
 
 EOF
-    echo "✔ 已追加 SL3000 工程级最强旗舰版设备定义"
-else
-    echo "✔ MK 已包含 SL3000 设备定义，跳过追加"
-fi
+
+echo "✔ MK 已生成（工程级最强旗舰版）"
 
 ###############################################
 # 4. 生成 CONFIG（Docker + Passwall2 + SSR Plus+）
@@ -137,4 +125,4 @@ EOF
 
 echo "✔ CONFIG 已生成（Docker + Passwall2 + SSR Plus+）"
 
-echo "=== 三件套生成完成（24.10 工程级最强旗舰版） ==="
+echo "=== 三件套生成完成（24.10 工程级最强旗舰版 · 最终修复版） ==="
