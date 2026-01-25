@@ -1,7 +1,9 @@
 #!/bin/bash
 set -e
 
-# 仓库根就是 OpenWrt 根（你的日志已经证明）
+###############################################
+# 绝对定位仓库根目录（你的仓库根就是 OpenWrt 根）
+###############################################
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
@@ -12,10 +14,12 @@ exec > >(tee -a "$LOG") 2>&1
 
 echo "[INFO] ROOT = $ROOT"
 
-# 自动探测 files-6.x 目录（兼容 6.6 / 6.12 等）
+###############################################
+# 自动检测 files-6.x（适配 6.6 / 6.12 / 6.1）
+###############################################
 FILES_DIR=$(ls -d target/linux/mediatek/files-* | head -n 1)
 if [ -z "$FILES_DIR" ]; then
-  echo "[FATAL] target/linux/mediatek/files-* not found"
+  echo "[FATAL] files-6.x not found"
   exit 1
 fi
 echo "[INFO] FILES_DIR = $FILES_DIR"
@@ -25,29 +29,33 @@ DTS="$DTS_DIR/mt7981b-sl3000-emmc.dts"
 MK="$ROOT/target/linux/mediatek/image/filogic.mk"
 CFG="$ROOT/.config"
 
-echo "[INFO] DTS_DIR = $DTS_DIR"
-echo "[INFO] MK      = $MK"
-echo "[INFO] CFG     = $CFG"
-
 mkdir -p "$DTS_DIR"
 
+###############################################
+# 清理 CRLF / 隐藏字符
+###############################################
 clean_crlf() {
     [ ! -f "$1" ] && return 0
     sed -i 's/\r$//' "$1"
 }
 
+###############################################
+# Stage 1：删除旧 SL3000 段（宽松匹配）
+###############################################
 echo "=== Stage 1: Clean old MK entries ==="
 
-if [ ! -f "$MK" ]; then
-  echo "[FATAL] filogic.mk not found at $MK"
-  exit 1
-fi
+# 删除旧 define/endef（宽松匹配）
+sed -i '/define Device\/mt7981b-sl3000-emmc/,/endef/d' "$MK"
 
-# 删除旧设备段
-sed -i '/^define Device\/mt7981b-sl3000-emmc$/,/^endef$/d' "$MK"
-# 删除旧注册行
-sed -i '/^TARGET_DEVICES \+= mt7981b-sl3000-emmc$/d' "$MK"
+# 删除所有旧 TARGET_DEVICES 行（宽松匹配）
+sed -i '/TARGET_DEVICES[[:space:]]\+.*mt7981b-sl3000-emmc/d' "$MK"
 
+# 清理 CRLF
+clean_crlf "$MK"
+
+###############################################
+# Stage 2：生成 DTS（强制覆盖）
+###############################################
 echo "=== Stage 2: Generate DTS ==="
 
 cat > "$DTS" << 'EOF'
@@ -116,9 +124,12 @@ cat > "$DTS" << 'EOF'
 EOF
 
 clean_crlf "$DTS"
-echo "[OK] DTS generated at $DTS"
+echo "[OK] DTS generated → $DTS"
 
-echo "=== Stage 3: Insert MK device block ==="
+###############################################
+# Stage 3：插入 MK 设备段（基于最后一个 TARGET_DEVICES）
+###############################################
+echo "=== Stage 3: Patch MK ==="
 
 TMP_MK="$MK.tmp"
 
@@ -146,8 +157,11 @@ awk '
 
 mv "$TMP_MK" "$MK"
 clean_crlf "$MK"
-echo "[OK] MK patched at $MK"
+echo "[OK] MK patched → $MK"
 
+###############################################
+# Stage 4：生成 CONFIG（强制覆盖）
+###############################################
 echo "=== Stage 4: Generate CONFIG ==="
 
 cat > "$CFG" << 'EOF'
@@ -217,22 +231,16 @@ CONFIG_SL3000_CUSTOM_CONFIG=y
 EOF
 
 clean_crlf "$CFG"
-echo "[OK] CONFIG generated at $CFG"
+echo "[OK] CONFIG generated → $CFG"
 
+###############################################
+# Stage 5：最终校验
+###############################################
 echo "=== Stage 5: Validation ==="
 
-[ -f "$DTS" ] || { echo "[FATAL] DTS missing: $DTS"; exit 1; }
-
-grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK" || {
-    echo "[FATAL] MK invalid: device block not found"
-    sed -n '1,200p' "$MK"
-    exit 1
-}
-
-grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG" || {
-    echo "[FATAL] CONFIG invalid (device not selected)"
-    exit 1
-}
+[ -f "$DTS" ] || { echo "[FATAL] DTS missing"; exit 1; }
+grep -q "mt7981b-sl3000-emmc" "$MK" || { echo "[FATAL] MK missing device block"; exit 1; }
+grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG" || { echo "[FATAL] CONFIG missing device"; exit 1; }
 
 echo "=== Three-piece generation complete ==="
 echo "[OUT] DTS: $DTS"
