@@ -2,7 +2,8 @@
 set -e
 
 #########################################
-# SL3000 三件套生成脚本（工程级旗舰版）
+# SL3000 三件套生成脚本（25.12 / 6.12 修复版）
+# 不删除 image 目录，不覆盖官方 mk
 #########################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,35 +11,27 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 DTS_OUT="$REPO_ROOT/target/linux/mediatek/files-6.12/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-MK_OUT="$REPO_ROOT/target/linux/mediatek/image/filogic.mk"
+MK_FILE="$REPO_ROOT/target/linux/mediatek/image/filogic.mk"
 CFG_OUT="$REPO_ROOT/.config"
 
 mkdir -p "$(dirname "$DTS_OUT")"
-mkdir -p "$(dirname "$MK_OUT")"
 
 #########################################
-# 工程级彻底清理函数（旗舰版）
+# 清理函数
 #########################################
 clean_file() {
     local f="$1"
     [ -f "$f" ] || return 0
-
     sed -i 's/\r$//' "$f"
     sed -i '1s/^\xEF\xBB\xBF//' "$f"
     sed -i 's/\xC2\xA0//g' "$f"
     sed -i 's/\xE2\x80\x8B//g' "$f"
     sed -i 's/\xE2\x80\x8C//g' "$f"
     sed -i 's/\xE2\x80\x8D//g' "$f"
-
-    tr -d '\000-\011\013\014\016-\037\177' < "$f" > "$f.clean1"
-    sed -i 's/[[:space:]]\+$//' "$f.clean1"
-    sed -i '/^[[:space:]]*$/d' "$f.clean1"
-
-    mv "$f.clean1" "$f"
 }
 
 #########################################
-# 生成 DTS（cpp 可预处理）
+# 生成 DTS（25.12 官方风格）
 #########################################
 printf '%s\n' \
 '// SPDX-License-Identifier: GPL-2.0-or-later OR MIT' \
@@ -69,23 +62,26 @@ printf '%s\n' \
 clean_file "$DTS_OUT"
 
 #########################################
-# 生成 MK（旗舰版）
+# 追加设备定义到 filogic.mk（不会覆盖官方内容）
 #########################################
-printf '%s\n' \
-'define Device/mt7981b-sl3000-emmc' \
-'  DEVICE_VENDOR := SL' \
-'  DEVICE_MODEL := SL3000 eMMC Flagship' \
-'  DEVICE_PACKAGES := kmod-usb3 kmod-mt7981-firmware \' \
-'        luci-app-passwall2 docker dockerd luci-app-dockerman' \
-'  IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata' \
-'endef' \
-'' \
-'TARGET_DEVICES += mt7981b-sl3000-emmc' \
-> "$MK_OUT"
-clean_file "$MK_OUT"
+if ! grep -q "Device\/mt7981b-sl3000-emmc" "$MK_FILE"; then
+    cat >> "$MK_FILE" << 'EOF'
+
+define Device/mt7981b-sl3000-emmc
+  DEVICE_VENDOR := SL
+  DEVICE_MODEL := SL3000 eMMC Flagship
+  DEVICE_DTS := mt7981b-sl3000-emmc
+  DEVICE_PACKAGES := kmod-usb3 kmod-mt7981-firmware \
+        luci-app-passwall2 docker dockerd luci-app-dockerman
+  IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
+endef
+TARGET_DEVICES += mt7981b-sl3000-emmc
+
+EOF
+fi
 
 #########################################
-# 生成 CONFIG（旗舰版）
+# 生成 CONFIG（6.12 内核）
 #########################################
 printf '%s\n' \
 'CONFIG_TARGET_mediatek=y' \
@@ -100,4 +96,4 @@ printf '%s\n' \
 > "$CFG_OUT"
 clean_file "$CFG_OUT"
 
-echo "✔ 三件套生成完成（旗舰版）"
+echo "✔ 三件套生成完成（25.12 修复版，不会删除 mk）"
