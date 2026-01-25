@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-echo "=== 🛠 SL3000 三件套目录结构自动修复（工程级旗舰版） ==="
+echo "=== 🛠 SL3000 三件套目录结构自动修复（工程级旗舰版 / 最终版） ==="
 
 #########################################
 # 0. 定义路径（统一全链路）
@@ -9,7 +9,7 @@ echo "=== 🛠 SL3000 三件套目录结构自动修复（工程级旗舰版） 
 
 DTS_DIR="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
 MK_DIR="target/linux/mediatek/image"
-CONF_FILE="mt7981b-sl3000-emmc.config"
+CONF_FILE=".config"   # ← 已修复：使用最终标准 .config
 
 #########################################
 # 1. 检查是否存在错误目录（旧版本遗留）
@@ -56,7 +56,7 @@ MK_FILE="$MK_DIR/filogic.mk"
 
 [ -f "$DTS_FILE" ] && echo "✔ DTS 位置正确" || echo "⚠ DTS 缺失（等待生成）"
 [ -f "$MK_FILE" ]  && echo "✔ MK 位置正确"  || echo "⚠ MK 缺失（等待生成）"
-[ -f "$CONF_FILE" ] && echo "✔ CONFIG 位置正确" || echo "⚠ CONFIG 缺失（等待生成）"
+[ -f "$CONF_FILE" ] && echo "✔ CONFIG 位置正确 (.config)" || echo "⚠ CONFIG 缺失（等待生成）"
 
 #########################################
 # 4. 自动修复：如果三件套在错误位置 → 移动到正确位置
@@ -64,7 +64,6 @@ MK_FILE="$MK_DIR/filogic.mk"
 
 echo "=== 🔧 自动修复三件套位置 ==="
 
-# 可能的错误位置（用户手动放错 / 旧脚本生成）
 WRONG_DTS="
 target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts
 target/linux/mediatek/files/mt7981b-sl3000-emmc.dts
@@ -100,10 +99,10 @@ find target/linux/mediatek -type f \( -name "*.dts" -o -name "*.mk" \) | while r
     sed -i '1s/^\xEF\xBB\xBF//' "$f"
 done
 
-[ -f "$CONF_FILE" ] && {
+if [ -f "$CONF_FILE" ]; then
     sed -i 's/\r$//' "$CONF_FILE"
     sed -i '1s/^\xEF\xBB\xBF//' "$CONF_FILE"
-}
+fi
 
 echo "✔ 隐藏字符清理完成"
 
@@ -117,4 +116,4 @@ echo "=== 🔍 最终验证 ==="
 [ -d "$MK_DIR" ]  || { echo "❌ MK 目录缺失"; exit 1; }
 
 echo "✔ 目录结构完全正确"
-echo "=== 🎉 SL3000 三件套目录结构修复完成（旗舰版） ==="
+echo "=== 🎉 SL3000 三件套目录结构修复完成（最终版） ==="
