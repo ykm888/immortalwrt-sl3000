@@ -2,7 +2,7 @@
 set -e
 
 #########################################
-# SL3000 三件套生成脚本（最终修复版）
+# SL3000 三件套生成脚本（最终版）
 #########################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,6 +27,9 @@ clean_file() {
     mv "$f.clean" "$f"
 }
 
+#########################################
+# 生成 DTS（最终稳定版）
+#########################################
 echo "=== 🧬 生成 DTS ==="
 printf '%s\n' \
 '// SPDX-License-Identifier: GPL-2.0-or-later OR MIT' \
@@ -56,6 +59,9 @@ printf '%s\n' \
 > "$DTS_OUT"
 clean_file "$DTS_OUT"
 
+#########################################
+# 生成 MK（最终稳定版）
+#########################################
 echo "=== 🧬 生成 MK ==="
 printf '%s\n' \
 'define Device/mt7981b-sl3000-emmc' \
@@ -65,10 +71,14 @@ printf '%s\n' \
 '        luci-app-passwall2 docker dockerd luci-app-dockerman' \
 '  IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata' \
 'endef' \
+'' \
 'TARGET_DEVICES += mt7981b-sl3000-emmc' \
 > "$MK_OUT"
 clean_file "$MK_OUT"
 
+#########################################
+# 生成 CONFIG（最终稳定版）
+#########################################
 echo "=== 🧬 生成 CONFIG ==="
 printf '%s\n' \
 'CONFIG_TARGET_mediatek=y' \
@@ -83,4 +93,4 @@ printf '%s\n' \
 > "$CFG_OUT"
 clean_file "$CFG_OUT"
 
-echo "✔ 三件套生成完成（DTS / MK / .config 已全部写入正确路径）"
+echo "✔ 三件套生成完成（DTS / MK / .config 已全部生成）"
