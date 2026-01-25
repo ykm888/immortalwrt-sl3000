@@ -8,23 +8,46 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # 1. 检出仓库
+      # 1. 检出仓库（锁定 main）
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
 
-      # 2. 设置执行权限（只保留必要脚本）
+      # 2. 设置脚本权限
       - name: Make scripts executable
         run: |
           chmod +x sl3000-tools/generate-three-piece.sh
           chmod +x sl3000-tools/all-in-one.sh
 
-      # 3. 运行三件套重建（generate + check）
-      - name: Rebuild three-piece
+      # ⭐ 3. 更新 feeds（DTS include 必须存在）
+      - name: Update feeds
+        run: |
+          ./scripts/feeds update -a || true
+          ./scripts/feeds install -a
+
+      # ⭐ 4. 生成默认配置（确保 .config 存在）
+      - name: Normalize config
+        run: |
+          make defconfig
+
+      # ⭐ 5. 构建工具链（生成 build_dir + kernel include）
+      - name: Build toolchain
+        run: |
+          make toolchain/install -j$(nproc) V=s
+
+      # ⭐ 6. 生成三件套（DTS / MK / CONFIG）
+      - name: Generate three-piece
         run: |
           ./sl3000-tools/generate-three-piece.sh
+
+      # ⭐ 7. 运行 DTS 检查（此时环境已准备好）
+      - name: Run all-in-one CHECK
+        run: |
           ./sl3000-tools/all-in-one.sh check
 
-      # 4. 上传三件套产物（6.6 路径）
+      # 8. 上传三件套产物
       - name: Upload three-piece artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -34,7 +57,7 @@ jobs:
             target/linux/mediatek/image/filogic.mk
             .config
 
-      # 5. 推送三件套到仓库
+      # 9. 推送三件套到仓库
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
@@ -45,5 +68,4 @@ jobs:
           git add .config
 
           git commit -m "ci: auto rebuild SL3000 three-piece (24.10 / 6.6)" || echo "No changes to commit"
-
           git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/ykm888/immortalwrt-sl3000.git main
