@@ -101,25 +101,26 @@ jobs:
             exit 1
           fi
 
-      - name: Normalize config & init CCACHE (核心修复：目录+ccache+配置锁定)
+      - name: Normalize config & init CCACHE (核心修复：ccache参数+目录+配置锁定)
         working-directory: openwrt
         run: |
           # 1. 提前创建.ccache目录并赋权，解决配置文件写入失败
           mkdir -p .ccache
           chmod 777 .ccache
-          # 2. 配置ccache并强制设置10G缓存（覆盖默认5G）
+          # 2. 配置ccache（配置文件支持10G后缀，保留该写法）
           echo 'max_size = 10G' > .ccache/ccache.conf
           echo 'compression = true' >> .ccache/ccache.conf
           echo 'cache_dir = .ccache' >> .ccache/ccache.conf
-          ccache -C && ccache -z && ccache -s && ccache -F 10G
-          # 3. 核心修复：创建configs目录，解决mv defconfig失败问题
+          # 3. ccache初始化：-F参数仅支持数字（MB），10G=10240MB，修复参数错误
+          ccache -C && ccache -z && ccache -s && ccache -F 10240
+          # 4. 核心修复：创建configs目录，解决mv defconfig失败问题
           mkdir -p configs
-          # 4. 强制将自定义.config设为默认配置，避免被OpenWrt覆盖
+          # 5. 强制将自定义.config设为默认配置，避免被OpenWrt覆盖
           cp .config defconfig
           mv defconfig configs/
-          # 5. 执行make defconfig，指定加载自定义的defconfig
+          # 6. 执行make defconfig，指定加载自定义的defconfig
           make defconfig V=s CONFIG_DEFCONFIG=configs/defconfig
-          # 6. 最终验证：确保自定义配置未被覆盖
+          # 7. 最终验证：确保自定义配置未被覆盖
           if grep -q "CONFIG_PACKAGE_luci-base=y" .config; then
             echo "✅ 自定义配置锁定成功，未被OpenWrt默认配置覆盖"
           else
@@ -176,7 +177,7 @@ jobs:
             📦 内置：Docker/Passwall2/SSR Plus+/eMMC文件系统全支持
             📝 构建日志：查看Artifacts → sl3000-build-logs
             ⚙️ 内核版本：Linux 6.6 (ImmortalWrt 24.10)
-            ✅ 已修复：configs目录缺失/ccache 10G未生效/配置被覆盖/所有依赖警告
+            ✅ 已修复：ccache参数错误/configs目录缺失/ccache 10G未生效/配置被覆盖/所有依赖警告
           files: openwrt/bin/targets/mediatek/filogic/*
           prerelease: true  # 预发布标记，避免正式版污染
           draft: false
