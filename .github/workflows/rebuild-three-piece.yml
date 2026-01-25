@@ -10,7 +10,7 @@ jobs:
     steps:
       # 1. 检出仓库
       - name: Checkout repository
-      uses: actions/checkout@v4
+        uses: actions/checkout@v4
 
       # 2. 设置执行权限
       - name: Make scripts executable
