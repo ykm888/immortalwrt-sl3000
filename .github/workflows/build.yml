@@ -1,4 +1,4 @@
-name: Build ImmortalWrt SL3000 eMMC (Auto Three-Piece)
+name: Build OpenWrt 24.10 SL3000 eMMC (Auto Three-Piece)
 
 on:
   workflow_dispatch:
@@ -40,12 +40,10 @@ jobs:
             file libssl-dev rsync ccache device-tree-compiler subversion libelf-dev \
             bc bison patch gcc-multilib g++-multilib swig libudev-dev libusb-1.0-0-dev
 
-      - name: Clone ImmortalWrt source
+      - name: Clone official OpenWrt 24.10
         run: |
           sudo rm -rf openwrt || true
-          git clone --depth=1 -b main https://github.com/ykm888/immortalwrt-sl3000.git openwrt
-          cd openwrt
-          git submodule update --init --recursive || true
+          git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt
 
       - name: Cache downloads & ccache
         uses: actions/cache@v4
@@ -53,9 +51,9 @@ jobs:
           path: |
             openwrt/dl
             openwrt/.ccache
-          key: ${{ runner.os }}-sl3000-${{ github.sha }}
+          key: ${{ runner.os }}-sl3000-2410-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-sl3000-
+            ${{ runner.os }}-sl3000-2410-
 
       - name: Copy SL3000 tools
         run: |
@@ -68,29 +66,29 @@ jobs:
           ./scripts/feeds update -a || true
           ./scripts/feeds install -a
 
-      # ⭐ 正确顺序：defconfig 必须在三件套之前
-      - name: Normalize config
+      - name: Make defconfig (base)
         working-directory: openwrt
         run: |
           make defconfig
 
-      # ⭐ 正确顺序：toolchain 必须在三件套之前
       - name: Build toolchain
         working-directory: openwrt
         run: |
           make toolchain/install -j$(nproc) V=s
 
-      # ⭐ 自动生成三件套（DTS/MK/CONFIG）
       - name: Generate SL3000 Three-Piece Set
         working-directory: openwrt
         run: |
           ./sl3000-tools/generate-three-piece.sh
-          echo "=== 三件套生成完成 ==="
-          ls -l target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
-          ls -l target/linux/mediatek/image/
+          ls -l target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/ || true
+          ls -l target/linux/mediatek/image/ || true
 
-      # ⭐ defconfig 再次标准化（不会覆盖三件套）
-      - name: Final defconfig
+      - name: Run SL3000 Three-Piece Check
+        working-directory: openwrt
+        run: |
+          ./sl3000-tools/all-in-one.sh check
+
+      - name: Make defconfig (final)
         working-directory: openwrt
         run: |
           make defconfig
@@ -103,15 +101,14 @@ jobs:
       - name: Upload build logs
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-build-logs
-          path: |
-            openwrt/firmware-build.log
+          name: sl3000-2410-build-logs
+          path: openwrt/firmware-build.log
           retention-days: 7
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-sl3000-emmc-firmware
+          name: openwrt-24.10-sl3000-emmc-firmware
           path: openwrt/bin/targets/mediatek/filogic/
           retention-days: 30
 
@@ -119,12 +116,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tagname: sl3000-emmc-build-${{ github.run_number }}-${{ github.run_id }}
-          name: SL3000 eMMC Firmware #${{ github.run_number }}
+          tagname: sl3000-emmc-openwrt-24.10-${{ github.run_number }}-${{ github.run_id }}
+          name: SL3000 eMMC OpenWrt 24.10 #${{ github.run_number }}
           body: |
-            自动构建：SL3000 (MT7981B eMMC)
-            自动生成三件套（DTS/MK/CONFIG）
-            内核：Linux 6.6（ImmortalWrt 24.10）
-            构建日志见 Artifacts
+            OpenWrt 24.10 / kernel 6.6
+            Target: SL3000 (MT7981B eMMC)
+            Auto three-piece (DTS/MK/CONFIG)
           files: openwrt/bin/targets/mediatek/filogic/*
           prerelease: true
