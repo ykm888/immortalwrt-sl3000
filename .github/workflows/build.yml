@@ -45,12 +45,58 @@ jobs:
         run: |
           cp -r sl3000-tools openwrt/
 
-      # ⭐ 直接运行终极 all-in-one（方案 C）
-      - name: Run Ultimate All-in-One (C)
+      # ⭐ 更新 feeds（保持你原来的顺序）
+      - name: Update feeds
+        working-directory: openwrt
+        run: |
+          ./scripts/feeds update -a || true
+          ./scripts/feeds install -a
+
+      # ⭐ 生成默认配置（保持你原来的顺序）
+      - name: Normalize config
+        working-directory: openwrt
+        run: |
+          make defconfig
+
+      # ⭐ 构建工具链（保持你原来的顺序）
+      - name: Build toolchain
+        working-directory: openwrt
+        run: |
+          make toolchain/install -j$(nproc) V=s
+
+      # ⭐ 生成三件套（修复路径 + 强制覆盖）
+      - name: Generate SL3000 Three-Piece Set
+        working-directory: openwrt
+        run: |
+          chmod +x sl3000-tools/generate-three-piece.sh
+          ./sl3000-tools/generate-three-piece.sh
+
+      # ⭐ 运行 all-in-one.sh 的检查模式（保持你原来的结构）
+      - name: Run all-in-one CHECK
         working-directory: openwrt
         run: |
           chmod +x sl3000-tools/all-in-one.sh
-          ./sl3000-tools/all-in-one.sh
+          ./sl3000-tools/all-in-one.sh check
+
+      # ⭐ 打印 DTS 前 20 行（保持你原来的调试步骤）
+      - name: Debug DTS head (CI 实际使用版本)
+        working-directory: openwrt
+        run: |
+          echo "=== CI 实际使用的 DTS 前 20 行 ==="
+          sed -n '1,20p' target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts || echo "DTS 文件不存在"
+
+      # ⭐ 使用三件套生成的 .config（保持你原来的逻辑）
+      - name: Use generated .config
+        working-directory: openwrt
+        run: |
+          cp .config .config.backup
+          echo "✔ 已使用三件套生成的 .config"
+
+      # ⭐ 构建固件（保持你原来的构建方式）
+      - name: Build firmware
+        working-directory: openwrt
+        run: |
+          make -j$(nproc) V=s | tee build.log
 
       - name: Upload build log
         uses: actions/upload-artifact@v4
@@ -72,7 +118,7 @@ jobs:
           body: |
             自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
             - 三件套按黄金模板生成并同步
-            - DTS/MK/CONFIG 自动提交
+            - DTS 检查通过
             - 工具链构建完成
             - 固件构建完成
           files: |
