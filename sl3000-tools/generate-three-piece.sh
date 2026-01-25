@@ -2,14 +2,17 @@
 set -e
 
 #########################################
-# SL3000 三件套生成脚本（工程级最终版）
+# SL3000 三件套生成脚本（工程级旗舰版）
+# - 适配 ImmortalWrt 25.12 / Linux 6.12
+# - DTS / MK / CONFIG 全自动生成
+# - 无隐藏字符 / 无 BOM / 无 CRLF
 #########################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-DTS_OUT="$REPO_ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+DTS_OUT="$REPO_ROOT/target/linux/mediatek/files-6.12/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
 MK_OUT="$REPO_ROOT/target/linux/mediatek/image/filogic.mk"
 CFG_OUT="$REPO_ROOT/.config"
 
@@ -17,28 +20,28 @@ mkdir -p "$(dirname "$DTS_OUT")"
 mkdir -p "$(dirname "$MK_OUT")"
 
 #########################################
-# 工程级彻底清理函数（最终版）
+# 工程级彻底清理函数（旗舰版）
 #########################################
 clean_file() {
     local f="$1"
     [ -f "$f" ] || return 0
 
-    sed -i 's/\r$//' "$f"
-    sed -i '1s/^\xEF\xBB\xBF//' "$f"
-    sed -i 's/\xC2\xA0//g' "$f"
-    sed -i 's/\xE2\x80\x8B//g' "$f"
+    sed -i 's/\r$//' "$f"                     # 删除 CRLF
+    sed -i '1s/^\xEF\xBB\xBF//' "$f"          # 删除 BOM
+    sed -i 's/\xC2\xA0//g' "$f"               # 删除 NBSP
+    sed -i 's/\xE2\x80\x8B//g' "$f"           # 删除零宽字符
     sed -i 's/\xE2\x80\x8C//g' "$f"
     sed -i 's/\xE2\x80\x8D//g' "$f"
 
-    tr -d '\000-\011\013\014\016-\037\177' < "$f" > "$f.clean1"
-    sed -i 's/[[:space:]]\+$//' "$f.clean1"
-    sed -i '/^[[:space:]]*$/d' "$f.clean1"
+    tr -d '\000-\011\013\014\016-\037\177' < "$f" > "$f.clean1"   # 删除控制字符
+    sed -i 's/[[:space:]]\+$//' "$f.clean1"                        # 删除尾部空白
+    sed -i '/^[[:space:]]*$/d' "$f.clean1"                         # 删除伪空行
 
     mv "$f.clean1" "$f"
 }
 
 #########################################
-# 生成 DTS（dtc 需要 cpp 预处理）
+# 生成 DTS（官方风格 + cpp 可预处理）
 #########################################
 echo "=== 🧬 生成 DTS ==="
 printf '%s\n' \
@@ -70,7 +73,7 @@ printf '%s\n' \
 clean_file "$DTS_OUT"
 
 #########################################
-# 生成 MK
+# 生成 MK（旗舰版）
 #########################################
 echo "=== 🧬 生成 MK ==="
 printf '%s\n' \
@@ -87,14 +90,14 @@ printf '%s\n' \
 clean_file "$MK_OUT"
 
 #########################################
-# 生成 CONFIG
+# 生成 CONFIG（旗舰版）
 #########################################
 echo "=== 🧬 生成 CONFIG ==="
 printf '%s\n' \
 'CONFIG_TARGET_mediatek=y' \
 'CONFIG_TARGET_mediatek_filogic=y' \
 'CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y' \
-'CONFIG_LINUX_6_6=y' \
+'CONFIG_LINUX_6_12=y' \
 '' \
 'CONFIG_PACKAGE_luci-app-passwall2=y' \
 'CONFIG_PACKAGE_docker=y' \
