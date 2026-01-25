@@ -112,7 +112,7 @@ ieee80211-freq-limit = <5150000 5850000>;
 compatible = "nvmem-cells";
 #address-cells = <1>;
 #size-cells = <1>;
-read-only; /* MT7981B强制必选属性 */
+read-only; /* MT7981B mandatory attribute */
 macaddr_factory_4: macaddr@4 {
 reg = <0x4 0x6>;
 };
