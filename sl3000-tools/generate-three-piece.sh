@@ -2,26 +2,34 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-LOG_FILE="$SCRIPT_DIR/sl3000-three-piece-generate.log"
-> "$LOG_FILE"
-exec > >(tee -a "$LOG_FILE") 2>&1
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOG="$SCRIPT_DIR/sl3000-three-piece.log"
+> "$LOG"
+exec > >(tee -a "$LOG") 2>&1
 
-DTS_DIR="$REPO_ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
-DTS_FILE="$DTS_DIR/mt7981b-sl3000-emmc.dts"
-MK_FILE="$REPO_ROOT/target/linux/mediatek/image/filogic.mk"
-CFG_FILE="$REPO_ROOT/.config"
+DTS_DIR="$ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
+DTS="$DTS_DIR/mt7981b-sl3000-emmc.dts"
+MK="$ROOT/target/linux/mediatek/image/filogic.mk"
+CFG="$ROOT/.config"
 
 mkdir -p "$DTS_DIR"
 
 clean() {
-    local F="$1"
-    [ ! -f "$F" ] && return 0
-    sed -i 's/\r$//' "$F"
-    sed -i 's/[[:cntrl:]]//g' "$F"
+    [ ! -f "$1" ] && return 0
+    sed -i 's/\r$//' "$1"
+    sed -i 's/[[:cntrl:]]//g' "$1"
 }
 
-cat > "$DTS_FILE" << 'EOF'
+echo "=== Stage 1: Pre-check before generation ==="
+
+if [ -f "$DTS" ]; then rm -f "$DTS"; fi
+if grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK"; then
+    sed -i '/^define Device\/mt7981b-sl3000-emmc$/,/^endef$/d' "$MK"
+fi
+
+echo "=== Stage 2: Generate DTS ==="
+
+cat > "$DTS" << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /dts-v1/;
 
@@ -86,13 +94,11 @@ cat > "$DTS_FILE" << 'EOF'
 &pcie { status = "okay"; };
 EOF
 
-clean "$DTS_FILE"
+clean "$DTS"
 
-if grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK_FILE"; then
-    sed -i '/^define Device\/mt7981b-sl3000-emmc$/,/^endef$/d' "$MK_FILE"
-fi
+echo "=== Stage 3: Generate MK ==="
 
-cat >> "$MK_FILE" << 'EOF'
+cat >> "$MK" << 'EOF'
 
 define Device/mt7981b-sl3000-emmc
   DEVICE_VENDOR := SL
@@ -105,9 +111,11 @@ TARGET_DEVICES += mt7981b-sl3000-emmc
 
 EOF
 
-clean "$MK_FILE"
+clean "$MK"
 
-cat > "$CFG_FILE" << 'EOF'
+echo "=== Stage 4: Generate CONFIG ==="
+
+cat > "$CFG" << 'EOF'
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
 CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y
@@ -173,27 +181,25 @@ CONFIG_PACKAGE_coreutils=y
 CONFIG_SL3000_CUSTOM_CONFIG=y
 EOF
 
-clean "$CFG_FILE"
+clean "$CFG"
 
-echo "=== Pre-check: MK ==="
-if ! grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK_FILE"; then
-    echo "MK invalid"; exit 1; fi
+echo "=== Stage 5: Pre-check Stage 1 (before toolchain) ==="
 
-echo "=== Pre-check: DTS ==="
-if [ ! -f "$DTS_FILE" ]; then
-    echo "DTS missing"; exit 1; fi
+if [ ! -f "$DTS" ]; then echo "DTS missing"; exit 1; fi
+dtc -I dts -O dtb "$DTS" -o /dev/null || { echo "DTS syntax error"; exit 1; }
 
-echo "=== Pre-check: CONFIG ==="
-if ! grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG_FILE"; then
-    echo "CONFIG invalid"; exit 1; fi
+if ! grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK"; then echo "MK invalid"; exit 1; fi
+if ! grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG"; then echo "CONFIG invalid"; exit 1; fi
 
-echo "=== Pre-check: profiles.json ==="
+echo "=== Stage 6: Pre-check Stage 2 (after toolchain) ==="
+
 make -j1 V=s target/linux/compile >/dev/null 2>&1 || true
 
 if ! grep -R "mt7981b-sl3000-emmc" -n build_dir/target-*/linux-*/profiles.json >/dev/null 2>&1; then
-    echo "Device not registered"; exit 1; fi
+    echo "Device not registered"; exit 1
+fi
 
 echo "=== Three-piece generation complete ==="
-echo "$DTS_FILE"
-echo "$MK_FILE"
-echo "$CFG_FILE"
+echo "$DTS"
+echo "$MK"
+echo "$CFG"
