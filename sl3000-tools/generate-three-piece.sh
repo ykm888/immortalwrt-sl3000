@@ -1,12 +1,16 @@
 #!/bin/bash
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# === 固定定位 OpenWrt 根目录（无论脚本放哪里都能找到） ===
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+SCRIPT_DIR="$ROOT/scripts"
 LOG="$SCRIPT_DIR/sl3000-three-piece.log"
 > "$LOG"
 exec > >(tee -a "$LOG") 2>&1
 
+# === 三件套路径 ===
 DTS_DIR="$ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
 DTS="$DTS_DIR/mt7981b-sl3000-emmc.dts"
 MK="$ROOT/target/linux/mediatek/image/filogic.mk"
@@ -19,12 +23,12 @@ clean_crlf() {
     sed -i 's/\r$//' "$1"
 }
 
-echo "=== Stage 1: Pre-clean MK (remove old device block) ==="
+echo "=== Stage 1: Clean old MK entries ==="
 
-# 删除旧的设备段
+# 删除旧设备段
 sed -i '/^define Device\/mt7981b-sl3000-emmc$/,/^endef$/d' "$MK"
 
-# 删除旧的 TARGET_DEVICES 注册行
+# 删除旧注册行
 sed -i '/^TARGET_DEVICES \+= mt7981b-sl3000-emmc$/d' "$MK"
 
 echo "=== Stage 2: Generate DTS ==="
@@ -96,7 +100,7 @@ EOF
 
 clean_crlf "$DTS"
 
-echo "=== Stage 3: Insert MK device block after last TARGET_DEVICES ==="
+echo "=== Stage 3: Insert MK device block ==="
 
 TMP_MK="$MK.tmp"
 
