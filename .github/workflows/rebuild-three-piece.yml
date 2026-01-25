@@ -12,22 +12,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 设置执行权限
+      # 2. 设置执行权限（只保留必要脚本）
       - name: Make scripts executable
         run: |
           chmod +x sl3000-tools/generate-three-piece.sh
-          chmod +x sl3000-tools/three-piece-check.sh
-          chmod +x sl3000-tools/three-piece-rebuild.sh
           chmod +x sl3000-tools/all-in-one.sh
-          chmod +x sl3000-tools/profiles-check.sh
 
-      # 3. 运行三件套重建脚本
-      - name: Run three-piece rebuild
-        working-directory: ${{ github.workspace }}
+      # 3. 运行三件套重建（generate + check）
+      - name: Rebuild three-piece
         run: |
-          ./sl3000-tools/three-piece-rebuild.sh
+          ./sl3000-tools/generate-three-piece.sh
+          ./sl3000-tools/all-in-one.sh check
 
-      # 4. 保存生成的三件套作为构建产物
+      # 4. 上传三件套产物（6.6 路径）
       - name: Upload three-piece artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -37,9 +34,8 @@ jobs:
             target/linux/mediatek/image/filogic.mk
             .config
 
-      # 5. 推送生成的三件套到仓库
+      # 5. 推送三件套到仓库
       - name: Commit and push changes
-        working-directory: ${{ github.workspace }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -48,6 +44,6 @@ jobs:
           git add target/linux/mediatek/image/filogic.mk
           git add .config
 
-          git commit -m "ci: auto rebuild SL3000 three-piece" || echo "No changes to commit"
+          git commit -m "ci: auto rebuild SL3000 three-piece (24.10 / 6.6)" || echo "No changes to commit"
 
           git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/ykm888/immortalwrt-sl3000.git main
