@@ -98,11 +98,11 @@ clean_crlf "$DTS"
 
 echo "=== Stage 3: Insert MK device block at correct position ==="
 
-ANCHOR_LINE='$(eval $(call BuildImage))'
 TMP_MK="$MK.tmp"
 
-awk -v anchor="$ANCHOR_LINE" '
-    $0 == anchor {
+awk '
+    # 在 BuildImage 之前插入
+    index($0, "BuildImage") > 0 {
         print ""
         print "define Device/mt7981b-sl3000-emmc"
         print "\tDEVICE_VENDOR := SL"
@@ -120,7 +120,7 @@ awk -v anchor="$ANCHOR_LINE" '
 mv "$TMP_MK" "$MK"
 clean_crlf "$MK"
 
-echo "=== Stage 4: Generate CONFIG (static template) ==="
+echo "=== Stage 4: Generate CONFIG ==="
 
 cat > "$CFG" << 'EOF'
 CONFIG_TARGET_mediatek=y
@@ -193,7 +193,11 @@ clean_crlf "$CFG"
 echo "=== Stage 5: Validation ==="
 
 [ -f "$DTS" ] || { echo "DTS missing"; exit 1; }
-grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK" || { echo "MK invalid"; exit 1; }
+grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK" || {
+    echo "MK invalid: device block not found"
+    sed -n '1,200p' "$MK"
+    exit 1
+}
 grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG" || { echo "CONFIG invalid"; exit 1; }
 
 echo "=== Three-piece generation complete ==="
