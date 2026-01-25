@@ -184,18 +184,31 @@ clean "$CFG"
 
 echo "=== Stage 5: Pre-check Stage 1 (before toolchain) ==="
 
-if [ ! -f "$DTS" ]; then echo "DTS missing"; exit 1; fi
-dtc -I dts -O dtb "$DTS" -o /dev/null || { echo "DTS syntax error"; exit 1; }
+if [ ! -f "$DTS" ]; then
+    echo "DTS missing"
+    exit 1
+fi
 
-if ! grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK"; then echo "MK invalid"; exit 1; fi
-if ! grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG"; then echo "CONFIG invalid"; exit 1; fi
+# 修复点：跳过系统 dtc（无内核 include path，会误报）
+echo "Skip standalone dtc check (rely on OpenWrt build for full DTS validation)."
+
+if ! grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK"; then
+    echo "MK invalid"
+    exit 1
+fi
+
+if ! grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG"; then
+    echo "CONFIG invalid"
+    exit 1
+fi
 
 echo "=== Stage 6: Pre-check Stage 2 (after toolchain) ==="
 
 make -j1 V=s target/linux/compile >/dev/null 2>&1 || true
 
 if ! grep -R "mt7981b-sl3000-emmc" -n build_dir/target-*/linux-*/profiles.json >/dev/null 2>&1; then
-    echo "Device not registered"; exit 1
+    echo "Device not registered"
+    exit 1
 fi
 
 echo "=== Three-piece generation complete ==="
