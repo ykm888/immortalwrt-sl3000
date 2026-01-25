@@ -203,7 +203,6 @@ fi
 
 echo "=== Stage 6: Pre-check Stage 2 (after toolchain) ==="
 
-# 方案 A：使用 json_overview_image_info 生成 profiles.json
 make -j1 V=s json_overview_image_info >/dev/null 2>&1 || true
 
 if ! grep -R "mt7981b-sl3000-emmc" -n build_dir/target-*/linux-*/profiles.json >/dev/null 2>&1; then
