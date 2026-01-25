@@ -10,9 +10,9 @@ jobs:
     steps:
       # 1. 检出仓库
       - name: Checkout repository
-        uses: actions/checkout@v4
+      uses: actions/checkout@v4
 
-      # 2. 设置执行权限（只保留实际用到的脚本）
+      # 2. 设置执行权限
       - name: Make scripts executable
         run: |
           chmod +x sl3000-tools/generate-three-piece.sh
@@ -21,12 +21,13 @@ jobs:
           chmod +x sl3000-tools/all-in-one.sh
           chmod +x sl3000-tools/profiles-check.sh
 
-      # 3. 运行三件套重建脚本（内部会调用 generate + check + all-in-one.sh check）
+      # 3. 运行三件套重建脚本
       - name: Run three-piece rebuild
+        working-directory: ${{ github.workspace }}
         run: |
           ./sl3000-tools/three-piece-rebuild.sh
 
-      # 4. 保存生成的三件套作为构建产物（路径与脚本完全对齐）
+      # 4. 保存生成的三件套作为构建产物
       - name: Upload three-piece artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -36,8 +37,9 @@ jobs:
             target/linux/mediatek/image/filogic.mk
             .config
 
-      # 5. 推送生成的三件套到仓库（路径与脚本完全对齐）
+      # 5. 推送生成的三件套到仓库
       - name: Commit and push changes
+        working-directory: ${{ github.workspace }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
