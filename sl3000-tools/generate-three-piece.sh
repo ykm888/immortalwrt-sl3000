@@ -1,71 +1,55 @@
 #!/bin/bash
 set -e
 
-#########################################
-# SL3000 三件套生成脚本（25.12 / 6.12 修复版）
-# 不删除 image 目录，不覆盖官方 mk
-#########################################
+###############################################
+# SL3000 三件套生成脚本（24.10 / 6.6 最终修复版）
+# - 不删除任何目录
+# - DTS / MK / CONFIG 全量生成
+# - 路径完全正确
+###############################################
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$REPO_ROOT"
+REPO_ROOT="$(pwd)"
 
-DTS_OUT="$REPO_ROOT/target/linux/mediatek/files-6.12/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-MK_FILE="$REPO_ROOT/target/linux/mediatek/image/filogic.mk"
+# === 路径定义（24.10 / 6.6 固定结构） ===
+DTS_OUT="$REPO_ROOT/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+MK_OUT="$REPO_ROOT/target/linux/mediatek/image/filogic.mk"
 CFG_OUT="$REPO_ROOT/.config"
 
+# === 确保 DTS 目录存在 ===
 mkdir -p "$(dirname "$DTS_OUT")"
 
-#########################################
-# 清理函数
-#########################################
-clean_file() {
-    local f="$1"
-    [ -f "$f" ] || return 0
-    sed -i 's/\r$//' "$f"
-    sed -i '1s/^\xEF\xBB\xBF//' "$f"
-    sed -i 's/\xC2\xA0//g' "$f"
-    sed -i 's/\xE2\x80\x8B//g' "$f"
-    sed -i 's/\xE2\x80\x8C//g' "$f"
-    sed -i 's/\xE2\x80\x8D//g' "$f"
-}
+echo "=== 生成 DTS ==="
+cat > "$DTS_OUT" << 'EOF'
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/dts-v1/;
 
-#########################################
-# 生成 DTS（25.12 官方风格）
-#########################################
-printf '%s\n' \
-'// SPDX-License-Identifier: GPL-2.0-or-later OR MIT' \
-'/dts-v1/;' \
-'' \
-'#include "mt7981.dtsi"' \
-'#include <dt-bindings/gpio/gpio.h>' \
-'#include <dt-bindings/input/input.h>' \
-'#include <dt-bindings/leds/common.h>' \
-'' \
-'/ {' \
-'    model = "SL3000 eMMC Flagship";' \
-'    compatible = "sl,sl3000-emmc", "mediatek,mt7981b";' \
-'' \
-'    aliases {' \
-'        serial0 = &uart0;' \
-'        led-boot = &led_status;' \
-'        led-failsafe = &led_status;' \
-'        led-running = &led_status;' \
-'        led-upgrade = &led_status;' \
-'    };' \
-'' \
-'    chosen {' \
-'        stdout-path = "serial0:115200n8";' \
-'    };' \
-'};' \
-> "$DTS_OUT"
-clean_file "$DTS_OUT"
+#include "mt7981.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
 
-#########################################
-# 追加设备定义到 filogic.mk（不会覆盖官方内容）
-#########################################
-if ! grep -q "Device\/mt7981b-sl3000-emmc" "$MK_FILE"; then
-    cat >> "$MK_FILE" << 'EOF'
+/ {
+    model = "SL3000 eMMC Flagship";
+    compatible = "sl,sl3000-emmc", "mediatek,mt7981b";
+
+    aliases {
+        serial0 = &uart0;
+        led-boot = &led_status;
+        led-failsafe = &led_status;
+        led-running = &led_status;
+        led-upgrade = &led_status;
+    };
+};
+EOF
+
+echo "✔ DTS 已生成：$DTS_OUT"
+
+
+# === 追加 MK（不会覆盖官方内容） ===
+echo "=== 追加设备定义到 filogic.mk ==="
+
+if ! grep -q "mt7981b-sl3000-emmc" "$MK_OUT"; then
+cat >> "$MK_OUT" << 'EOF'
 
 define Device/mt7981b-sl3000-emmc
   DEVICE_VENDOR := SL
@@ -78,22 +62,25 @@ endef
 TARGET_DEVICES += mt7981b-sl3000-emmc
 
 EOF
+    echo "✔ 已追加 SL3000 设备定义到 filogic.mk"
+else
+    echo "✔ filogic.mk 已包含 SL3000 设备定义，跳过追加"
 fi
 
-#########################################
-# 生成 CONFIG（6.12 内核）
-#########################################
-printf '%s\n' \
-'CONFIG_TARGET_mediatek=y' \
-'CONFIG_TARGET_mediatek_filogic=y' \
-'CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y' \
-'CONFIG_LINUX_6_12=y' \
-'' \
-'CONFIG_PACKAGE_luci-app-passwall2=y' \
-'CONFIG_PACKAGE_docker=y' \
-'CONFIG_PACKAGE_dockerd=y' \
-'CONFIG_PACKAGE_luci-app-dockerman=y' \
-> "$CFG_OUT"
-clean_file "$CFG_OUT"
 
-echo "✔ 三件套生成完成（25.12 修复版，不会删除 mk）"
+# === 生成 CONFIG ===
+echo "=== 生成 .config ==="
+cat > "$CFG_OUT" << 'EOF'
+CONFIG_TARGET_mediatek=y
+CONFIG_TARGET_mediatek_filogic=y
+CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y
+
+CONFIG_PACKAGE_luci-app-passwall2=y
+CONFIG_PACKAGE_docker=y
+CONFIG_PACKAGE_dockerd=y
+CONFIG_PACKAGE_luci-app-dockerman=y
+EOF
+
+echo "✔ .config 已生成：$CFG_OUT"
+
+echo "=== 三件套生成完成（DTS / MK / CONFIG） ==="
