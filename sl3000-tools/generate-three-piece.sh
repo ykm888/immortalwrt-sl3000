@@ -203,9 +203,11 @@ fi
 
 echo "=== Stage 6: Pre-check Stage 2 (after toolchain) ==="
 
+# 生成 profiles.json（24.10 必须用这个）
 make -j1 V=s json_overview_image_info >/dev/null 2>&1 || true
 
-if ! grep -R "mt7981b-sl3000-emmc" -n build_dir/target-*/linux-*/profiles.json >/dev/null 2>&1; then
+# profiles.json 实际路径在 bin/targets/*/*/
+if ! grep -R "mt7981b-sl3000-emmc" -n bin/targets/*/*/profiles.json >/dev/null 2>&1; then
     echo "Device not registered"
     exit 1
 fi
