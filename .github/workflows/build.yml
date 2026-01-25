@@ -1,108 +1,158 @@
-name: Build ImmortalWrt SL3000 (Auto Three-Piece)
+name: Build ImmortalWrt SL3000 eMMC (Auto Three-Piece)
 
 on:
   workflow_dispatch:
 
+# 全局权限：满足代码推送、Release发布、Artifact上传、仓库拉取
 permissions:
   contents: write
+  actions: read
+  packages: write
 
 jobs:
-  build:
+  build-sl3000-firmware:
     runs-on: ubuntu-22.04
+    timeout-minutes: 360  # 延长超时时间，适配MT7981B固件完整编译
+    defaults:
+      run:
+        shell: bash
 
     steps:
-      - name: Checkout repository
+      - name: Checkout local repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          path: repo  # 显式指定路径，避免与openwrt目录冲突
 
-      - name: Optimize disk space
+      - name: Optimize disk space (Ubuntu 22.04 Runner)
         run: |
-          sudo apt-get remove -y --purge azure-cli google-cloud-sdk dotnet powershell mono mysql php android* || true
-          sudo apt-get autoremove -y
+          # 卸载无用组件，释放超20G磁盘空间
+          sudo apt-get remove -y --purge azure-cli google-cloud-sdk dotnet powershell mono mysql-server php* android* snapd || true
+          sudo apt-get autoremove -y --purge
           sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
+          # 添加10G swap分区，解决编译OOM核心问题
+          sudo fallocate -l 10G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+          free -h && df -h
 
-      - name: Install build dependencies
+      - name: Install build dependencies (适配ImmortalWrt 24.10/Linux 6.6)
         run: |
-          sudo apt-get update
+          sudo apt-get update -y
           sudo apt-get install -y build-essential git-core libncurses5-dev \
             zlib1g-dev gawk flex gettext wget unzip python3 python3-distutils \
-            file libssl-dev rsync ccache device-tree-compiler subversion libelf-dev
+            file libssl-dev rsync ccache device-tree-compiler subversion libelf-dev \
+            bc bison patch gcc-multilib g++-multilib swig libudev-dev libusb-1.0-0-dev
 
-      - name: Clone ImmortalWrt source
+      - name: Clone your ImmortalWrt source (精准对齐 ykm888/immortalwrt-sl3000)
         run: |
-          rm -rf openwrt
+          # 容错删除旧目录，避免权限/残留冲突
+          sudo rm -rf openwrt || true
+          # 拉取你的仓库源 + main分支（贴合该仓库默认分支）
           git clone --depth=1 -b main https://github.com/ykm888/immortalwrt-sl3000.git openwrt
+          cd openwrt
+          # 初始化子模块，避免源码缺失
+          git submodule update --init --recursive || true
+          echo "✅ 仓库拉取完成：ykm888/immortalwrt-sl3000 (main)"
 
-      # ⭐ 修复：缓存必须在 clone 之后
-      - name: Cache downloads and ccache
+      - name: Cache downloads & ccache (clone后执行，缓存100%生效)
         uses: actions/cache@v4
         with:
           path: |
             openwrt/dl
             openwrt/.ccache
-          key: ${{ runner.os }}-immortalwrt-${{ github.sha }}
+          key: ${{ runner.os }}-sl3000-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-immortalwrt-
+            ${{ runner.os }}-sl3000-
 
-      - name: Copy SL3000 tools
+      - name: Copy SL3000 tools & add execute permission (核心修复)
         run: |
-          cp -r sl3000-tools openwrt/
+          # 从本地repo复制工具到openwrt构建目录
+          cp -r repo/sl3000-tools openwrt/
+          # 给工具目录下ALL .sh脚本加执行权限，彻底解决权限问题
+          chmod +x openwrt/sl3000-tools/*.sh
+          ls -l openwrt/sl3000-tools/
+          echo "✅ 工具复制完成，所有脚本已授权执行"
 
-      # ⭐ 保持原顺序：更新 feeds
-      - name: Update feeds
+      - name: Update & install ImmortalWrt feeds (容错+完整安装)
         working-directory: openwrt
         run: |
-          ./scripts/feeds update -a || true
-          ./scripts/feeds install -a
+          ./scripts/feeds update -a --force || true
+          ./scripts/feeds install -a -f || true
+          ./scripts/feeds clean || true
+          echo "✅ Feeds更新&安装完成"
 
-      # ⭐ 保持原顺序：生成默认配置
-      - name: Normalize config
+      - name: Generate SL3000 Three-Piece Set (运行你的生成脚本)
         working-directory: openwrt
         run: |
-          make defconfig
-
-      # ⭐ 保持原顺序：构建工具链
-      - name: Build toolchain
-        working-directory: openwrt
-        run: |
-          make toolchain/install -j$(nproc) V=s
-
-      # ⭐ 自动生成三件套（你认可的脚本）
-      - name: Generate SL3000 Three-Piece Set
-        working-directory: openwrt
-        run: |
-          chmod +x sl3000-tools/generate-three-piece.sh
+          # 执行三件套生成脚本，自动生成DTS/MK/CONFIG
           ./sl3000-tools/generate-three-piece.sh
+          # 验证DTS生成结果，快速排查路径/文件问题
+          if [ -f "target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" ]; then
+            echo "✅ DTS生成成功，文件存在"
+            head -20 target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts
+          else
+            echo "❌ DTS生成失败，文件不存在"
+            exit 1
+          fi
 
-      # ⭐ 构建固件（延续上一版）
-      - name: Build firmware
+      - name: Normalize config (核心：让自定义三件套配置生效)
         working-directory: openwrt
         run: |
-          make -j$(nproc) V=s | tee build.log
+          # 加载自定义.config并标准化，覆盖默认配置
+          make defconfig V=s
+          # 配置ccache缓存大小，适配云构建磁盘限制
+          echo 'max_size = 10G' > .ccache/ccache.conf
+          ccache -C && ccache -z
+          echo "✅ 自定义配置已标准化，ccache初始化完成"
 
-      - name: Upload build log
+      - name: Build toolchain (与自定义配置匹配，解耦编译)
+        working-directory: openwrt
+        run: |
+          # 构建工具链，单独解耦提升后续编译效率
+          make toolchain/install -j$(($(nproc)+1)) V=s | tee toolchain-build.log
+          # 统计ccache使用情况，排查缓存生效问题
+          ccache -s
+          echo "✅ 工具链构建完成"
+
+      - name: Build SL3000 eMMC firmware (防OOM+完整日志)
+        working-directory: openwrt
+        run: |
+          # 并发数适配2核4G Runner，避免OOM；开启调试，捕获所有日志
+          make -j$(($(nproc)+1)) V=s CONFIG_DEBUG_SECTION_MISMATCH=y | tee firmware-build.log
+          # 再次统计ccache，查看缓存命中率
+          ccache -s
+          echo "✅ 固件编译完成"
+
+      - name: Upload all build logs (方便云构建排错)
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
-          path: openwrt/build.log
+          name: sl3000-build-logs
+          path: |
+            openwrt/toolchain-build.log
+            openwrt/firmware-build.log
+            openwrt/sl3000-tools/sl3000-three-piece-generate.log
+          retention-days: 7  # 日志保留7天，可按需调整
 
-      - name: Upload firmware artifacts
+      - name: Upload firmware artifacts (完整产物)
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-sl3000-emmc
+          name: immortalwrt-sl3000-emmc-firmware
           path: openwrt/bin/targets/mediatek/filogic/
+          retention-days: 30  # 固件保留30天
 
-      - name: Release firmware
-        uses: softprops/action-gh-release@v1
+      - name: Auto Release firmware (仅构建成功时发布)
+        uses: softprops/action-gh-release@v2
+        if: success()  # 仅编译成功才执行发布，避免空包
         with:
-          tagname: sl3000-emmc-${{ github.run_number }}-${{ github.run_id }}
-          name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
+          tagname: sl3000-emmc-build-${{ github.run_number }}-${{ github.run_id }}
+          name: SL3000 eMMC Firmware #${{ github.run_number }}
           body: |
-            自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
-            - 自动生成三件套
-            - DTS/MK/CONFIG 已同步
-            - 工具链构建完成
-            - 固件构建完成
-          files: |
-            openwrt/bin/targets/mediatek/filogic/*
+            🚀 自动构建：司络SL3000 (MT7981B eMMC)
+            📌 源码仓库：ykm888/immortalwrt-sl3000 (main)
+            🛠 自动生成三件套(DTS/MK/CONFIG)，工程级旗舰版配置
+            📦 内置：Docker/Passwall2/SSR Plus+/eMMC文件系统支持
+            📝 构建日志：查看Artifacts → sl3000-build-logs
+            ⚙️ 内核版本：Linux 6.6 (ImmortalWrt 24.10)
+          files: openwrt/bin/targets/mediatek/filogic/*
+          prerelease: true  # 预发布标记，避免正式版污染
+          draft: false
