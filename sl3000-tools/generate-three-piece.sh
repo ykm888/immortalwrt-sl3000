@@ -14,17 +14,18 @@ CFG="$ROOT/.config"
 
 mkdir -p "$DTS_DIR"
 
-clean() {
+clean_crlf() {
     [ ! -f "$1" ] && return 0
     sed -i 's/\r$//' "$1"
-    sed -i 's/[[:cntrl:]]//g' "$1"
 }
 
-echo "=== Stage 1: Pre-clean MK ==="
+echo "=== Stage 1: Pre-clean MK (remove old device block) ==="
 
-if grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK"; then
-    sed -i '/^define Device\/mt7981b-sl3000-emmc$/,/^endef$/d' "$MK"
-fi
+# 删除旧的设备段
+sed -i '/^define Device\/mt7981b-sl3000-emmc$/,/^endef$/d' "$MK"
+
+# 删除旧的 TARGET_DEVICES 注册行
+sed -i '/^TARGET_DEVICES \+= mt7981b-sl3000-emmc$/d' "$MK"
 
 echo "=== Stage 2: Generate DTS ==="
 
@@ -93,26 +94,33 @@ cat > "$DTS" << 'EOF'
 &pcie { status = "okay"; };
 EOF
 
-clean "$DTS"
+clean_crlf "$DTS"
 
-echo "=== Stage 3: Generate MK (TAB correct) ==="
+echo "=== Stage 3: Insert MK device block at correct position ==="
 
-cat >> "$MK" << 'EOF'
+ANCHOR_LINE='$(eval $(call BuildImage))'
+TMP_MK="$MK.tmp"
 
-define Device/mt7981b-sl3000-emmc
-	DEVICE_VENDOR := SL
-	DEVICE_MODEL := SL3000 eMMC Engineering Flagship
-	DEVICE_DTS := mt7981b-sl3000-emmc
-	DEVICE_PACKAGES := kmod-mt7981-firmware kmod-fs-ext4 block-mount
-	IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
-endef
-TARGET_DEVICES += mt7981b-sl3000-emmc
+awk -v anchor="$ANCHOR_LINE" '
+    $0 == anchor {
+        print ""
+        print "define Device/mt7981b-sl3000-emmc"
+        print "\tDEVICE_VENDOR := SL"
+        print "\tDEVICE_MODEL := SL3000 eMMC Engineering Flagship"
+        print "\tDEVICE_DTS := mt7981b-sl3000-emmc"
+        print "\tDEVICE_PACKAGES := kmod-mt7981-firmware kmod-fs-ext4 block-mount"
+        print "\tIMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata"
+        print "endef"
+        print "TARGET_DEVICES += mt7981b-sl3000-emmc"
+        print ""
+    }
+    { print }
+' "$MK" > "$TMP_MK"
 
-EOF
+mv "$TMP_MK" "$MK"
+clean_crlf "$MK"
 
-clean "$MK"
-
-echo "=== Stage 4: Generate CONFIG ==="
+echo "=== Stage 4: Generate CONFIG (static template) ==="
 
 cat > "$CFG" << 'EOF'
 CONFIG_TARGET_mediatek=y
@@ -180,30 +188,13 @@ CONFIG_PACKAGE_coreutils=y
 CONFIG_SL3000_CUSTOM_CONFIG=y
 EOF
 
-clean "$CFG"
+clean_crlf "$CFG"
 
-echo "=== Stage 5: Pre-check Stage 1 (before toolchain) ==="
+echo "=== Stage 5: Validation ==="
 
-if [ ! -f "$DTS" ]; then
-    echo "DTS missing"
-    exit 1
-fi
-
-echo "Skip standalone dtc check (rely on OpenWrt build for full DTS validation)."
-
-if ! grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK"; then
-    echo "MK invalid"
-    exit 1
-fi
-
-if ! grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG"; then
-    echo "CONFIG invalid"
-    exit 1
-fi
-
-echo "=== Stage 6: Pre-check Stage 2 (after toolchain) ==="
-echo "Skip build-time registration check in this job (no full build_dir/toolchain here)."
-echo "Rely on main build job to validate dtb/profiles.json."
+[ -f "$DTS" ] || { echo "DTS missing"; exit 1; }
+grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK" || { echo "MK invalid"; exit 1; }
+grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG" || { echo "CONFIG invalid"; exit 1; }
 
 echo "=== Three-piece generation complete ==="
 echo "$DTS"
