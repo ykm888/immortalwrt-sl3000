@@ -189,7 +189,6 @@ if [ ! -f "$DTS" ]; then
     exit 1
 fi
 
-# 修复点：跳过系统 dtc（无内核 include path，会误报）
 echo "Skip standalone dtc check (rely on OpenWrt build for full DTS validation)."
 
 if ! grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK"; then
@@ -204,7 +203,8 @@ fi
 
 echo "=== Stage 6: Pre-check Stage 2 (after toolchain) ==="
 
-make -j1 V=s target/linux/compile >/dev/null 2>&1 || true
+# 方案 A：使用 json_overview_image_info 生成 profiles.json
+make -j1 V=s json_overview_image_info >/dev/null 2>&1 || true
 
 if ! grep -R "mt7981b-sl3000-emmc" -n build_dir/target-*/linux-*/profiles.json >/dev/null 2>&1; then
     echo "Device not registered"
