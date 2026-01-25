@@ -1,78 +1,176 @@
-name: Rebuild SL3000 Three-Piece (Only)
+name: Rebuild SL3000 Three-Piece (Only) - Protect Official filogic.mk
 
 on:
   workflow_dispatch:
 
+# 最小权限：仅满足Git提交推送+Artifact上传
+permissions:
+  contents: write
+  actions: read
+
 jobs:
-  rebuild:
+  rebuild-sl3000-three-piece:
     runs-on: ubuntu-22.04
+    timeout-minutes: 10  # 轻量工作流，10分钟足够
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ github.workspace }}  # 强制所有步骤在仓库根目录执行
 
     steps:
-      # 1. 检出仓库
+      # 1. 检出仓库：完整Git历史，保留凭据用于推送
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: true
 
-      # 2. 强制切换到仓库根目录（关键修复点）
-      - name: Ensure working directory
+      # 2. 安装最小依赖：仅dtc，保证DTS语法深度校验生效
+      - name: Install minimal dependency (dtc for DTS check)
         run: |
-          echo "当前目录:"
-          pwd
-          echo "列出仓库根目录:"
-          ls -al .
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends device-tree-compiler
+          dtc --version && echo "✅ dtc安装成功"
 
-      # 3. 检查脚本是否存在（关键调试点）
-      - name: Check script exists
+      # 3. 强校验：工具目录/核心脚本是否存在
+      - name: Check script & directory existence
         run: |
-          echo "检查 sl3000-tools 目录:"
-          ls -al sl3000-tools || echo "❌ sl3000-tools 目录不存在"
-          echo "检查 generate-three-piece.sh:"
-          ls -al sl3000-tools/generate-three-piece.sh || echo "❌ generate-three-piece.sh 不存在"
+          set -euo pipefail
+          if [ ! -d "sl3000-tools" ]; then
+            echo "❌ 错误：sl3000-tools 目录不存在"
+            exit 1
+          fi
+          if [ ! -f "sl3000-tools/generate-three-piece.sh" ]; then
+            echo "❌ 错误：generate-three-piece.sh 脚本不存在"
+            exit 1
+          fi
+          echo "✅ 脚本&工具目录检查通过"
 
-      # 4. 添加执行权限（使用 755，永远有效）
-      - name: Add execute permission
+      # 4. 自动创建：DTS/CONFIG兜底 + MK仅创父目录（保护官方filogic.mk）
+      - name: Auto create dir/file (Protect official filogic.mk)
         run: |
-          chmod 755 sl3000-tools/generate-three-piece.sh
-          chmod 755 sl3000-tools/all-in-one-light.sh
-          echo "权限检查:"
-          ls -al sl3000-tools
+          set -euo pipefail
+          # 定义三件套路径
+          DTS_FILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+          MK_FILE="target/linux/mediatek/image/filogic.mk"
+          CFG_FILE=".config"
 
-      # 5. 执行三件套生成脚本（关键步骤）
-      - name: Run three-piece generator
+          # 通用：递归创建所有父目录（确保路径存在）
+          for FILE in $DTS_FILE $MK_FILE $CFG_FILE; do
+            DIR=$(dirname "$FILE")
+            if [ ! -d "$DIR" ]; then
+              mkdir -p "$DIR" && echo "✅ 自动创建目录：$DIR"
+            fi
+          done
+
+          # DTS：自定义文件，不存在则创建空文件
+          if [ ! -f "$DTS_FILE" ]; then
+            touch "$DTS_FILE" && echo "✅ 自动创建空文件：$DTS_FILE"
+          else
+            echo "ℹ DTS文件已存在，跳过创建：$DTS_FILE"
+          fi
+
+          # CONFIG：自定义文件，不存在则创建空文件
+          if [ ! -f "$CFG_FILE" ]; then
+            touch "$CFG_FILE" && echo "✅ 自动创建空文件：$CFG_FILE"
+          else
+            echo "ℹ CONFIG文件已存在，跳过创建：$CFG_FILE"
+          fi
+
+          # MK：官方配置文件，仅检查存在，不创建/覆盖（核心保护）
+          if [ -f "$MK_FILE" ]; then
+            echo "✅ 检测到官方filogic.mk，完整保留：$MK_FILE"
+          else
+            echo "⚠ 未检测到filogic.mk，后续脚本将创建空文件并仅追加SL3000段"
+            touch "$MK_FILE"
+          fi
+          echo "=== 目录/文件兜底创建完成（已保护官方filogic.mk）==="
+
+      # 5. 脚本权限：给工具目录所有sh脚本加755执行权限，无遗漏
+      - name: Add execute permission for all scripts
         run: |
-          echo "=== 开始执行 generate-three-piece.sh ==="
-          bash -x sl3000-tools/generate-three-piece.sh
+          chmod 755 sl3000-tools/*.sh
+          ls -al sl3000-tools/ && echo "✅ 所有脚本已设置755执行权限"
 
-      # 6. 检查三件套是否生成（关键验证）
-      - name: Verify three-piece output
+      # 6. 执行生成脚本：调试模式+日志捕获，持久化保存执行记录
+      - name: Run SL3000 three-piece generator
         run: |
-          echo "=== 检查 DTS ==="
-          ls -al target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
-          echo "=== 检查 MK ==="
-          ls -al target/linux/mediatek/image/
-          echo "=== 检查 CONFIG ==="
-          ls -al .config || echo ".config 不存在"
+          set -euo pipefail
+          echo "=== 开始执行三件套生成脚本（仅操作SL3000设备段）==="
+          bash -x sl3000-tools/generate-three-piece.sh 2>&1 | tee sl3000-workflow-run.log
+          echo "✅ 三件套生成脚本执行完成"
 
-      # 7. 上传三件套产物
-      - name: Upload three-piece artifacts
+      # 7. 强校验：DTS/CONFIG存在非空 + MK含SL3000段（核心验证）
+      - name: Strict verify three-piece files
+        run: |
+          set -euo pipefail
+          # 定义路径和校验标识
+          DTS_FILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+          MK_FILE="target/linux/mediatek/image/filogic.mk"
+          CFG_FILE=".config"
+          MK_SEGMENT="mt7981b-sl3000-emmc"
+
+          # 校验DTS/CONFIG：存在且非空
+          for FILE in $DTS_FILE $CFG_FILE; do
+            if [ -f "$FILE" ] && [ -s "$FILE" ]; then
+              echo "✅ 验证通过：$FILE（存在且非空）"
+            else
+              echo "❌ 验证失败：$FILE（不存在或为空文件）"
+              exit 1
+            fi
+          done
+
+          # 校验MK：存在非空 + 含SL3000设备段（双重验证）
+          if [ -f "$MK_FILE" ] && [ -s "$MK_FILE" ]; then
+            if grep -q "$MK_SEGMENT" "$MK_FILE"; then
+              echo "✅ 验证通过：$MK_FILE（官方配置完整+含SL3000设备段）"
+              # 打印SL3000段内容，方便云构建调试
+              echo "=== SL3000设备段内容 ==="
+              grep -A20 "define Device/$MK_SEGMENT" "$MK_FILE"
+            else
+              echo "❌ 验证失败：$MK_FILE中未找到SL3000设备段"
+              exit 1
+            fi
+          else
+            echo "❌ 验证失败：$MK_FILE（不存在或为空文件）"
+            exit 1
+          fi
+
+      # 8. 上传产物：三件套文件 + 所有日志（方便下载/调试/本地使用）
+      - name: Upload three-piece artifacts + logs
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-three-piece
+          name: sl3000-three-piece-files
           path: |
             target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts
             target/linux/mediatek/image/filogic.mk
             .config
+            sl3000-tools/sl3000-three-piece-generate.log
+            sl3000-workflow-run.log
+          retention-days: 30  # 产物/日志保留30天
 
-      # 8. 提交三件套到仓库
-      - name: Commit and push changes
+      # 9. Git提交+推送：带冲突处理，仅提交SL3000相关变更
+      - name: Commit and push three-piece changes
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          set -euo pipefail
+          # 标准化Git配置
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global pull.rebase true  # 拉取时自动变基，解决冲突
 
-          git add -f target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts
-          git add -f target/linux/mediatek/image/filogic.mk
-          git add -f .config
+          # 定义三件套路径，强制添加（避免.gitignore过滤）
+          DTS_FILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+          MK_FILE="target/linux/mediatek/image/filogic.mk"
+          CFG_FILE=".config"
+          git add -f "$DTS_FILE" "$MK_FILE" "$CFG_FILE"
 
-          git commit -m "ci: auto rebuild SL3000 three-piece" || echo "No changes to commit"
-          git push
+          # 无变更则跳过提交
+          git commit -m "ci: rebuild SL3000 three-piece (DTS/MK/CONFIG) [Protect official filogic.mk]" || {
+            echo "ℹ 无文件变更，跳过提交"
+            exit 0
+          }
+
+          # 拉取远程最新提交+推送，处理云构建分支冲突
+          git pull
+          git push origin ${{ github.ref_name }}
+          echo "✅ 三件套已成功提交并推送到远程仓库：${{ github.ref_name }}"
