@@ -15,7 +15,7 @@ jobs:
 
       - name: Optimize disk space
         run: |
-          sudo apt-get remove -y --purge azure-cli google-cloud-sdk dotnet* powershell mono* mysql* php* android* || true
+          sudo apt-get remove -y --purge azure-cli google-cloud-sdk dotnet powershell mono mysql php android* || true
           sudo apt-get autoremove -y
           sudo apt-get clean
 
@@ -45,12 +45,33 @@ jobs:
         run: |
           cp -r sl3000-tools openwrt/
 
+      # ⭐ 更新 feeds（必须在 DTS 检查前）
+      - name: Update feeds
+        working-directory: openwrt
+        run: |
+          ./scripts/feeds update -a || true
+          ./scripts/feeds install -a
+
+      # ⭐ 生成默认配置
+      - name: Normalize config
+        working-directory: openwrt
+        run: |
+          make defconfig
+
+      # ⭐ 构建工具链（生成 build_dir + kernel include）
+      - name: Build toolchain
+        working-directory: openwrt
+        run: |
+          make toolchain/install -j$(nproc) V=s
+
+      # ⭐ 生成三件套
       - name: Generate SL3000 Three-Piece Set
         working-directory: openwrt
         run: |
           chmod +x sl3000-tools/generate-three-piece.sh
           ./sl3000-tools/generate-three-piece.sh
 
+      # ⭐ 运行 DTS 检查（此时环境已准备好）
       - name: Run all-in-one CHECK
         working-directory: openwrt
         run: |
@@ -63,29 +84,14 @@ jobs:
           echo "=== CI 实际使用的 DTS 前 20 行 ==="
           sed -n '1,20p' target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts || echo "DTS 文件不存在"
 
-      # ⭐ 使用三件套生成的 .config（最终标准）
+      # ⭐ 使用三件套生成的 .config
       - name: Use generated .config
         working-directory: openwrt
         run: |
           cp .config .config.backup
           echo "✔ 已使用三件套生成的 .config"
 
-      - name: Update feeds
-        working-directory: openwrt
-        run: |
-          ./scripts/feeds update -a || true
-          ./scripts/feeds install -a
-
-      - name: Normalize config
-        working-directory: openwrt
-        run: |
-          make defconfig
-
-      - name: Build toolchain
-        working-directory: openwrt
-        run: |
-          make toolchain/install -j$(nproc) V=s
-
+      # ⭐ 构建固件
       - name: Build firmware
         working-directory: openwrt
         run: |
@@ -106,7 +112,7 @@ jobs:
       - name: Release firmware
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: sl3000-emmc-${{ github.run_number }}-${{ github.run_id }}
+          tagname: sl3000-emmc-${{ github.run_number }}-${{ github.run_id }}
           name: "SL3000 eMMC Firmware Build #${{ github.run_number }}"
           body: |
             自动构建的 SL3000 eMMC 固件 (ImmortalWrt 24.10)
