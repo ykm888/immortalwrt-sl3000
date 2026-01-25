@@ -7,26 +7,36 @@ set -e
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# 仓库根目录三件套输出路径（相对 generate-three-piece.sh 所在目录）
+# 关键：统一在仓库根目录下工作
+cd "$ROOT_DIR/.."
+
+# 下面所有路径都相对于“仓库根”
 DTS_OUT="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
 MK_OUT="target/linux/mediatek/image/filogic.mk"
 CFG_OUT="mt7981b-sl3000-emmc.config"
 
-# 自动判断 openwrt 目录（关键修复）
-if [ -d "$ROOT_DIR/../openwrt" ]; then
-    OPENWRT_DIR="$ROOT_DIR/../openwrt"
+if [ -d "openwrt" ]; then
+    OPENWRT_DIR="openwrt"
 else
-    OPENWRT_DIR="$ROOT_DIR/.."
+    OPENWRT_DIR="."
 fi
 
 mkdir -p "$(dirname "$DTS_OUT")"
 mkdir -p "$(dirname "$MK_OUT")"
 
-#########################################
-# 1. 生成 DTS
-#########################################
-echo "=== 🧬 生成DTS ==="
+clean_file() {
+    local f="$1"
+    [ -f "$f" ] || return 0
 
+    sed -i 's/\r$//' "$f"
+    sed -i '1s/^\xEF\xBB\xBF//' "$f"
+    sed -i 's/\xC2\xA0//g' "$f"
+    sed -i 's/\xE2\x80\x8B//g' "$f"
+    tr -d '\000-\011\013\014\016-\037\177' < "$f" > "$f.clean"
+    mv "$f.clean" "$f"
+}
+
+echo "=== 🧬 生成DTS ==="
 cat <<'EOF' > "$DTS_OUT"
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /dts-v1/;
@@ -54,11 +64,7 @@ cat <<'EOF' > "$DTS_OUT"
 };
 EOF
 
-#########################################
-# 2. 生成 MK
-#########################################
 echo "=== 🧬 生成MK ==="
-
 cat <<'EOF' > "$MK_OUT"
 define Device/mt7981b-sl3000-emmc
   DEVICE_VENDOR := SL
@@ -70,11 +76,7 @@ endef
 TARGET_DEVICES += mt7981b-sl3000-emmc
 EOF
 
-#########################################
-# 3. 生成 CONFIG
-#########################################
 echo "=== 🧬 生成配置 ==="
-
 cat <<'EOF' > "$CFG_OUT"
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
@@ -87,35 +89,17 @@ CONFIG_PACKAGE_dockerd=y
 CONFIG_PACKAGE_luci-app-dockerman=y
 EOF
 
-#########################################
-# 4. 清理隐藏字符
-#########################################
 echo "=== 🧹清理隐藏字符（最终修复）==="
-
-clean_file() {
-    sed -i 's/\r$//' "$1"
-    sed -i '1s/^\xEF\xBB\xBF//' "$1"
-    sed -i 's/\xC2\xA0//g' "$1"
-    sed -i 's/\xE2\x80\x8B//g' "$1"
-    sed -i 's/[^[:print:]\t ]//g' "$1"
-}
-
 clean_file "$DTS_OUT"
 clean_file "$MK_OUT"
 clean_file "$CFG_OUT"
 
-#########################################
-# 5. 同步三件套到 openwrt（关键修复）
-#########################################
 echo "=== 🔄 同步三件套到openwrt 源码 ==="
 
 sync_file() {
-    SRC="$1"
-    DST="$OPENWRT_DIR/$1"
-
+    local SRC="$1"
+    local DST="$OPENWRT_DIR/$1"
     mkdir -p "$(dirname "$DST")"
-
-    # 如果源文件和目标文件是同一个文件 → 不复制（关键修复）
     if [ "$(realpath "$SRC")" = "$(realpath "$DST")" ]; then
         echo "⚠ 跳过同步（源文件与目标文件相同）：$SRC"
     else
