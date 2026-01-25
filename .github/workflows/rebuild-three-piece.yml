@@ -1,4 +1,5 @@
 name: Rebuild SL3000 Three-Piece (Only) - Protect Official filogic.mk
+# 适配最强隐藏字符清理脚本，已预装dos2unix/dtc依赖
 
 on:
   workflow_dispatch:
@@ -25,12 +26,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      # 2. 安装最小依赖：仅dtc，保证DTS语法深度校验生效
-      - name: Install minimal dependency (dtc for DTS check)
+      # 2. 安装核心依赖：dtc（DTS校验）+ dos2unix（隐藏字符清理核心）
+      - name: Install core dependencies (dtc + dos2unix)
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends device-tree-compiler
+          sudo apt-get install -y --no-install-recommends device-tree-compiler dos2unix
           dtc --version && echo "✅ dtc安装成功"
+          dos2unix --version && echo "✅ dos2unix安装成功"
 
       # 3. 强校验：工具目录/核心脚本是否存在
       - name: Check script & directory existence
@@ -92,13 +94,13 @@ jobs:
           chmod 755 sl3000-tools/*.sh
           ls -al sl3000-tools/ && echo "✅ 所有脚本已设置755执行权限"
 
-      # 6. 执行生成脚本：调试模式+日志捕获，持久化保存执行记录
-      - name: Run SL3000 three-piece generator
+      # 6. 执行生成脚本：调试模式+日志捕获，自带最强清理
+      - name: Run SL3000 three-piece generator (Ultra Clean)
         run: |
           set -euo pipefail
-          echo "=== 开始执行三件套生成脚本（仅操作SL3000设备段）==="
+          echo "=== 开始执行三件套生成脚本（最强隐藏字符清理）==="
           bash -x sl3000-tools/generate-three-piece.sh 2>&1 | tee sl3000-workflow-run.log
-          echo "✅ 三件套生成脚本执行完成"
+          echo "✅ 三件套生成+清理完成"
 
       # 7. 强校验：DTS/CONFIG存在非空 + MK含SL3000段（核心验证）
       - name: Strict verify three-piece files
@@ -140,7 +142,7 @@ jobs:
       - name: Upload three-piece artifacts + logs
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-three-piece-files
+          name: sl3000-three-piece-files (Ultra Clean)
           path: |
             target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts
             target/linux/mediatek/image/filogic.mk
@@ -165,7 +167,7 @@ jobs:
           git add -f "$DTS_FILE" "$MK_FILE" "$CFG_FILE"
 
           # 无变更则跳过提交
-          git commit -m "ci: rebuild SL3000 three-piece (DTS/MK/CONFIG) [Protect official filogic.mk]" || {
+          git commit -m "ci: rebuild SL3000 three-piece (ultra clean hidden chars) [Protect official filogic.mk]" || {
             echo "ℹ 无文件变更，跳过提交"
             exit 0
           }
