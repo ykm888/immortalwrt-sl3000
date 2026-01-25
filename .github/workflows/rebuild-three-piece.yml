@@ -1,4 +1,4 @@
-name: Rebuild SL3000 Three-Piece (Final Fixed)
+name: Rebuild SL3000 Three-Piece (24.10 / 6.6)
 
 on:
   workflow_dispatch:
@@ -35,12 +35,11 @@ jobs:
           fi
           echo "✅ Script found"
 
-      # 4. Auto-detect files-6.x (NO touch, NO create empty files)
-      - name: Detect files-6.x
+      # 4. Lock files-6.6 (24.10 固定路径)
+      - name: Set FILES_DIR (6.6)
         run: |
-          FILES_DIR=$(ls -d target/linux/mediatek/files-* | head -n 1)
-          echo "FILES_DIR=$FILES_DIR" >> $GITHUB_ENV
-          echo "Detected FILES_DIR = $FILES_DIR"
+          echo "FILES_DIR=target/linux/mediatek/files-6.6" >> $GITHUB_ENV
+          echo "Using FILES_DIR = target/linux/mediatek/files-6.6"
 
       # 5. Add execute permission
       - name: Add Execute Permission
@@ -51,10 +50,10 @@ jobs:
         run: |
           bash -x sl3000-tools/generate-three-piece.sh 2>&1 | tee sl3000-run.log
 
-      # 7. Strict verify (use detected files-6.x)
+      # 7. Strict verify (固定 6.6)
       - name: Strict Verify Three-Piece
         run: |
-          FILES_DIR="${FILES_DIR:-$(ls -d target/linux/mediatek/files-* | head -n 1)}"
+          FILES_DIR="target/linux/mediatek/files-6.6"
 
           DTS_FILE="$FILES_DIR/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
           MK_FILE="target/linux/mediatek/image/filogic.mk"
@@ -90,7 +89,7 @@ jobs:
       - name: Upload Three-Piece & Logs
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-three-piece-final
+          name: sl3000-three-piece-2410
           path: |
             ${{ env.DTS_FILE }}
             ${{ env.MK_FILE }}
@@ -106,7 +105,7 @@ jobs:
 
           git add -f ${{ env.DTS_FILE }} ${{ env.MK_FILE }} ${{ env.CFG_FILE }}
 
-          git commit -m "ci: rebuild SL3000 three-piece (final fixed)" || {
+          git commit -m "ci: rebuild SL3000 three-piece (24.10 / 6.6)" || {
             echo "No changes to commit"
             exit 0
           }
