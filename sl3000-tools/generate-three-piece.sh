@@ -2,11 +2,11 @@
 set -e
 
 ###############################################
-# SL3000 三件套生成脚本（官方工程旗舰版 · 最终版）
-# - DTS：官方工程旗舰版
-# - MK：官方工程旗舰版
-# - CONFIG：自动添加 Docker + Passwall2
-# - 三件套自动创建
+# SL3000 三件套生成脚本（24.10 工程级最强旗舰版）
+# - DTS：官方结构 + 工程旗舰版
+# - MK：无 USB + Docker + Passwall2 + SSR Plus+
+# - CONFIG：自动启用 Docker + Passwall2 + SSR Plus+
+# - 三件套自动创建 / 覆盖
 # - 24.10 / Linux 6.6 固定结构
 ###############################################
 
@@ -25,7 +25,7 @@ echo "MK_OUT  = $MK_OUT"
 echo "CFG_OUT = $CFG_OUT"
 
 ###############################################
-# 1. 自动创建三件套（不存在 → 创建；存在 → 保留）
+# 1. 自动创建三件套（不存在 → 创建；存在 → 保留再覆盖/追加）
 ###############################################
 
 # DTS
@@ -49,7 +49,7 @@ if [ ! -f "$CFG_OUT" ]; then
 fi
 
 ###############################################
-# 2. 生成 DTS（官方工程旗舰版）
+# 2. 生成 DTS（官方结构 + 工程旗舰版）
 ###############################################
 echo "=== 生成 DTS（官方工程旗舰版） ==="
 
@@ -79,9 +79,9 @@ EOF
 echo "✔ DTS 已生成（官方工程旗舰版）"
 
 ###############################################
-# 3. 追加 MK（官方工程旗舰版）
+# 3. 追加 MK（无 USB + Docker + Passwall2 + SSR Plus+）
 ###############################################
-echo "=== 追加 MK（官方工程旗舰版） ==="
+echo "=== 追加 MK（工程级最强旗舰版） ==="
 
 if ! grep -q "Device/mt7981b-sl3000-emmc" "$MK_OUT"; then
 cat >> "$MK_OUT" << 'EOF'
@@ -90,23 +90,25 @@ define Device/mt7981b-sl3000-emmc
   DEVICE_VENDOR := SL
   DEVICE_MODEL := SL3000 eMMC Engineering Flagship
   DEVICE_DTS := mt7981b-sl3000-emmc
-  DEVICE_PACKAGES := kmod-usb3 kmod-mt7981-firmware \
+  DEVICE_PACKAGES := kmod-mt7981-firmware \
         luci-app-passwall2 docker dockerd luci-app-dockerman \
-        kmod-fs-ext4 kmod-fs-btrfs kmod-usb-storage block-mount
+        luci-app-ssr-plus xray-core \
+        shadowsocksr-libev-ssr-local shadowsocksr-libev-ssr-redir \
+        kmod-fs-ext4 kmod-fs-btrfs block-mount
   IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
 endef
 TARGET_DEVICES += mt7981b-sl3000-emmc
 
 EOF
-    echo "✔ 已追加 SL3000 工程旗舰版设备定义"
+    echo "✔ 已追加 SL3000 工程级最强旗舰版设备定义"
 else
-    echo "✔ MK 已包含 SL3000，跳过追加"
+    echo "✔ MK 已包含 SL3000 设备定义，跳过追加"
 fi
 
 ###############################################
-# 4. 生成 CONFIG（自动添加 Docker + Passwall2）
+# 4. 生成 CONFIG（Docker + Passwall2 + SSR Plus+）
 ###############################################
-echo "=== 生成 CONFIG（Docker + Passwall2） ==="
+echo "=== 生成 CONFIG（Docker + Passwall2 + SSR Plus+） ==="
 
 cat > "$CFG_OUT" << 'EOF'
 CONFIG_TARGET_mediatek=y
@@ -121,13 +123,18 @@ CONFIG_PACKAGE_docker=y
 CONFIG_PACKAGE_dockerd=y
 CONFIG_PACKAGE_luci-app-dockerman=y
 
-# 文件系统支持（旗舰版）
+# SSR Plus+
+CONFIG_PACKAGE_luci-app-ssr-plus=y
+CONFIG_PACKAGE_shadowsocksr-libev-ssr-local=y
+CONFIG_PACKAGE_shadowsocksr-libev-ssr-redir=y
+CONFIG_PACKAGE_xray-core=y
+
+# 文件系统支持（旗舰版，无 USB）
 CONFIG_PACKAGE_kmod-fs-ext4=y
 CONFIG_PACKAGE_kmod-fs-btrfs=y
-CONFIG_PACKAGE_kmod-usb-storage=y
 CONFIG_PACKAGE_block-mount=y
 EOF
 
-echo "✔ CONFIG 已生成（Docker + Passwall2）"
+echo "✔ CONFIG 已生成（Docker + Passwall2 + SSR Plus+）"
 
-echo "=== 三件套生成完成（官方工程旗舰版） ==="
+echo "=== 三件套生成完成（24.10 工程级最强旗舰版） ==="
