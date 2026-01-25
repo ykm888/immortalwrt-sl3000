@@ -1,5 +1,5 @@
 name: Rebuild SL3000 Three-Piece (Only) - Protect Official filogic.mk
-# 适配最强隐藏字符清理脚本，已预装dos2unix/dtc依赖
+# 适配最强隐藏字符清理脚本，已修复DTS语法+Git Rebase未暂存更改冲突
 
 on:
   workflow_dispatch:
@@ -94,13 +94,13 @@ jobs:
           chmod 755 sl3000-tools/*.sh
           ls -al sl3000-tools/ && echo "✅ 所有脚本已设置755执行权限"
 
-      # 6. 执行生成脚本：调试模式+日志捕获，自带最强清理
-      - name: Run SL3000 three-piece generator (Ultra Clean)
+      # 6. 执行生成脚本：调试模式+日志捕获，自带最强清理+DTS语法修复
+      - name: Run SL3000 three-piece generator (Ultra Clean + DTS Fix)
         run: |
           set -euo pipefail
-          echo "=== 开始执行三件套生成脚本（最强隐藏字符清理）==="
+          echo "=== 开始执行三件套生成脚本（最强隐藏字符清理+DTS语法修复）==="
           bash -x sl3000-tools/generate-three-piece.sh 2>&1 | tee sl3000-workflow-run.log
-          echo "✅ 三件套生成+清理完成"
+          echo "✅ 三件套生成+清理+语法修复完成"
 
       # 7. 强校验：DTS/CONFIG存在非空 + MK含SL3000段（核心验证）
       - name: Strict verify three-piece files
@@ -142,7 +142,7 @@ jobs:
       - name: Upload three-piece artifacts + logs
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-three-piece-files (Ultra Clean)
+          name: sl3000-three-piece-files (Ultra Clean + DTS Fix)
           path: |
             target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts
             target/linux/mediatek/image/filogic.mk
@@ -151,8 +151,8 @@ jobs:
             sl3000-workflow-run.log
           retention-days: 30  # 产物/日志保留30天
 
-      # 9. Git提交+推送：带冲突处理，仅提交SL3000相关变更
-      - name: Commit and push three-piece changes
+      # 9. Git提交+推送：修复Rebase未暂存更改冲突（核心修改步骤）
+      - name: Commit and push three-piece changes (Fix Rebase Conflict)
         run: |
           set -euo pipefail
           # 标准化Git配置
@@ -160,19 +160,33 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global pull.rebase true  # 拉取时自动变基，解决冲突
 
-          # 定义三件套路径，强制添加（避免.gitignore过滤）
+          # 定义三件套路径
           DTS_FILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
           MK_FILE="target/linux/mediatek/image/filogic.mk"
           CFG_FILE=".config"
+
+          # 第一步：强制添加修改的文件到暂存区
           git add -f "$DTS_FILE" "$MK_FILE" "$CFG_FILE"
 
-          # 无变更则跳过提交
-          git commit -m "ci: rebuild SL3000 three-piece (ultra clean hidden chars) [Protect official filogic.mk]" || {
+          # 第二步：暂存本地所有修改（解决未暂存更改无法rebase的核心）
+          # 无修改时stash也不会报错，容错处理
+          git stash push -m "temp stash sl3000 three-piece changes" || true
+
+          # 第三步：拉取远程最新代码（rebase模式）
+          git pull origin ${{ github.ref_name }}
+
+          # 第四步：恢复之前暂存的本地修改
+          git stash pop || true
+
+          # 第五步：重新添加文件（pop后暂存区会清空，需重新添加）
+          git add -f "$DTS_FILE" "$MK_FILE" "$CFG_FILE"
+
+          # 第六步：提交修改，无变更则跳过
+          git commit -m "ci: rebuild SL3000 three-piece (ultra clean+DTS fix) [Protect official filogic.mk]" || {
             echo "ℹ 无文件变更，跳过提交"
             exit 0
           }
 
-          # 拉取远程最新提交+推送，处理云构建分支冲突
-          git pull
+          # 第七步：推送到远程仓库
           git push origin ${{ github.ref_name }}
           echo "✅ 三件套已成功提交并推送到远程仓库：${{ github.ref_name }}"
