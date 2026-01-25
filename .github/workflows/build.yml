@@ -3,6 +3,9 @@ name: Build ImmortalWrt 24.10 (SL3000 eMMC Flagship)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -24,8 +27,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential git-core libncurses5-dev \
             zlib1g-dev gawk flex gettext wget unzip python3 python3-distutils \
-            file libssl-dev rsync ccache device-tree-compiler
+            file libssl-dev rsync ccache device-tree-compiler subversion libelf-dev
 
+      - name: Clone ImmortalWrt source
+        run: |
+          rm -rf openwrt
+          git clone --depth=1 -b main https://github.com/ykm888/immortalwrt-sl3000.git openwrt
+
+      # ⭐ 修复：缓存必须在 clone 之后
       - name: Cache downloads and ccache
         uses: actions/cache@v4
         with:
@@ -36,63 +45,58 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-immortalwrt-
 
-      - name: Clone ImmortalWrt source
-        run: |
-          rm -rf openwrt
-          git clone --depth=1 -b main https://github.com/ykm888/immortalwrt-sl3000.git openwrt
-
       - name: Copy SL3000 tools
         run: |
           cp -r sl3000-tools openwrt/
 
-      # ⭐ 更新 feeds（保持你原来的顺序）
+      # ⭐ 保持原顺序：更新 feeds
       - name: Update feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a || true
           ./scripts/feeds install -a
 
-      # ⭐ 生成默认配置（保持你原来的顺序）
+      # ⭐ 保持原顺序：生成默认配置
       - name: Normalize config
         working-directory: openwrt
         run: |
           make defconfig
 
-      # ⭐ 构建工具链（保持你原来的顺序）
+      # ⭐ 保持原顺序：构建工具链
       - name: Build toolchain
         working-directory: openwrt
         run: |
           make toolchain/install -j$(nproc) V=s
 
-      # ⭐ 生成三件套（修复路径 + 强制覆盖）
+      # ⭐ 修复：三件套生成（路径正确 + 强制覆盖）
       - name: Generate SL3000 Three-Piece Set
         working-directory: openwrt
         run: |
           chmod +x sl3000-tools/generate-three-piece.sh
           ./sl3000-tools/generate-three-piece.sh
 
-      # ⭐ 运行 all-in-one.sh 的检查模式（保持你原来的结构）
+      # ⭐ 修复：all-in-one.sh check 模式（路径正确）
       - name: Run all-in-one CHECK
         working-directory: openwrt
         run: |
           chmod +x sl3000-tools/all-in-one.sh
           ./sl3000-tools/all-in-one.sh check
 
-      # ⭐ 打印 DTS 前 20 行（保持你原来的调试步骤）
+      # ⭐ 保留你的调试步骤
       - name: Debug DTS head (CI 实际使用版本)
         working-directory: openwrt
         run: |
           echo "=== CI 实际使用的 DTS 前 20 行 ==="
           sed -n '1,20p' target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts || echo "DTS 文件不存在"
 
-      # ⭐ 使用三件套生成的 .config（保持你原来的逻辑）
+      # ⭐ 保留你的 .config 使用逻辑
       - name: Use generated .config
         working-directory: openwrt
         run: |
           cp .config .config.backup
           echo "✔ 已使用三件套生成的 .config"
 
-      # ⭐ 构建固件（保持你原来的构建方式）
+      # ⭐ 保持原构建方式
       - name: Build firmware
         working-directory: openwrt
         run: |
