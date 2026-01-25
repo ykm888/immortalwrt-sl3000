@@ -3,9 +3,8 @@ set -e
 
 #########################################
 # SL3000 三件套重建脚本（最终版）
-# - 生成三件套
-# - 三件套自检
-# - all-in-one.sh check
+# - 不会递归调用自己
+# - 只调用 generate + check
 #########################################
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -22,7 +21,7 @@ echo "=== 🔍 三件套自检 ==="
 chmod +x "$ROOT_DIR/three-piece-check.sh"
 "$ROOT_DIR/three-piece-check.sh"
 
-# 3. all-in-one.sh 语法与环境检查
+# 3. all-in-one.sh 检查
 echo "=== 🔍 all-in-one.sh CHECK ==="
 chmod +x "$ROOT_DIR/all-in-one.sh"
 "$ROOT_DIR/all-in-one.sh" check
