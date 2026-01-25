@@ -14,11 +14,11 @@ CFG_FILE="$REPO_ROOT/.config"
 
 mkdir -p "$DTS_DIR"
 
-safe_clean() {
-    local FILE="$1"
-    [ ! -f "$FILE" ] && return 0
-    sed -i 's/\r$//' "$FILE"
-    sed -i 's/[[:cntrl:]]//g' "$FILE"
+clean() {
+    local F="$1"
+    [ ! -f "$F" ] && return 0
+    sed -i 's/\r$//' "$F"
+    sed -i 's/[[:cntrl:]]//g' "$F"
 }
 
 cat > "$DTS_FILE" << 'EOF'
@@ -42,9 +42,7 @@ cat > "$DTS_FILE" << 'EOF'
         led-upgrade = &led_status;
     };
 
-    chosen {
-        stdout-path = "serial0:115200n8";
-    };
+    chosen { stdout-path = "serial0:115200n8"; };
 
     leds {
         compatible = "gpio-leds";
@@ -83,14 +81,12 @@ cat > "$DTS_FILE" << 'EOF'
     phy-handle = <&phy0>;
 };
 
-&switch {
-    status = "okay";
-};
+&switch { status = "okay"; };
 
 &pcie { status = "okay"; };
 EOF
 
-safe_clean "$DTS_FILE"
+clean "$DTS_FILE"
 
 if grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK_FILE"; then
     sed -i '/^define Device\/mt7981b-sl3000-emmc$/,/^endef$/d' "$MK_FILE"
@@ -109,7 +105,7 @@ TARGET_DEVICES += mt7981b-sl3000-emmc
 
 EOF
 
-safe_clean "$MK_FILE"
+clean "$MK_FILE"
 
 cat > "$CFG_FILE" << 'EOF'
 CONFIG_TARGET_mediatek=y
@@ -177,9 +173,27 @@ CONFIG_PACKAGE_coreutils=y
 CONFIG_SL3000_CUSTOM_CONFIG=y
 EOF
 
-safe_clean "$CFG_FILE"
+clean "$CFG_FILE"
 
-echo "=== Three-Piece Generate Complete ==="
-echo "DTS: $DTS_FILE"
-echo "MK : $MK_FILE"
-echo "CFG: $CFG_FILE"
+echo "=== Pre-check: MK ==="
+if ! grep -q "^define Device/mt7981b-sl3000-emmc$" "$MK_FILE"; then
+    echo "MK invalid"; exit 1; fi
+
+echo "=== Pre-check: DTS ==="
+if [ ! -f "$DTS_FILE" ]; then
+    echo "DTS missing"; exit 1; fi
+
+echo "=== Pre-check: CONFIG ==="
+if ! grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y" "$CFG_FILE"; then
+    echo "CONFIG invalid"; exit 1; fi
+
+echo "=== Pre-check: profiles.json ==="
+make -j1 V=s target/linux/compile >/dev/null 2>&1 || true
+
+if ! grep -R "mt7981b-sl3000-emmc" -n build_dir/target-*/linux-*/profiles.json >/dev/null 2>&1; then
+    echo "Device not registered"; exit 1; fi
+
+echo "=== Three-piece generation complete ==="
+echo "$DTS_FILE"
+echo "$MK_FILE"
+echo "$CFG_FILE"
