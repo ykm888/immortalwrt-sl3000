@@ -1,4 +1,3 @@
-# 延续原始名称
 name: Build ImmortalWrt 24.10 (SL3000 eMMC Flagship)
 
 on:
@@ -42,10 +41,9 @@ jobs:
           rm -rf openwrt
           git clone --depth=1 -b main https://github.com/ykm888/immortalwrt-sl3000.git openwrt
 
-      - name: Copy SL3000 tools and config
+      - name: Copy SL3000 tools
         run: |
           cp -r sl3000-tools openwrt/
-          cp mt7981b-sl3000-emmc.config openwrt/
 
       - name: Generate SL3000 Three-Piece Set
         working-directory: openwrt
@@ -59,16 +57,18 @@ jobs:
           chmod +x sl3000-tools/all-in-one.sh
           ./sl3000-tools/all-in-one.sh check
 
-      # ✅ DTS 打印步骤（关键）
       - name: Debug DTS head (CI 实际使用版本)
         working-directory: openwrt
         run: |
           echo "=== CI 实际使用的 DTS 前 20 行 ==="
           sed -n '1,20p' target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts || echo "DTS 文件不存在"
 
-      - name: Use root device config
+      # ⭐ 使用三件套生成的 .config（最终标准）
+      - name: Use generated .config
+        working-directory: openwrt
         run: |
-          cp mt7981b-sl3000-emmc.config openwrt/.config
+          cp .config .config.backup
+          echo "✔ 已使用三件套生成的 .config"
 
       - name: Update feeds
         working-directory: openwrt
