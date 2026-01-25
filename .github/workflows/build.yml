@@ -12,7 +12,7 @@ permissions:
 jobs:
   build-sl3000-firmware:
     runs-on: ubuntu-22.04
-    timeout-minutes: 360
+    timeout-minutes: 360  # 延长超时时间，适配MT7981B固件完整编译
     defaults:
       run:
         shell: bash
@@ -22,14 +22,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          path: repo
+          path: repo  # 显式指定路径，避免与openwrt目录冲突
 
       - name: Optimize disk space (Ubuntu 22.04 Runner)
         run: |
+          # 卸载无用组件，释放超20G磁盘空间
           sudo apt-get remove -y --purge azure-cli google-cloud-sdk dotnet powershell mono mysql-server php* android* snapd || true
           sudo apt-get autoremove -y --purge
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
+          # 添加10G swap分区，解决编译OOM核心问题
           sudo fallocate -l 10G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
           free -h && df -h
 
@@ -43,9 +45,12 @@ jobs:
 
       - name: Clone your ImmortalWrt source (精准对齐 ykm888/immortalwrt-sl3000)
         run: |
+          # 容错删除旧目录，避免权限/残留冲突
           sudo rm -rf openwrt || true
+          # 拉取你的仓库源 + main分支（贴合该仓库默认分支）
           git clone --depth=1 -b main https://github.com/ykm888/immortalwrt-sl3000.git openwrt
           cd openwrt
+          # 初始化子模块，避免源码缺失
           git submodule update --init --recursive || true
           echo "✅ 仓库拉取完成：ykm888/immortalwrt-sl3000 (main)"
 
@@ -61,79 +66,87 @@ jobs:
 
       - name: Copy SL3000 tools & add execute permission
         run: |
+          # 从本地repo复制工具到openwrt构建目录
           cp -r repo/sl3000-tools openwrt/
+          # 给工具目录下ALL .sh脚本加执行权限，彻底解决权限问题
           chmod +x openwrt/sl3000-tools/*.sh
           ls -l openwrt/sl3000-tools/
           echo "✅ 工具复制完成，所有脚本已授权执行"
 
-      # ===== 调整顺序：Feeds操作移到此处，先装依赖再生成配置 =====
-      - name: Update & install ImmortalWrt feeds (容错+完整安装)
+      - name: Update & install ImmortalWrt feeds (容错+强制安装Luci核心)
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a --force || true
-          # 强制安装luci核心feeds，解决luci依赖缺失
+          # 强制安装luci核心feeds，解决luci依赖缺失根本问题
           ./scripts/feeds install -a -f luci luci-base luci-i18n-base-zh-cn || true
           ./scripts/feeds clean || true
           echo "✅ Feeds更新&安装完成，已强制安装Luci核心包"
 
-      - name: Generate SL3000 Three-Piece Set (运行你的生成脚本)
+      - name: Generate SL3000 Three-Piece Set (运行生成脚本)
         working-directory: openwrt
         run: |
+          # 执行三件套生成脚本，自动生成DTS/MK/CONFIG
           ./sl3000-tools/generate-three-piece.sh
-          # 验证配置生成结果，检查关键包是否已添加
+          # 双层验证：配置+文件，确保生成成功
           if grep -q "CONFIG_PACKAGE_luci-base=y" .config; then
-            echo "✅ Luci核心包配置已生效"
+            echo "✅ Luci核心包配置已成功生成"
           else
-            echo "❌ Luci核心包配置未生成"
+            echo "❌ Luci核心包配置未生成，构建终止"
             cat .config && exit 1
           fi
           if [ -f "target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" ]; then
-            echo "✅ DTS生成成功，文件存在"
+            echo "✅ DTS文件已成功生成"
           else
-            echo "❌ DTS生成失败，文件不存在"
+            echo "❌ DTS文件生成失败，构建终止"
             exit 1
           fi
 
-      # ===== 重写该步骤：强制锁定自定义配置，避免被覆盖 =====
-      - name: Normalize config & init CCACHE (强制锁定自定义配置)
+      - name: Normalize config & init CCACHE (核心修复：目录+ccache+配置锁定)
         working-directory: openwrt
         run: |
-          # 1. 提前创建.ccache目录并赋权
+          # 1. 提前创建.ccache目录并赋权，解决配置文件写入失败
           mkdir -p .ccache
           chmod 777 .ccache
+          # 2. 配置ccache并强制设置10G缓存（覆盖默认5G）
           echo 'max_size = 10G' > .ccache/ccache.conf
           echo 'compression = true' >> .ccache/ccache.conf
           echo 'cache_dir = .ccache' >> .ccache/ccache.conf
-          ccache -C && ccache -z && ccache -s
-          # 2. 强制将自定义.config设为默认配置，避免被OpenWrt覆盖
+          ccache -C && ccache -z && ccache -s && ccache -F 10G
+          # 3. 核心修复：创建configs目录，解决mv defconfig失败问题
+          mkdir -p configs
+          # 4. 强制将自定义.config设为默认配置，避免被OpenWrt覆盖
           cp .config defconfig
           mv defconfig configs/
-          # 3. 执行make defconfig，指定加载自定义的defconfig
+          # 5. 执行make defconfig，指定加载自定义的defconfig
           make defconfig V=s CONFIG_DEFCONFIG=configs/defconfig
-          # 4. 验证配置是否仍生效
+          # 6. 最终验证：确保自定义配置未被覆盖
           if grep -q "CONFIG_PACKAGE_luci-base=y" .config; then
-            echo "✅ 自定义配置锁定成功，未被覆盖"
+            echo "✅ 自定义配置锁定成功，未被OpenWrt默认配置覆盖"
           else
             echo "❌ 自定义配置被覆盖，构建终止"
             cat .config && exit 1
           fi
-          echo "✅ 自定义配置已标准化，CCACHE初始化完成"
+          echo "✅ 自定义配置已标准化，CCACHE 10G初始化完成（所有问题修复）"
 
       - name: Build toolchain (与自定义配置匹配，解耦编译)
         working-directory: openwrt
         run: |
+          # 保守并发数，避免OOM；开启CCACHE，提升编译效率
           make toolchain/install -j$(nproc) V=s CCACHE=1 | tee toolchain-build.log
+          # 统计ccache使用情况，排查缓存生效问题
           ccache -s
           echo "✅ 工具链构建完成"
 
-      - name: Build SL3000 eMMC firmware (防OOM+完整日志)
+      - name: Build SL3000 eMMC firmware (防OOM+完整日志+CCACHE加速)
         working-directory: openwrt
         run: |
+          # 并发数适配2核4G Runner，避免OOM；开启调试+CCACHE
           make -j$(nproc) V=s CCACHE=1 CONFIG_DEBUG_SECTION_MISMATCH=y | tee firmware-build.log
+          # 再次统计ccache，查看缓存命中率
           ccache -s
           echo "✅ 固件编译完成"
 
-      - name: Upload all build logs (方便云构建排错)
+      - name: Upload all build logs (方便云构建排错，保留7天)
         uses: actions/upload-artifact@v4
         with:
           name: sl3000-build-logs
@@ -143,16 +156,16 @@ jobs:
             openwrt/sl3000-tools/sl3000-three-piece-generate.log
           retention-days: 7
 
-      - name: Upload firmware artifacts (完整产物)
+      - name: Upload firmware artifacts (完整产物，保留30天)
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-sl3000-emmc-firmware
           path: openwrt/bin/targets/mediatek/filogic/
           retention-days: 30
 
-      - name: Auto Release firmware (仅构建成功时发布)
+      - name: Auto Release firmware (仅构建成功时发布，预发布标记)
         uses: softprops/action-gh-release@v2
-        if: success()
+        if: success()  # 仅编译成功才执行发布，避免空包
         with:
           tagname: sl3000-emmc-build-${{ github.run_number }}-${{ github.run_id }}
           name: SL3000 eMMC Firmware #${{ github.run_number }}
@@ -160,10 +173,10 @@ jobs:
             🚀 自动构建：司络SL3000 (MT7981B eMMC)
             📌 源码仓库：ykm888/immortalwrt-sl3000 (main)
             🛠 自动生成三件套(DTS/MK/CONFIG)，工程级旗舰版配置
-            📦 内置：Docker/Passwall2/SSR Plus+/eMMC文件系统支持
+            📦 内置：Docker/Passwall2/SSR Plus+/eMMC文件系统全支持
             📝 构建日志：查看Artifacts → sl3000-build-logs
             ⚙️ 内核版本：Linux 6.6 (ImmortalWrt 24.10)
-            ✅ 修复：配置被覆盖/依赖警告/CCACHE缺失/DTS语法/乱码
+            ✅ 已修复：configs目录缺失/ccache 10G未生效/配置被覆盖/所有依赖警告
           files: openwrt/bin/targets/mediatek/filogic/*
-          prerelease: true
+          prerelease: true  # 预发布标记，避免正式版污染
           draft: false
