@@ -1,10 +1,8 @@
-name: Rebuild SL3000 Three-Piece (Final)
-# 适配SL3000(MT7981B eMMC) | 乱码修复+DTS语法修复+Git冲突修复+隐藏字符清理
-# 配套脚本：sl3000-tools/generate-three-piece.sh (最新乱码修复版)
+name: Rebuild SL3000 Three-Piece (Final Fixed)
+
 on:
   workflow_dispatch:
 
-# 最小必要权限：Git提交推送+Artifact上传
 permissions:
   contents: write
   actions: read
@@ -12,175 +10,111 @@ permissions:
 jobs:
   rebuild-sl3000-three-piece:
     runs-on: ubuntu-22.04
-    timeout-minutes: 10  # 轻量工作流，10分钟足够
-    defaults:
-      run:
-        shell: bash
-        working-directory: ${{ github.workspace }}  # 强制统一工作目录，避免路径问题
+    timeout-minutes: 10
 
     steps:
-      # 1. 检出仓库：完整Git历史+保留凭据，支持后续push/pull
+      # 1. Checkout
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: true
 
-      # 2. 安装核心依赖：dtc(DTS校验)+dos2unix(编码/换行清理)+iconv(乱码修复)
+      # 2. Install dependencies
       - name: Install Core Dependencies
         run: |
-          set -euo pipefail
           sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends device-tree-compiler dos2unix libc-bin
-          # 验证依赖安装成功
-          dtc --version && echo "✅ dtc installed"
-          dos2unix --version && echo "✅ dos2unix installed"
-          iconv --version && echo "✅ iconv installed"
+          sudo apt-get install -y device-tree-compiler dos2unix libc-bin
 
-      # 3. 强校验：工具目录/核心生成脚本是否存在，缺失则终止
-      - name: Check Script & Directory Exists
+      # 3. Check script exists
+      - name: Check Script Exists
         run: |
-          set -euo pipefail
-          if [ ! -d "sl3000-tools" ]; then
-            echo "❌ Error: sl3000-tools directory not found"
-            exit 1
-          fi
           if [ ! -f "sl3000-tools/generate-three-piece.sh" ]; then
-            echo "❌ Error: generate-three-piece.sh not found in sl3000-tools"
+            echo "❌ Script not found"
             exit 1
           fi
-          echo "✅ Script & directory check passed"
+          echo "✅ Script found"
 
-      # 4. 自动创建目录：仅创父目录，保护官方filogic.mk，不覆盖任何已有文件
-      - name: Auto Create Parent Dir (Protect Official filogic.mk)
+      # 4. Auto-detect files-6.x and create dirs
+      - name: Auto Create Parent Directories
         run: |
-          set -euo pipefail
-          # 定义三件套路径，与脚本完全对齐
-          DTS_FILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+          FILES_DIR=$(ls -d target/linux/mediatek/files-* | head -n 1)
+          echo "Detected FILES_DIR = $FILES_DIR"
+
+          DTS_FILE="$FILES_DIR/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
           MK_FILE="target/linux/mediatek/image/filogic.mk"
           CFG_FILE=".config"
 
-          # 递归创建所有父目录，确保路径存在
-          for FILE in $DTS_FILE $MK_FILE $CFG_FILE; do
-            DIR=$(dirname "$FILE")
-            if [ ! -d "$DIR" ]; then
-              mkdir -p "$DIR" && echo "✅ Created dir: $DIR"
-            fi
-          done
+          mkdir -p "$(dirname "$DTS_FILE")"
+          touch "$DTS_FILE"
+          touch "$CFG_FILE"
 
-          # 兜底创建空文件：仅DTS/CONFIG，MK不主动创建（保护官方）
-          [ ! -f "$DTS_FILE" ] && touch "$DTS_FILE" && echo "✅ Created empty DTS: $DTS_FILE"
-          [ ! -f "$CFG_FILE" ] && touch "$CFG_FILE" && echo "✅ Created empty CONFIG: $CFG_FILE"
+          echo "DTS_FILE=$DTS_FILE" >> $GITHUB_ENV
+          echo "MK_FILE=$MK_FILE" >> $GITHUB_ENV
+          echo "CFG_FILE=$CFG_FILE" >> $GITHUB_ENV
 
-          # 检查官方filogic.mk，存在则提示，不存在则创建空文件（后续脚本仅追加SL3000段）
-          if [ -f "$MK_FILE" ]; then
-            echo "✅ Detected official filogic.mk, fully protected"
-          else
-            touch "$MK_FILE" && echo "⚠ No official filogic.mk, created empty file (only append SL3000 segment)"
-          fi
-          echo "✅ Env init done (no overwrite any official file)"
+      # 5. Add execute permission
+      - name: Add Execute Permission
+        run: chmod 755 sl3000-tools/*.sh
 
-      # 5. 脚本权限：给工具目录所有sh脚本加755执行权限，通配符兜底无遗漏
-      - name: Add Execute Permission for All Scripts
+      # 6. Run script
+      - name: Run Three-Piece Script
         run: |
-          set -euo pipefail
-          chmod 755 sl3000-tools/*.sh
-          ls -al sl3000-tools/ | grep ".sh"
-          echo "✅ All scripts in sl3000-tools set to 755 permission"
+          bash -x sl3000-tools/generate-three-piece.sh 2>&1 | tee sl3000-run.log
 
-      # 6. 执行生成脚本：调试模式+日志双捕获，整合乱码/隐藏字符/DTS语法修复
-      - name: Run SL3000 Three-Piece Generate Script (Final Version)
+      # 7. Strict verify
+      - name: Strict Verify Three-Piece
         run: |
-          set -euo pipefail
-          echo "=== Start generate three-piece (garble fix + DTS fix + ultra clean) ==="
-          # 执行脚本并捕获日志，调试模式+输出到文件
-          bash -x sl3000-tools/generate-three-piece.sh 2>&1 | tee sl3000-workflow-run.log
-          echo "✅ Three-piece generate & clean & fix completed"
-
-      # 7. 终极强校验：存在性+非空+MK段校验，一步失败即终止
-      - name: Strict Verify Three-Piece Files
-        run: |
-          set -euo pipefail
-          # 定义路径和校验标识
-          DTS_FILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
+          FILES_DIR=$(ls -d target/linux/mediatek/files-* | head -n 1)
+          DTS_FILE="$FILES_DIR/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
           MK_FILE="target/linux/mediatek/image/filogic.mk"
           CFG_FILE=".config"
-          MK_SEGMENT="mt7981b-sl3000-emmc"
 
-          # 校验1：DTS/CONFIG 存在且非空
-          for FILE in $DTS_FILE $CFG_FILE; do
-            if [ -f "$FILE" ] && [ -s "$FILE" ]; then
-              echo "✅ Verify pass: $FILE (exists and non-empty)"
-            else
-              echo "❌ Verify fail: $FILE (not exists or empty)"
-              exit 1
-            fi
-          done
+          echo "Verify DTS: $DTS_FILE"
+          echo "Verify MK : $MK_FILE"
+          echo "Verify CFG: $CFG_FILE"
 
-          # 校验2：MK 存在非空 + 包含SL3000设备段（核心，保护官方配置的同时确认生成有效）
-          if [ -f "$MK_FILE" ] && [ -s "$MK_FILE" ]; then
-            if grep -q "$MK_SEGMENT" "$MK_FILE"; then
-              echo "✅ Verify pass: $MK_FILE (official config protected + SL3000 segment exists)"
-              # 打印SL3000段内容，方便云构建调试
-              echo "=== SL3000 Device Segment Content ==="
-              grep -A20 "define Device/$MK_SEGMENT" "$MK_FILE"
-            else
-              echo "❌ Verify fail: $MK_FILE no SL3000 segment"
-              exit 1
-            fi
-          else
-            echo "❌ Verify fail: $MK_FILE (not exists or empty)"
+          if [ ! -s "$DTS_FILE" ]; then
+            echo "❌ DTS missing or empty"
             exit 1
           fi
 
-      # 8. 上传产物：三件套文件+所有日志，保留30天，方便下载/调试/本地使用
+          if [ ! -s "$CFG_FILE" ]; then
+            echo "❌ CONFIG missing or empty"
+            exit 1
+          fi
+
+          if ! grep -q "mt7981b-sl3000-emmc" "$MK_FILE"; then
+            echo "❌ MK missing SL3000 segment"
+            exit 1
+          fi
+
+          echo "=== SL3000 MK Segment ==="
+          grep -A20 "define Device/mt7981b-sl3000-emmc" "$MK_FILE"
+
+      # 8. Upload artifacts
       - name: Upload Three-Piece & Logs
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-three-piece-final (no-garble + DTS-fix)
+          name: sl3000-three-piece-final
           path: |
-            target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts
-            target/linux/mediatek/image/filogic.mk
-            .config
-            sl3000-tools/sl3000-three-piece-generate.log
-            sl3000-workflow-run.log
+            ${{ env.DTS_FILE }}
+            ${{ env.MK_FILE }}
+            ${{ env.CFG_FILE }}
+            sl3000-run.log
           retention-days: 30
 
-      # 9. Git提交推送：彻底解决Rebase冲突，处理未暂存更改，无变更则跳过
-      - name: Git Commit & Push (Fix Rebase Conflict)
+      # 9. Commit & push
+      - name: Git Commit & Push
         run: |
-          set -euo pipefail
-          # 标准化Git配置，使用GitHub Actions Bot
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --global pull.rebase true  # 开启变基，解决分支冲突
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # 定义三件套路径，与脚本/校验步骤完全对齐
-          DTS_FILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-          MK_FILE="target/linux/mediatek/image/filogic.mk"
-          CFG_FILE=".config"
+          git add -f ${{ env.DTS_FILE }} ${{ env.MK_FILE }} ${{ env.CFG_FILE }}
 
-          # 关键步骤1：强制添加文件到暂存区（避免.gitignore过滤配置文件）
-          git add -f "$DTS_FILE" "$MK_FILE" "$CFG_FILE"
-
-          # 关键步骤2：暂存本地修改，解决「未暂存更改无法Rebase」的核心问题
-          git stash push -m "temp stash sl3000 three-piece (final)" || true
-
-          # 关键步骤3：拉取远程最新代码，变基模式整合，无冲突则直接拉取
-          git pull origin ${{ github.ref_name }}
-
-          # 关键步骤4：恢复本地暂存的修改，保留三件套的自定义变更
-          git stash pop || true
-
-          # 关键步骤5：重新添加文件（pop后暂存区会清空，需重新添加）
-          git add -f "$DTS_FILE" "$MK_FILE" "$CFG_FILE"
-
-          # 关键步骤6：提交，无变更则跳过（避免空提交）
-          git commit -m "ci: rebuild SL3000 three-piece (final) | no-garble + DTS-fix + ultra-clean" || {
-            echo "ℹ No file changes, skip commit & push"
+          git commit -m "ci: rebuild SL3000 three-piece (final fixed)" || {
+            echo "No changes to commit"
             exit 0
           }
 
-          # 关键步骤7：推送到远程仓库，完成更新
-          git push origin ${{ github.ref_name }}
-          echo "✅ Three-piece successfully committed & pushed to ${{ github.ref_name }}"
+          git push
