@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
 /dts-v1/;
 
 #include "mt7981.dtsi"
@@ -7,14 +7,123 @@
 #include <dt-bindings/leds/common.h>
 
 / {
-    model = "SL3000 eMMC Engineering Flagship";
-    compatible = "sl,sl3000-emmc", "mediatek,mt7981b";
+model = "SL3000 eMMC Engineering Flagship";
+compatible = "sl,sl3000-emmc", "mediatek,mt7981b";
 
-    aliases {
-        serial0 = &uart0;
-        led-boot = &led_status;
-        led-failsafe = &led_status;
-        led-running = &led_status;
-        led-upgrade = &led_status;
-    };
+aliases {
+serial0 = &uart0;
+led-boot = &led_status;
+led-failsafe = &led_status;
+led-running = &led_status;
+led-upgrade = &led_status;
+};
+
+chosen {
+stdout-path = "serial0:115200n8";
+};
+
+leds {
+compatible = "gpio-leds";
+status: led-0 {
+label = "sl:blue:status";
+gpios = <&pio 12 GPIO_ACTIVE_LOW>;
+linux,default-trigger = "heartbeat";
+default-state = "on";
+};
+};
+
+keys {
+compatible = "gpio-keys";
+pinctrl-names = "default";
+pinctrl-0 = <&reset_key_pins>;
+
+reset {
+label = "reset";
+gpios = <&pio 18 GPIO_ACTIVE_LOW>;
+linux,code = <KEY_RESTART>;
+debounce-interval = <60>;
+};
+};
+};
+
+&uart0 {
+status = "okay";
+pinctrl-names = "default";
+pinctrl-0 = <&uart0_pins>;
+};
+
+&mmc {
+status = "okay";
+pinctrl-names = "default";
+pinctrl-0 = <&mmc_pins>;
+bus-width = <8>;
+mmc-hs200-1_8v;
+non-removable;
+cap-mmc-hw-reset;
+mediatek,mmc-wp-disable;
+};
+
+&gmac0 {
+status = "okay";
+phy-mode = "2500base-x";
+phy-handle = <&phy0>;
+nvmem-cells = <&macaddr_factory_4>;
+nvmem-cell-names = "mac-address";
+};
+
+&switch {
+status = "okay";
+ports {
+#address-cells = <1>;
+#size-cells = <0>;
+port@0 { reg = <0>; label = "wan"; phy-handle = <&phy0>; };
+port@1 { reg = <1>; label = "lan1"; phy-handle = <&phy1>; };
+port@2 { reg = <2>; label = "lan2"; phy-handle = <&phy2>; };
+port@3 { reg = <3>; label = "lan3"; phy-handle = <&phy3>; };
+port@4 { reg = <4>; label = "lan4"; phy-handle = <&phy4>; };
+};
+};
+
+&pcie {
+status = "okay";
+pinctrl-names = "default";
+pinctrl-0 = <&pcie_pins>;
+};
+
+&pcie0 {
+wifi@0,0 {
+compatible = "mediatek,mt7921e";
+reg = <0x0000 0 0 0 0>;
+mediatek,mtd-eeprom = <&factory 0x0000>;
+ieee80211-freq-limit = <2400000 2500000>;
+};
+};
+
+&pcie1 {
+wifi@0,0 {
+compatible = "mediatek,mt7921e";
+reg = <0x0000 0 0 0 0>;
+mediatek,mtd-eeprom = <&factory 0x8000>;
+ieee80211-freq-limit = <5150000 5850000>;
+};
+};
+
+&factory {
+compatible = "nvmem-cells";
+#address-cells = <1>;
+#size-cells = <1>;
+read-only; /* MT7981B强制必选属性 */
+macaddr_factory_4: macaddr@4 {
+reg = <0x4 0x6>;
+};
+};
+
+&pio {
+reset_key_pins: reset-key-pins {
+mux {
+function = "gpio";
+pins = "GPIO18";
+bias-pull-up;
+};
+};
 };
