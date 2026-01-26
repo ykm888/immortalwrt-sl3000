@@ -109,12 +109,13 @@ clean_crlf "$DTS"
 echo "[OK] DTS generated → $DTS"
 
 ###############################################
-# Stage 2：生成精简版 MK（完全覆盖）
+# Stage 2：生成精简版 MK（完全覆盖 + 修复 DTS_DIR + TAB）
 ###############################################
 echo "=== Stage 2: Generate MK (full overwrite) ==="
 
 cat > "$MK" << 'EOF'
-DTS_DIR := $(DTS_DIR)/mediatek
+# 修复：不能递归拼接 DTS_DIR
+DTS_DIR := mediatek
 
 define Image/Prepare
 	rm -f $(KDIR)/ubi_mark
