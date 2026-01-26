@@ -46,11 +46,13 @@ jobs:
           git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
           df -h
 
-      # 只清理 build_dir/tools，不再删除 tools 目录本身
+      # ============================================================
+      # 方案 A：只清理 build_dir/tools，不删除 tools 目录
+      # ============================================================
       - name: "Self-Heal: Reset Tools Build Directory"
         working-directory: /mnt/openwrt
         run: |
-          echo "[SELF-HEAL] Resetting build_dir/tools..."
+          echo "[SELF-HEAL] Cleaning build_dir/tools..."
           rm -rf build_dir/tools
           echo "[SELF-HEAL] build_dir/tools cleaned."
 
@@ -93,7 +95,9 @@ jobs:
           make defconfig
           grep -n "mt7981b-sl3000-emmc" .config || true
 
+      # ============================================================
       # 工具链自愈
+      # ============================================================
       - name: "Self-Heal: Toolchain"
         working-directory: /mnt/openwrt
         run: |
@@ -104,7 +108,9 @@ jobs:
             make toolchain/install -j4 || make toolchain/install V=s -j1
           fi
 
+      # ============================================================
       # 内核准备自愈
+      # ============================================================
       - name: "Self-Heal: Kernel Prepare"
         working-directory: /mnt/openwrt
         run: |
@@ -119,7 +125,9 @@ jobs:
         working-directory: /mnt/openwrt
         run: df -h
 
+      # ============================================================
       # 内核编译自愈
+      # ============================================================
       - name: "Self-Heal: Kernel Compile"
         working-directory: /mnt/openwrt
         run: |
