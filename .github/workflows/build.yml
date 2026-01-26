@@ -103,7 +103,7 @@ jobs:
       # ============================================================
       # 旗舰级自愈模块：内核准备自愈
       # ============================================================
-      - name: Self-Heal: Kernel Prepare
+      - name: "Self-Heal: Kernel Prepare"
         working-directory: /mnt/openwrt
         run: |
           echo "[SELF-HEAL] Checking kernel prepare..."
@@ -120,7 +120,7 @@ jobs:
       # ============================================================
       # 旗舰级自愈模块：内核编译自愈
       # ============================================================
-      - name: Self-Heal: Kernel Compile
+      - name: "Self-Heal: Kernel Compile"
         working-directory: /mnt/openwrt
         run: |
           echo "[SELF-HEAL] Kernel compile..."
