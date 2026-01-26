@@ -109,7 +109,7 @@ clean_crlf "$DTS"
 echo "[OK] DTS generated → $DTS"
 
 ###############################################
-# Stage 2：生成精简版 MK（完全覆盖 + 修复 DTS_DIR + TAB）
+# Stage 2：生成精简版 MK（完全覆盖）
 ###############################################
 echo "=== Stage 2: Generate MK (full overwrite) ==="
 
@@ -156,7 +156,7 @@ clean_crlf "$MK"
 echo "[OK] MK generated → $MK"
 
 ###############################################
-# Stage 3：生成完整 CONFIG（强制覆盖）
+# Stage 3：生成 CONFIG（删除 passwall2 + docker）
 ###############################################
 echo "=== Stage 3: Generate CONFIG (full) ==="
 
@@ -169,23 +169,25 @@ CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-base=y
 CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
 
-CONFIG_PACKAGE_luci-app-passwall2=y
-CONFIG_PACKAGE_luci-app-ssr-plus=y
-CONFIG_PACKAGE_xray-core=y
-CONFIG_PACKAGE_v2ray-core=y
-CONFIG_PACKAGE_hysteria2=y
-CONFIG_PACKAGE_ipset=y
-CONFIG_PACKAGE_iptables-mod-tproxy=y
-CONFIG_PACKAGE_iptables-mod-nat-extra=y
-CONFIG_PACKAGE_ip6tables-mod-nat=y
-CONFIG_PACKAGE_iproute2=y
+# ===== 删除代理全家桶 =====
+# CONFIG_PACKAGE_luci-app-passwall2 is not set
+# CONFIG_PACKAGE_luci-app-ssr-plus is not set
+# CONFIG_PACKAGE_xray-core is not set
+# CONFIG_PACKAGE_v2ray-core is not set
+# CONFIG_PACKAGE_hysteria2 is not set
+# CONFIG_PACKAGE_ipset is not set
+# CONFIG_PACKAGE_iptables-mod-tproxy is not set
+# CONFIG_PACKAGE_iptables-mod-nat-extra is not set
+# CONFIG_PACKAGE_ip6tables-mod-nat is not set
+# CONFIG_PACKAGE_iproute2 is not set
 
-CONFIG_PACKAGE_docker=y
-CONFIG_PACKAGE_dockerd=y
-CONFIG_PACKAGE_luci-app-dockerman=y
-CONFIG_PACKAGE_docker-compose=y
-CONFIG_PACKAGE_containerd=y
-CONFIG_PACKAGE_runc=y
+# ===== 删除 Docker 全家桶 =====
+# CONFIG_PACKAGE_docker is not set
+# CONFIG_PACKAGE_dockerd is not set
+# CONFIG_PACKAGE_luci-app-dockerman is not set
+# CONFIG_PACKAGE_docker-compose is not set
+# CONFIG_PACKAGE_containerd is not set
+# CONFIG_PACKAGE_runc is not set
 
 CONFIG_PACKAGE_kmod-fs-ext4=y
 CONFIG_PACKAGE_kmod-fs-btrfs=y
