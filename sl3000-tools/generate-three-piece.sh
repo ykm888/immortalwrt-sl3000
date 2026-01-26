@@ -9,6 +9,7 @@ cd "$ROOT"
 
 SCRIPT_DIR="$ROOT/sl3000-tools"
 LOG="$SCRIPT_DIR/sl3000-three-piece.log"
+mkdir -p "$SCRIPT_DIR"
 : > "$LOG"
 exec > >(tee -a "$LOG") 2>&1
 
@@ -29,31 +30,15 @@ echo "[INFO] CFG     = $CFG"
 
 mkdir -p "$DTS_DIR"
 
-###############################################
-# 清理 CRLF / 隐藏字符
-###############################################
 clean_crlf() {
     [ ! -f "$1" ] && return 0
     sed -i 's/\r$//' "$1"
 }
 
 ###############################################
-# Stage 1：删除旧 SL3000 段（宽松匹配）
+# Stage 1：生成 DTS（强制覆盖）
 ###############################################
-echo "=== Stage 1: Clean old MK entries ==="
-
-# 删除旧 define/endef（宽松匹配）
-sed -i '/define Device\/mt7981b-sl3000-emmc/,/endef/d' "$MK"
-
-# 删除所有旧的 TARGET_DEVICES 行（宽松匹配）
-sed -i '/TARGET_DEVICES[[:space:]]\+.*mt7981b-sl3000-emmc/d' "$MK"
-
-clean_crlf "$MK"
-
-###############################################
-# Stage 2：生成 DTS（强制覆盖）
-###############################################
-echo "=== Stage 2: Generate DTS ==="
+echo "=== Stage 1: Generate DTS ==="
 
 cat > "$DTS" << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
@@ -124,42 +109,55 @@ clean_crlf "$DTS"
 echo "[OK] DTS generated → $DTS"
 
 ###############################################
-# Stage 3：插入 MK 设备段（基于最后一个 TARGET_DEVICES）
+# Stage 2：生成精简版 MK（完全覆盖）
 ###############################################
-echo "=== Stage 3: Patch MK ==="
+echo "=== Stage 2: Generate MK (full overwrite) ==="
 
-TMP_MK="$MK.tmp"
+cat > "$MK" << 'EOF'
+DTS_DIR := $(DTS_DIR)/mediatek
 
-awk '
-    /^TARGET_DEVICES \+=/ { last = NR }
-    { lines[NR] = $0 }
-    END {
-        for (i = 1; i <= NR; i++) {
-            print lines[i]
-            if (i == last) {
-                print ""
-                print "define Device/mt7981b-sl3000-emmc"
-                print "\tDEVICE_VENDOR := SL"
-                print "\tDEVICE_MODEL := SL3000 eMMC Engineering Flagship"
-                print "\tDEVICE_DTS := mt7981b-sl3000-emmc"
-                print "\tDEVICE_PACKAGES := kmod-mt7981-firmware kmod-fs-ext4 block-mount"
-                print "\tIMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata"
-                print "endef"
-                print "TARGET_DEVICES += mt7981b-sl3000-emmc"
-                print ""
-            }
-        }
-    }
-' "$MK" > "$TMP_MK"
+define Image/Prepare
+	rm -f $(KDIR)/ubi_mark
+	echo -ne '\xde\xad\xc0\xde' > $(KDIR)/ubi_mark
+endef
 
-mv "$TMP_MK" "$MK"
+define Build/mt7981-bl2
+	cat $(STAGING_DIR_IMAGE)/mt7981-$1-bl2.img >> $@
+endef
+
+define Build/mt7981-bl31-uboot
+	cat $(STAGING_DIR_IMAGE)/mt7981_$1-u-boot.fip >> $@
+endef
+
+define Build/mt798x-gpt
+	cp $@ $@.tmp 2>/dev/null || true
+	ptgen -g -o $@.tmp -a 1 -l 1024 \
+		-t 0x83 -N ubootenv -r -p 512k@4M \
+		-t 0x83 -N factory   -r -p 2M@4608k \
+		-t 0xef -N fip       -r -p 4M@6656k \
+		-N recovery          -r -p 32M@12M \
+		-t 0x2e -N production -p $(CONFIG_TARGET_ROOTFS_PARTSIZE)M@64M
+	cat $@.tmp >> $@
+	rm $@.tmp
+endef
+
+define Device/mt7981b-sl3000-emmc
+	DEVICE_VENDOR := SL
+	DEVICE_MODEL := SL3000 eMMC Engineering Flagship
+	DEVICE_DTS := mt7981b-sl3000-emmc
+	DEVICE_PACKAGES := kmod-mt7981-firmware kmod-fs-ext4 block-mount
+	IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
+endef
+TARGET_DEVICES += mt7981b-sl3000-emmc
+EOF
+
 clean_crlf "$MK"
-echo "[OK] MK patched → $MK"
+echo "[OK] MK generated → $MK"
 
 ###############################################
-# Stage 4：生成 CONFIG（强制覆盖）
+# Stage 3：生成完整 CONFIG（强制覆盖）
 ###############################################
-echo "=== Stage 4: Generate CONFIG ==="
+echo "=== Stage 3: Generate CONFIG (full) ==="
 
 cat > "$CFG" << 'EOF'
 CONFIG_TARGET_mediatek=y
@@ -231,9 +229,9 @@ clean_crlf "$CFG"
 echo "[OK] CONFIG generated → $CFG"
 
 ###############################################
-# Stage 5：最终校验
+# Stage 4：最终校验
 ###############################################
-echo "=== Stage 5: Validation ==="
+echo "=== Stage 4: Validation ==="
 
 [ -s "$DTS" ] || { echo "[FATAL] DTS missing or empty"; exit 1; }
 [ -s "$CFG" ] || { echo "[FATAL] CONFIG missing or empty"; exit 1; }
