@@ -1,4 +1,4 @@
-name: Build OpenWrt 24.10 SL3000 eMMC (Self-Heal Final)
+yname: Build OpenWrt 24.10 SL3000 eMMC (Self-Heal Final)
 
 on:
   workflow_dispatch:
@@ -45,6 +45,17 @@ jobs:
           rm -rf /mnt/openwrt || true
           git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
           df -h
+
+      # ============================================================
+      # 新增：强制清理 tools（彻底解决 libtool clean 失败）
+      # ============================================================
+      - name: "Self-Heal: Reset Tools Directory"
+        working-directory: /mnt/openwrt
+        run: |
+          echo "[SELF-HEAL] Resetting tools directory..."
+          rm -rf tools
+          rm -rf build_dir/tools
+          echo "[SELF-HEAL] Tools directory cleaned."
 
       - name: Reset feeds to clean 24.10 state
         working-directory: /mnt/openwrt
@@ -94,8 +105,6 @@ jobs:
           echo "[SELF-HEAL] Checking toolchain..."
           if ! ls staging_dir/toolchain-* >/dev/null 2>&1; then
             echo "[SELF-HEAL] Toolchain missing, rebuilding..."
-            make tools/clean
-            make toolchain/clean
             make tools/install -j4 || make tools/install V=s -j1
             make toolchain/install -j4 || make toolchain/install V=s -j1
           fi
