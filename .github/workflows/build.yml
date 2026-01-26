@@ -1,4 +1,4 @@
-name: Build OpenWrt 24.10 SL3000 eMMC (Firmware Only)
+name: Build OpenWrt 24.10 SL3000 eMMC (Self-Heal Final)
 
 on:
   workflow_dispatch:
@@ -28,7 +28,6 @@ jobs:
           sudo mkdir -p /mnt/openwrt
           sudo chown -R runner:runner /mnt
           sudo chmod -R 755 /mnt
-          echo "===== /mnt STATUS ====="
           df -h /mnt
 
       - name: Optimize disk space
@@ -38,33 +37,26 @@ jobs:
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
           sudo fallocate -l 2G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
-          echo "===== DISK AFTER CLEAN ====="
           df -h
-          echo "===== MEMORY ====="
           free -h
 
       - name: Clone official ImmortalWrt 24.10 source
         run: |
           rm -rf /mnt/openwrt || true
           git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
-          echo "===== DISK AFTER CLONE ====="
           df -h
 
       - name: Reset feeds to clean 24.10 state
         working-directory: /mnt/openwrt
         run: |
-          echo "===== CLEAN FEEDS ====="
           rm -rf feeds
           rm -f feeds.conf
 
-          cat > feeds.conf.default << 'EOF'
-          src-git packages https://github.com/immortalwrt/packages.git;openwrt-24.10
-          src-git luci https://github.com/immortalwrt/luci.git;openwrt-24.10
-          src-git routing https://github.com/openwrt/routing.git;openwrt-24.10
-          src-git telephony https://github.com/openwrt/telephony.git;openwrt-24.10
-          EOF
+          echo "src-git packages https://github.com/immortalwrt/packages.git;openwrt-24.10" > feeds.conf.default
+          echo "src-git luci https://github.com/immortalwrt/luci.git;openwrt-24.10" >> feeds.conf.default
+          echo "src-git routing https://github.com/openwrt/routing.git;openwrt-24.10" >> feeds.conf.default
+          echo "src-git telephony https://github.com/openwrt/telephony.git;openwrt-24.10" >> feeds.conf.default
 
-          echo "===== FEEDS.CONF.DEFAULT ====="
           cat feeds.conf.default
 
       - name: Update & install feeds
@@ -79,29 +71,63 @@ jobs:
 
       - name: Copy SL3000 Three-Piece Set (DTS / MK / CONFIG)
         run: |
-          # DTS
           cp repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts \
              /mnt/openwrt/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
 
-          # MK
           cp repo/target/linux/mediatek/image/filogic.mk \
              /mnt/openwrt/target/linux/mediatek/image/
 
-          # CONFIG
           cp repo/.config /mnt/openwrt/.config
 
       - name: Make defconfig (finalize)
         working-directory: /mnt/openwrt
         run: |
           make defconfig
-          echo "===== FINAL CONFIG CHECK ====="
           grep -n "mt7981b-sl3000-emmc" .config || true
+
+      # ============================================================
+      # 旗舰级自愈模块：工具链自愈
+      # ============================================================
+      - name: Self-Heal: Toolchain
+        working-directory: /mnt/openwrt
+        run: |
+          echo "[SELF-HEAL] Checking toolchain..."
+          if ! ls staging_dir/toolchain-* >/dev/null 2>&1; then
+            echo "[SELF-HEAL] Toolchain missing, rebuilding..."
+            make tools/clean
+            make toolchain/clean
+            make tools/install -j4 || make tools/install V=s -j1
+            make toolchain/install -j4 || make toolchain/install V=s -j1
+          fi
+
+      # ============================================================
+      # 旗舰级自愈模块：内核准备自愈
+      # ============================================================
+      - name: Self-Heal: Kernel Prepare
+        working-directory: /mnt/openwrt
+        run: |
+          echo "[SELF-HEAL] Checking kernel prepare..."
+          if ! find build_dir/target-*/linux-*/ -maxdepth 1 -name ".prepared" | grep -q prepared; then
+            echo "[SELF-HEAL] Kernel prepare failed, retrying..."
+            make target/linux/clean
+            make target/linux/prepare V=s -j4 || make target/linux/prepare V=s -j1
+          fi
 
       - name: Check disk before build
         working-directory: /mnt/openwrt
+        run: df -h
+
+      # ============================================================
+      # 旗舰级自愈模块：内核编译自愈
+      # ============================================================
+      - name: Self-Heal: Kernel Compile
+        working-directory: /mnt/openwrt
         run: |
-          echo "===== DISK BEFORE BUILD ====="
-          df -h
+          echo "[SELF-HEAL] Kernel compile..."
+          make target/linux/compile -j4 V=s || {
+            echo "[SELF-HEAL] Kernel compile failed, retrying single-thread..."
+            make target/linux/compile V=s -j1
+          }
 
       - name: Build SL3000 eMMC firmware
         working-directory: /mnt/openwrt
@@ -117,16 +143,12 @@ jobs:
 
       - name: Check disk after build
         working-directory: /mnt/openwrt
-        run: |
-          echo "===== DISK AFTER BUILD ====="
-          df -h
+        run: df -h
 
       - name: Verify firmware exists
         working-directory: /mnt/openwrt
         run: |
-          echo "===== VERIFY FIRMWARE OUTPUT ====="
           ls -l bin/targets/mediatek/filogic/ || true
-
           if ! ls bin/targets/mediatek/filogic/*sl3000* 1>/dev/null 2>&1; then
             echo "❌ No SL3000 firmware found — build failed"
             exit 1
@@ -156,5 +178,6 @@ jobs:
             OpenWrt 24.10 / kernel 6.6
             Target: SL3000 (MT7981B eMMC)
             Three-piece set from your repo
+            Full self-healing build pipeline
           files: /mnt/openwrt/bin/targets/mediatek/filogic/*
           prerelease: true
