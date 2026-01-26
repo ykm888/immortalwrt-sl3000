@@ -1,5 +1,4 @@
-yname: Build OpenWrt 24.10 SL3000 eMMC (Self-Heal Final)
-
+name: Build OpenWrt 24.10 SL3000 eMMC (Self-Heal Final)
 on:
   workflow_dispatch:
 
