@@ -40,18 +40,20 @@ jobs:
             file libssl-dev rsync ccache device-tree-compiler subversion libelf-dev \
             bc bison patch gcc-multilib g++-multilib swig libudev-dev libusb-1.0-0-dev
 
-      - name: Clone official OpenWrt 24.10
+      # ⭐ 克隆到 /mnt（大磁盘）
+      - name: Clone SL3000 Source (your repo)
         run: |
-          sudo rm -rf openwrt || true
-          git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt
+          sudo rm -rf /mnt/openwrt || true
+          git clone --depth=1 https://github.com/ykm888/immortalwrt-sl3000.git /mnt/openwrt
+          ln -s /mnt/openwrt openwrt
 
       - name: Cache downloads & ccache
         if: always()
         uses: actions/cache@v4
         with:
           path: |
-            openwrt/dl
-            openwrt/.ccache
+            /mnt/openwrt/dl
+            /mnt/openwrt/.ccache
           key: ${{ runner.os }}-sl3000-2410
           restore-keys: |
             ${{ runner.os }}-sl3000-2410
@@ -82,12 +84,7 @@ jobs:
           echo "===== FINAL CONFIG ====="
           grep SL3000 -n .config || true
 
-      # ❗❗❗ 关键修复：删除会崩溃的 toolchain/install
-      # - name: Build toolchain
-      #   working-directory: openwrt
-      #   run: |
-      #     make toolchain/install -j$(nproc) V=s
-
+      # ⭐⭐ 构建固件 + 打印失败原因 + 打印失败目标
       - name: Build SL3000 eMMC firmware
         working-directory: openwrt
         env:
@@ -95,7 +92,21 @@ jobs:
           FORCE: "1"
         run: |
           make download -j8
-          make -j$(nproc) V=s | tee firmware-build.log
+
+          make -j$(nproc) V=s 2>&1 | tee firmware-build.log || {
+            echo ""
+            echo "❌❌❌ BUILD FAILED ❌❌❌"
+            echo ""
+
+            echo "===== FAILED TARGET (from make output) ====="
+            grep -iE 'error:|failed|recipe for target|No rule to make target|Stop' -n firmware-build.log | tail -n 20 || true
+
+            echo ""
+            echo "===== LAST 200 LINES OF LOG ====="
+            tail -n 200 firmware-build.log
+
+            exit 1
+          }
 
       - name: Upload build logs
         if: always()
