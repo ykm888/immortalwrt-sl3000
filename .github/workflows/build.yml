@@ -30,7 +30,9 @@ jobs:
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
           sudo fallocate -l 10G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
-          free -h && df -h
+          echo "===== MEMORY & DISK STATUS ====="
+          free -h
+          df -h
 
       - name: Install build dependencies
         run: |
@@ -40,20 +42,19 @@ jobs:
             file libssl-dev rsync ccache device-tree-compiler subversion libelf-dev \
             bc bison patch gcc-multilib g++-multilib swig libudev-dev libusb-1.0-0-dev
 
-      # ⭐ 克隆到 /mnt（大磁盘）
+      # 克隆你的 SL3000 源（使用 Runner 默认大磁盘 /home/runner/work/...）
       - name: Clone SL3000 Source (your repo)
         run: |
-          sudo rm -rf /mnt/openwrt || true
-          git clone --depth=1 https://github.com/ykm888/immortalwrt-sl3000.git /mnt/openwrt
-          ln -s /mnt/openwrt openwrt
+          rm -rf openwrt || true
+          git clone --depth=1 https://github.com/ykm888/immortalwrt-sl3000.git openwrt
 
       - name: Cache downloads & ccache
         if: always()
         uses: actions/cache@v4
         with:
           path: |
-            /mnt/openwrt/dl
-            /mnt/openwrt/.ccache
+            openwrt/dl
+            openwrt/.ccache
           key: ${{ runner.os }}-sl3000-2410
           restore-keys: |
             ${{ runner.os }}-sl3000-2410
@@ -71,28 +72,33 @@ jobs:
 
       - name: Copy SL3000 Three-Piece Set (from repo)
         run: |
+          # DTS
           cp repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts \
              openwrt/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
+          # MK
           cp repo/target/linux/mediatek/image/filogic.mk \
              openwrt/target/linux/mediatek/image/
+          # CONFIG
           cp repo/.config openwrt/.config
 
       - name: Make defconfig (finalize three-piece)
         working-directory: openwrt
         run: |
           make defconfig
-          echo "===== FINAL CONFIG ====="
-          grep SL3000 -n .config || true
+          echo "===== FINAL CONFIG (SL3000) ====="
+          grep -n "SL3000" .config || true
+          grep -n "mt7981b-sl3000-emmc" .config || true
 
-      # ⭐⭐ 构建固件 + 打印失败原因 + 打印失败目标
       - name: Build SL3000 eMMC firmware
         working-directory: openwrt
         env:
           SKIP_TARGET_CHECK: "1"
           FORCE: "1"
         run: |
+          echo "===== START DOWNLOAD ====="
           make download -j8
 
+          echo "===== START BUILD ====="
           make -j$(nproc) V=s 2>&1 | tee firmware-build.log || {
             echo ""
             echo "❌❌❌ BUILD FAILED ❌❌❌"
@@ -103,7 +109,7 @@ jobs:
 
             echo ""
             echo "===== LAST 200 LINES OF LOG ====="
-            tail -n 200 firmware-build.log
+            tail -n 200 firmware-build.log || true
 
             exit 1
           }
