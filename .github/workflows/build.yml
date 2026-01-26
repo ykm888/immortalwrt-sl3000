@@ -1,4 +1,5 @@
 name: Build OpenWrt 24.10 SL3000 eMMC (Self-Heal Final)
+
 on:
   workflow_dispatch:
 
@@ -45,16 +46,13 @@ jobs:
           git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
           df -h
 
-      # ============================================================
-      # 新增：强制清理 tools（彻底解决 libtool clean 失败）
-      # ============================================================
-      - name: "Self-Heal: Reset Tools Directory"
+      # 只清理 build_dir/tools，不再删除 tools 目录本身
+      - name: "Self-Heal: Reset Tools Build Directory"
         working-directory: /mnt/openwrt
         run: |
-          echo "[SELF-HEAL] Resetting tools directory..."
-          rm -rf tools
+          echo "[SELF-HEAL] Resetting build_dir/tools..."
           rm -rf build_dir/tools
-          echo "[SELF-HEAL] Tools directory cleaned."
+          echo "[SELF-HEAL] build_dir/tools cleaned."
 
       - name: Reset feeds to clean 24.10 state
         working-directory: /mnt/openwrt
@@ -95,9 +93,7 @@ jobs:
           make defconfig
           grep -n "mt7981b-sl3000-emmc" .config || true
 
-      # ============================================================
-      # 旗舰级自愈模块：工具链自愈
-      # ============================================================
+      # 工具链自愈
       - name: "Self-Heal: Toolchain"
         working-directory: /mnt/openwrt
         run: |
@@ -108,9 +104,7 @@ jobs:
             make toolchain/install -j4 || make toolchain/install V=s -j1
           fi
 
-      # ============================================================
-      # 旗舰级自愈模块：内核准备自愈
-      # ============================================================
+      # 内核准备自愈
       - name: "Self-Heal: Kernel Prepare"
         working-directory: /mnt/openwrt
         run: |
@@ -125,9 +119,7 @@ jobs:
         working-directory: /mnt/openwrt
         run: df -h
 
-      # ============================================================
-      # 旗舰级自愈模块：内核编译自愈
-      # ============================================================
+      # 内核编译自愈
       - name: "Self-Heal: Kernel Compile"
         working-directory: /mnt/openwrt
         run: |
