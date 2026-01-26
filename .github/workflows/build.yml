@@ -43,14 +43,6 @@ jobs:
           echo "===== MEMORY ====="
           free -h
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y build-essential git-core libncurses5-dev \
-            zlib1g-dev gawk flex gettext wget unzip python3 python3-distutils \
-            file libssl-dev rsync ccache device-tree-compiler subversion libelf-dev \
-            bc bison patch gcc-multilib g++-multilib swig libudev-dev libusb-1.0-0-dev
-
       - name: Clone SL3000 Source (24.10)
         run: |
           rm -rf /mnt/openwrt || true
@@ -58,10 +50,27 @@ jobs:
           echo "===== DISK AFTER CLONE ====="
           df -h
 
+      - name: Reset feeds to clean 24.10 state
+        working-directory: /mnt/openwrt
+        run: |
+          echo "===== CLEAN FEEDS ====="
+          rm -rf feeds
+          rm -f feeds.conf
+
+          cat > feeds.conf.default << 'EOF'
+          src-git packages https://github.com/immortalwrt/packages.git;openwrt-24.10
+          src-git luci https://github.com/immortalwrt/luci.git;openwrt-24.10
+          src-git routing https://github.com/openwrt/routing.git;openwrt-24.10
+          src-git telephony https://github.com/openwrt/telephony.git;openwrt-24.10
+          EOF
+
+          echo "===== FEEDS.CONF.DEFAULT ====="
+          cat feeds.conf.default
+
       - name: Update & install feeds
         working-directory: /mnt/openwrt
         run: |
-          ./scripts/feeds update -a || true
+          ./scripts/feeds update -a
           ./scripts/feeds install -a
 
       - name: Make defconfig (initial)
@@ -70,15 +79,12 @@ jobs:
 
       - name: Copy SL3000 Three-Piece Set (DTS / MK / CONFIG)
         run: |
-          # DTS
           cp repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts \
              /mnt/openwrt/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
 
-          # MK
           cp repo/target/linux/mediatek/image/filogic.mk \
              /mnt/openwrt/target/linux/mediatek/image/
 
-          # CONFIG
           cp repo/.config /mnt/openwrt/.config
 
       - name: Make defconfig (finalize)
