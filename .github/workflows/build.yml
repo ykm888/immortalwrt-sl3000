@@ -17,7 +17,7 @@ jobs:
         shell: bash
 
     steps:
-      - name: Checkout local repository (three-piece source)
+      - name: Checkout your repo (three-piece source)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -43,10 +43,10 @@ jobs:
           echo "===== MEMORY ====="
           free -h
 
-      - name: Clone SL3000 Source (24.10)
+      - name: Clone official ImmortalWrt 24.10 source
         run: |
           rm -rf /mnt/openwrt || true
-          git clone --depth=1 https://github.com/ykm888/immortalwrt-sl3000.git /mnt/openwrt
+          git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
           echo "===== DISK AFTER CLONE ====="
           df -h
 
@@ -79,12 +79,15 @@ jobs:
 
       - name: Copy SL3000 Three-Piece Set (DTS / MK / CONFIG)
         run: |
+          # DTS
           cp repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts \
              /mnt/openwrt/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
 
+          # MK
           cp repo/target/linux/mediatek/image/filogic.mk \
              /mnt/openwrt/target/linux/mediatek/image/
 
+          # CONFIG
           cp repo/.config /mnt/openwrt/.config
 
       - name: Make defconfig (finalize)
@@ -152,6 +155,6 @@ jobs:
           body: |
             OpenWrt 24.10 / kernel 6.6
             Target: SL3000 (MT7981B eMMC)
-            Auto three-piece (DTS/MK/CONFIG)
+            Three-piece set from your repo
           files: /mnt/openwrt/bin/targets/mediatek/filogic/*
           prerelease: true
