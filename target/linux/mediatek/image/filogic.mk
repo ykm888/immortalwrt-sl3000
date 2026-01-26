@@ -1,4 +1,5 @@
-DTS_DIR := $(DTS_DIR)/mediatek
+# 修复：不能递归拼接 DTS_DIR
+DTS_DIR := mediatek
 
 define Image/Prepare
 	rm -f $(KDIR)/ubi_mark
