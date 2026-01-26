@@ -88,7 +88,7 @@ jobs:
       # ============================================================
       # 旗舰级自愈模块：工具链自愈
       # ============================================================
-      - name: Self-Heal: Toolchain
+      - name: "Self-Heal: Toolchain"
         working-directory: /mnt/openwrt
         run: |
           echo "[SELF-HEAL] Checking toolchain..."
