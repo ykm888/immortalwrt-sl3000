@@ -23,15 +23,25 @@ jobs:
           fetch-depth: 0
           path: repo
 
+      - name: Prepare /mnt for build
+        run: |
+          sudo mkdir -p /mnt/openwrt
+          sudo chown -R runner:runner /mnt
+          sudo chmod -R 755 /mnt
+          echo "===== /mnt STATUS ====="
+          df -h /mnt
+
       - name: Optimize disk space
         run: |
           sudo apt-get remove -y --purge azure-cli google-cloud-sdk dotnet powershell mono mysql-server php android snapd || true
           sudo apt-get autoremove -y --purge
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
-          sudo fallocate -l 10G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
-          free -h
+          sudo fallocate -l 2G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+          echo "===== DISK AFTER CLEAN ====="
           df -h
+          echo "===== MEMORY ====="
+          free -h
 
       - name: Install build dependencies
         run: |
@@ -43,63 +53,67 @@ jobs:
 
       - name: Clone SL3000 Source (24.10)
         run: |
-          rm -rf openwrt || true
-          git clone --depth=1 https://github.com/ykm888/immortalwrt-sl3000.git openwrt
-
-      - name: Cache downloads & ccache
-        uses: actions/cache@v4
-        with:
-          path: |
-            openwrt/dl
-            openwrt/.ccache
-          key: ${{ runner.os }}-sl3000-2410
-          restore-keys: |
-            ${{ runner.os }}-sl3000-2410
+          rm -rf /mnt/openwrt || true
+          git clone --depth=1 https://github.com/ykm888/immortalwrt-sl3000.git /mnt/openwrt
+          echo "===== DISK AFTER CLONE ====="
+          df -h
 
       - name: Update & install feeds
-        working-directory: openwrt
+        working-directory: /mnt/openwrt
         run: |
           ./scripts/feeds update -a || true
           ./scripts/feeds install -a
 
       - name: Make defconfig (initial)
-        working-directory: openwrt
+        working-directory: /mnt/openwrt
         run: make defconfig
 
       - name: Copy SL3000 Three-Piece Set (DTS / MK / CONFIG)
         run: |
           # DTS
           cp repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts \
-             openwrt/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
+             /mnt/openwrt/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
 
           # MK
           cp repo/target/linux/mediatek/image/filogic.mk \
-             openwrt/target/linux/mediatek/image/
+             /mnt/openwrt/target/linux/mediatek/image/
 
           # CONFIG
-          cp repo/.config openwrt/.config
+          cp repo/.config /mnt/openwrt/.config
 
       - name: Make defconfig (finalize)
-        working-directory: openwrt
+        working-directory: /mnt/openwrt
         run: |
           make defconfig
           echo "===== FINAL CONFIG CHECK ====="
           grep -n "mt7981b-sl3000-emmc" .config || true
 
+      - name: Check disk before build
+        working-directory: /mnt/openwrt
+        run: |
+          echo "===== DISK BEFORE BUILD ====="
+          df -h
+
       - name: Build SL3000 eMMC firmware
-        working-directory: openwrt
+        working-directory: /mnt/openwrt
         env:
           SKIPTARGETCHECK: "1"
           FORCE: "1"
         run: |
           echo "===== START DOWNLOAD ====="
-          make download -j8
+          make download -j4
 
           echo "===== START BUILD ====="
-          make -j$(nproc) V=s 2>&1 | tee firmware-build.log
+          make -j4 V=s 2>&1 | tee firmware-build.log
+
+      - name: Check disk after build
+        working-directory: /mnt/openwrt
+        run: |
+          echo "===== DISK AFTER BUILD ====="
+          df -h
 
       - name: Verify firmware exists
-        working-directory: openwrt
+        working-directory: /mnt/openwrt
         run: |
           echo "===== VERIFY FIRMWARE OUTPUT ====="
           ls -l bin/targets/mediatek/filogic/ || true
@@ -113,14 +127,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sl3000-2410-build-logs
-          path: openwrt/firmware-build.log
+          path: /mnt/openwrt/firmware-build.log
           retention-days: 7
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-24.10-sl3000-emmc-firmware
-          path: openwrt/bin/targets/mediatek/filogic/
+          path: /mnt/openwrt/bin/targets/mediatek/filogic/
           retention-days: 30
 
       - name: Auto Release firmware
@@ -133,5 +147,5 @@ jobs:
             OpenWrt 24.10 / kernel 6.6
             Target: SL3000 (MT7981B eMMC)
             Auto three-piece (DTS/MK/CONFIG)
-          files: openwrt/bin/targets/mediatek/filogic/*
+          files: /mnt/openwrt/bin/targets/mediatek/filogic/*
           prerelease: true
