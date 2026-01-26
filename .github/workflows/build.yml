@@ -17,7 +17,7 @@ jobs:
         shell: bash
 
     steps:
-      - name: Checkout local repository
+      - name: Checkout local repository (three-piece source)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -30,7 +30,6 @@ jobs:
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
           sudo fallocate -l 10G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
-          echo "===== MEMORY & DISK STATUS ====="
           free -h
           df -h
 
@@ -42,14 +41,12 @@ jobs:
             file libssl-dev rsync ccache device-tree-compiler subversion libelf-dev \
             bc bison patch gcc-multilib g++-multilib swig libudev-dev libusb-1.0-0-dev
 
-      # 克隆你的 SL3000 源（使用 Runner 默认大磁盘 /home/runner/work/...）
-      - name: Clone SL3000 Source (your repo)
+      - name: Clone SL3000 Source (24.10)
         run: |
           rm -rf openwrt || true
           git clone --depth=1 https://github.com/ykm888/immortalwrt-sl3000.git openwrt
 
       - name: Cache downloads & ccache
-        if: always()
         uses: actions/cache@v4
         with:
           path: |
@@ -65,57 +62,54 @@ jobs:
           ./scripts/feeds update -a || true
           ./scripts/feeds install -a
 
-      - name: Make defconfig (base)
+      - name: Make defconfig (initial)
         working-directory: openwrt
-        run: |
-          make defconfig
+        run: make defconfig
 
-      - name: Copy SL3000 Three-Piece Set (from repo)
+      - name: Copy SL3000 Three-Piece Set (DTS / MK / CONFIG)
         run: |
           # DTS
           cp repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts \
              openwrt/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
+
           # MK
           cp repo/target/linux/mediatek/image/filogic.mk \
              openwrt/target/linux/mediatek/image/
+
           # CONFIG
           cp repo/.config openwrt/.config
 
-      - name: Make defconfig (finalize three-piece)
+      - name: Make defconfig (finalize)
         working-directory: openwrt
         run: |
           make defconfig
-          echo "===== FINAL CONFIG (SL3000) ====="
-          grep -n "SL3000" .config || true
+          echo "===== FINAL CONFIG CHECK ====="
           grep -n "mt7981b-sl3000-emmc" .config || true
 
       - name: Build SL3000 eMMC firmware
         working-directory: openwrt
         env:
-          SKIP_TARGET_CHECK: "1"
+          SKIPTARGETCHECK: "1"
           FORCE: "1"
         run: |
           echo "===== START DOWNLOAD ====="
           make download -j8
 
           echo "===== START BUILD ====="
-          make -j$(nproc) V=s 2>&1 | tee firmware-build.log || {
-            echo ""
-            echo "❌❌❌ BUILD FAILED ❌❌❌"
-            echo ""
+          make -j$(nproc) V=s 2>&1 | tee firmware-build.log
 
-            echo "===== FAILED TARGET (from make output) ====="
-            grep -iE 'error:|failed|recipe for target|No rule to make target|Stop' -n firmware-build.log | tail -n 20 || true
+      - name: Verify firmware exists
+        working-directory: openwrt
+        run: |
+          echo "===== VERIFY FIRMWARE OUTPUT ====="
+          ls -l bin/targets/mediatek/filogic/ || true
 
-            echo ""
-            echo "===== LAST 200 LINES OF LOG ====="
-            tail -n 200 firmware-build.log || true
-
+          if ! ls bin/targets/mediatek/filogic/*sl3000* 1>/dev/null 2>&1; then
+            echo "❌ No SL3000 firmware found — build failed"
             exit 1
-          }
+          fi
 
       - name: Upload build logs
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sl3000-2410-build-logs
@@ -123,7 +117,6 @@ jobs:
           retention-days: 7
 
       - name: Upload firmware artifacts
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-24.10-sl3000-emmc-firmware
@@ -134,7 +127,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tagname: sl3000-emmc-openwrt-24.10-${{ github.run_number }}-${{ github.run_id }}
+          tag_name: sl3000-emmc-openwrt-24.10-${{ github.run_number }}-${{ github.run_id }}
           name: SL3000 eMMC OpenWrt 24.10 #${{ github.run_number }}
           body: |
             OpenWrt 24.10 / kernel 6.6
