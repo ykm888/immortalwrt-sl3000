@@ -102,9 +102,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # DTS/MK 从 openwrt-src 复制回仓库
           cp openwrt-src/${{ env.DTS_FILE }} target/linux/mediatek/dts/
           cp openwrt-src/${{ env.MK_FILE }} target/linux/mediatek/image/
-          cp ${{ env.CFG_FILE }} sl3000-tools/
+
+          # CONFIG 本来就在仓库，不需要复制
 
           git add -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
           git add -f target/linux/mediatek/image/mt7981.mk
