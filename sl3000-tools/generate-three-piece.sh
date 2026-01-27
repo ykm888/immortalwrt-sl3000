@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # ============================================================
-#  SL3000 官方工程级三件套生成脚本
+#  SL3000 官方工程级三件套生成脚本（只负责一键生成三件套）
 #  - DTS:    target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
 #  - MK:     target/linux/mediatek/image/mt7981.mk
-#  - CONFIG: .config（自动生成完整工程级配置段）
+#  - CONFIG: sl3000-tools/sl3000-full-config.txt（仅导出，不写入 .config）
 # ============================================================
 
 BOARD_ID="sl-3000-emmc"
@@ -17,13 +17,13 @@ CONFIG_OUT="sl3000-tools/sl3000-full-config.txt"
 
 ensure_root() {
     if [ ! -d target/linux/mediatek ] || [ ! -f target/Makefile ]; then
-        echo "错误：请在 OpenWrt/ImmortalWrt 源码根目录运行此脚本"
+        echo "错误：请在 OpenWrt/ImmortalWrt 源码根目录运行此脚本" >&2
         exit 1
     fi
 }
 
 # ============================================================
-# 1. 生成 DTS（对齐成功案例结构）
+# 1. 生成 DTS（延续你发的版本 + 修复重复 SPDX）
 # ============================================================
 gen_dts() {
     local dst="${DTS_DIR}/${BOARD_DTS}"
@@ -40,7 +40,6 @@ gen_dts() {
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 
 /dts-v1/;
-
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/leds/common.h>
@@ -53,10 +52,10 @@ gen_dts() {
 
     aliases {
         serial0 = &uart0;
-        led-boot = &statusredled;
-        led-failsafe = &statusredled;
-        led-running = &statusgreenled;
-        led-upgrade = &statusblueled;
+        led-boot = &status_red_led;
+        led-failsafe = &status_red_led;
+        led-running = &status_green_led;
+        led-upgrade = &status_blue_led;
     };
 
     chosen {
@@ -65,7 +64,7 @@ gen_dts() {
     };
 
     memory@40000000 {
-        reg = <0 0x40000000 0 0x40000000>;
+        reg = <0 0x40000000 0 0x40000000>; /* 1GB */
     };
 
     gpio-keys {
@@ -88,17 +87,17 @@ gen_dts() {
     gpio-leds {
         compatible = "gpio-leds";
 
-        statusredled: led-0 {
+        status_red_led: led-0 {
             label = "red:status";
             gpios = <&pio 10 GPIO_ACTIVE_LOW>;
         };
 
-        statusgreenled: led-1 {
+        status_green_led: led-1 {
             label = "green:status";
             gpios = <&pio 11 GPIO_ACTIVE_LOW>;
         };
 
-        statusblueled: led-2 {
+        status_blue_led: led-2 {
             label = "blue:status";
             gpios = <&pio 12 GPIO_ACTIVE_LOW>;
         };
@@ -139,7 +138,7 @@ gen_dts() {
         switch@0 {
             compatible = "mediatek,mt7531";
             reg = <31>;
-            reset-gpios = <&pio 39 GPIO_ACTIVE_LOW>;
+            reset-gpios = <&pio 39 0>;
 
             ports {
                 #address-cells = <1>;
@@ -175,8 +174,8 @@ gen_dts() {
     no-sdio;
     non-removable;
     pinctrl-names = "default", "state_uhs";
-    pinctrl-0 = <&mmc0pinsdefault>;
-    pinctrl-1 = <&mmc0pinsuhs>;
+    pinctrl-0 = <&mmc0_pins_default>;
+    pinctrl-1 = <&mmc0_pins_uhs>;
     vmmc-supply = <&reg_3p3v>;
     status = "okay";
 
@@ -196,11 +195,11 @@ gen_dts() {
                         #address-cells = <1>;
                         #size-cells = <1>;
 
-                        eepromfactory0: eeprom@0 {
+                        eeprom_factory_0: eeprom@0 {
                             reg = <0x0 0x1000>;
                         };
 
-                        macaddrfactory4: macaddr@4 {
+                        macaddr_factory_4: macaddr@4 {
                             compatible = "mac-base";
                             reg = <0x4 0x6>;
                             #nvmem-cell-cells = <1>;
@@ -213,11 +212,11 @@ gen_dts() {
 };
 
 &pio {
-    mmc0pinsdefault: mmc0-pins-default {
+    mmc0_pins_default: mmc0-pins-default {
         mux { function = "flash"; groups = "emmc_45"; };
     };
 
-    mmc0pinsuhs: mmc0-pins-uhs {
+    mmc0_pins_uhs: mmc0-pins-uhs {
         mux { function = "flash"; groups = "emmc_45"; };
     };
 };
@@ -226,13 +225,13 @@ gen_dts() {
 &watchdog { status = "okay"; };
 
 &wifi {
-    nvmem-cells = <&eepromfactory0>;
+    nvmem-cells = <&eeprom_factory_0>;
     nvmem-cell-names = "eeprom";
     status = "okay";
 
     band@1 {
         reg = <1>;
-        nvmem-cells = <&macaddrfactory4 1>;
+        nvmem-cells = <&macaddr_factory_4 1>;
         nvmem-cell-names = "mac-address";
     };
 };
@@ -243,7 +242,7 @@ EOF
 }
 
 # ============================================================
-# 2. 生成 MK（对齐成功案例格式）
+# 2. 生成 MK（延续你发的版本）
 # ============================================================
 gen_mk() {
     if grep -q "^define Device/${BOARD_ID}" "${IMAGE_MK}"; then
@@ -277,7 +276,7 @@ EOF
 }
 
 # ============================================================
-# 3. 生成完整 CONFIG（对齐你贴出来的官方工程级配置）
+# 3. 生成 CONFIG（延续你发的版本）
 # ============================================================
 gen_config() {
     echo "[CONFIG] 生成完整 SL3000 工程级配置：${CONFIG_OUT}"
