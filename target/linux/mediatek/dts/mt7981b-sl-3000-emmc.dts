@@ -7,6 +7,13 @@
 
 #include "mt7981.dtsi"
 
+/* 先注释掉整个根节点
+/ {
+    ...
+};
+*/
+
+
 / {
     model = "SL-3000 eMMC Router";
     compatible = "sl,sl3000-emmc", "mediatek,mt7981";
