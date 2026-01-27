@@ -7,7 +7,7 @@
 
 #include "mt7981.dtsi"
 
- / {
+/ {
     model = "SL-3000 eMMC Router";
 
     compatible = "sl,sl3000-emmc", "mediatek,mt7981";
