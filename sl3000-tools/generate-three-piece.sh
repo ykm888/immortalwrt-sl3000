@@ -38,125 +38,54 @@ cat > "$DTS" << 'EOF'
 #include <dt-bindings/leds/common.h>
 
 / {
-	model = "SL SL3000 eMMC Engineering Flagship Edition";
-	compatible = "sl,sl3000-emmc", "mediatek,mt7981b";
-
-	aliases {
-		serial0 = &uart0;
-		led-boot = &led_status;
-		led-failsafe = &led_status;
-		led-running = &led_status;
-		led-upgrade = &led_status;
-		label-mac-device = &gmac0;
-	};
-
-	chosen {
-		stdout-path = "serial0:115200n8";
-	};
-
-	memory@40000000 {
-		device_type = "memory";
-		reg = <0x40000000 0x40000000>;
-	};
-
-	leds {
-		compatible = "gpio-leds";
-
-		led_status: led-status {
-			label = "sl:blue:status";
-			gpios = <&pio 12 GPIO_ACTIVE_LOW>;
-			linux,default-trigger = "heartbeat";
-			default-state = "on";
-		};
-	};
-
-	keys {
-		compatible = "gpio-keys";
-
-		reset {
-			label = "reset";
-			gpios = <&pio 18 GPIO_ACTIVE_LOW>;
-			linux,code = <KEY_RESTART>;
-			debounce-interval = <60>;
-		};
-	};
+    model = "SL SL3000 eMMC Engineering Flagship Edition";
+    compatible = "sl,sl3000-emmc", "mediatek,mt7981b";
 };
 
-&uart0 {
-	status = "okay";
+/* 覆盖 LED 定义 */
+&leds {
+    led_status: led-status {
+        label = "sl:blue:status";
+        gpios = <&pio 12 GPIO_ACTIVE_LOW>;
+        linux,default-trigger = "heartbeat";
+        default-state = "on";
+    };
 };
 
+/* 覆盖按键定义 */
+&keys {
+    reset {
+        label = "reset";
+        gpios = <&pio 18 GPIO_ACTIVE_LOW>;
+        linux,code = <KEY_RESTART>;
+        debounce-interval = <60>;
+    };
+};
+
+/* 覆盖存储控制器 */
 &mmc0 {
-	status = "okay";
-	bus-width = <8>;
-	mmc-hs200-1_8v;
-	non-removable;
-	cap-mmc-hw-reset;
-	mediatek,mmc-wp-disable;
+    status = "okay";
+    bus-width = <8>;
+    mmc-hs200-1_8v;
+    non-removable;
+    cap-mmc-hw-reset;
+    mediatek,mmc-wp-disable;
 };
 
+/* 覆盖网口 */
 &gmac0 {
-	status = "okay";
-	phy-mode = "rgmii";
-	phy-handle = <&phy0>;
-	nvmem-cells = <&macaddr_factory_4>;
-	nvmem-cell-names = "mac-address";
+    status = "okay";
+    phy-mode = "rgmii";
+    phy-handle = <&phy0>;
+    nvmem-cells = <&macaddr_factory_4>;
+    nvmem-cell-names = "mac-address";
 };
 
-&mdio_bus {
-	status = "okay";
-
-	phy0: ethernet-phy@0 {
-		reg = <0>;
-	};
-
-	phy1: ethernet-phy@1 { reg = <1>; };
-	phy2: ethernet-phy@2 { reg = <2>; };
-	phy3: ethernet-phy@3 { reg = <3>; };
-	phy4: ethernet-phy@4 { reg = <4>; };
-};
-
-&switch {
-	status = "okay";
-
-	ports {
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		port@0 {
-			reg = <0>;
-			label = "wan";
-			phy-handle = <&phy0>;
-		};
-
-		port@1 {
-			reg = <1>;
-			label = "lan1";
-			phy-handle = <&phy1>;
-		};
-
-		port@2 {
-			reg = <2>;
-			label = "lan2";
-			phy-handle = <&phy2>;
-		};
-
-		port@3 {
-			reg = <3>;
-			label = "lan3";
-			phy-handle = <&phy3>;
-		};
-	};
-};
-
-&pcie {
-	status = "okay";
-};
-
+/* 工厂分区 MAC 地址 */
 &factory {
-	macaddr_factory_4: macaddr@4 {
-		reg = <0x4 0x6>;
-	};
+    macaddr_factory_4: macaddr@4 {
+        reg = <0x4 0x6>;
+    };
 };
 EOF
 
@@ -168,11 +97,11 @@ if ! grep -q "mt7981b-sl3000-emmc" "$MK"; then
 cat >> "$MK" << 'EOF'
 
 define Device/mt7981b-sl3000-emmc
-	DEVICE_VENDOR := SL
-	DEVICE_MODEL := SL3000 eMMC Engineering Flagship
-	DEVICE_DTS := mt7981b-sl3000-emmc
-	DEVICE_PACKAGES := kmod-mt7981-firmware kmod-fs-ext4 block-mount
-	IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
+    DEVICE_VENDOR := SL
+    DEVICE_MODEL := SL3000 eMMC Engineering Flagship
+    DEVICE_DTS := mt7981b-sl3000-emmc
+    DEVICE_PACKAGES := kmod-mt7981-firmware kmod-fs-ext4 block-mount
+    IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
 endef
 TARGET_DEVICES += mt7981b-sl3000-emmc
 EOF
