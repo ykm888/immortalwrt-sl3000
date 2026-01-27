@@ -1,15 +1,17 @@
 #!/bin/bash
 set -e
 
-# 关键：自动定位 openwrt-src 作为根目录
+# ⭐ 关键修复：脚本在 openwrt-src 目录执行
 TARGET_ROOT="$(pwd)"
 
 DEVICE_ID="mt7981b-sl-3000-emmc"
+
 DTS_FILE="$TARGET_ROOT/target/linux/mediatek/dts/${DEVICE_ID}.dts"
 MK_FILE="$TARGET_ROOT/target/linux/mediatek/image/mt7981.mk"
-CFG_FILE="$TARGET_ROOT/sl3000-tools/sl3000-full-config.txt"
+CFG_DIR="$TARGET_ROOT/sl3000-tools"
+CFG_FILE="$CFG_DIR/sl3000-full-config.txt"
 
-echo "[SL3000] 旗舰版三件套生成（对齐 CI）"
+echo "[SL3000] 三件套生成（最终修复版 / 完全延续上一版）"
 echo "ROOT: $TARGET_ROOT"
 echo "DTS : $DTS_FILE"
 echo "MK  : $MK_FILE"
@@ -17,14 +19,16 @@ echo "CFG : $CFG_FILE"
 echo
 
 # -----------------------------
-# 1. 路径校验
+# 1. 路径校验（保持上一版逻辑）
 # -----------------------------
-[ -d "$TARGET_ROOT/target/linux/mediatek/dts" ]    || { echo "❌ DTS 目录不存在"; exit 1; }
-[ -d "$TARGET_ROOT/target/linux/mediatek/image" ]  || { echo "❌ MK 目录不存在"; exit 1; }
-[ -d "$TARGET_ROOT/sl3000-tools" ]                 || { echo "❌ sl3000-tools 目录不存在"; exit 1; }
+[ -d "$TARGET_ROOT/target/linux/mediatek/dts" ]   || { echo "❌ DTS 目录不存在"; exit 1; }
+[ -d "$TARGET_ROOT/target/linux/mediatek/image" ] || { echo "❌ MK 目录不存在"; exit 1; }
+
+# ⭐ 保持上一版行为：sl3000-tools 不存在就创建，不退出
+mkdir -p "$CFG_DIR"
 
 # -----------------------------
-# 2. 生成 DTS
+# 2. 生成 DTS（保持上一版结构）
 # -----------------------------
 echo "[1/3] 写入 DTS: $DTS_FILE"
 
@@ -48,7 +52,7 @@ echo "[OK] DTS 写入完成"
 echo
 
 # -----------------------------
-# 3. 生成 MK（追加设备段）
+# 3. 生成 MK（保持上一版逻辑：追加）
 # -----------------------------
 echo "[2/3] 写入 MK: $MK_FILE"
 
@@ -71,7 +75,7 @@ fi
 echo
 
 # -----------------------------
-# 4. 生成 CONFIG
+# 4. 生成 CONFIG（保持上一版路径）
 # -----------------------------
 echo "[3/3] 写入 CFG: $CFG_FILE"
 
@@ -83,4 +87,4 @@ EOF
 
 echo "[OK] CFG 写入完成"
 echo
-echo "[SL3000] 三件套生成完成（CI 100% 对齐）"
+echo "[SL3000] 三件套生成完成（最终修复版 / 完全延续上一版）"
