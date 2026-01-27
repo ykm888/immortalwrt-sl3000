@@ -7,13 +7,6 @@
 
 #include "mt7981.dtsi"
 
-/* 先注释掉整个根节点
-/ {
-    ...
-};
-*/
-
-
 / {
     model = "SL-3000 eMMC Router";
     compatible = "sl,sl3000-emmc", "mediatek,mt7981";
@@ -30,8 +23,6 @@
         bootargs = "root=PARTLABEL=rootfs rootwait";
         stdout-path = "serial0:115200n8";
     };
-
-    /* MT7981 memory is defined in SoC dtsi, do NOT redefine */
 };
 
 gpio-keys {
