@@ -37,7 +37,7 @@ gen_dts() {
     mkdir -p "${DTS_DIR}"
 
     cat > "${dst}" << 'EOF'
-// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later OR MIT */
 
 /dts-v1/;
 #include <dt-bindings/gpio/gpio.h>
@@ -47,8 +47,8 @@ gen_dts() {
 #include "mt7981.dtsi"
 
 / {
-    model = "SL-3000 eMMC bootstrap versions";
-    compatible = "sl,3000-emmc", "mediatek,mt7981";
+    model = "SL-3000 eMMC Router";
+    compatible = "sl,sl3000-emmc", "mediatek,mt7981";
 
     aliases {
         serial0 = &uart0;
@@ -63,44 +63,41 @@ gen_dts() {
         stdout-path = "serial0:115200n8";
     };
 
-    memory@40000000 {
-        reg = <0 0x40000000 0 0x40000000>; /* 1GB */
+    /* MT7981 memory is defined in SoC dtsi, do NOT redefine */
+};
+
+gpio-keys {
+    compatible = "gpio-keys";
+
+    button-mesh {
+        label = "mesh";
+        linux,code = <KEY_WPS_BUTTON>;
+        gpios = <&pio 0 GPIO_ACTIVE_LOW>;
     };
 
-    gpio-keys {
-        compatible = "gpio-keys";
+    button-reset {
+        label = "reset";
+        linux,code = <KEY_RESTART>;
+        gpios = <&pio 1 GPIO_ACTIVE_LOW>;
+    };
+};
 
-        button-mesh {
-            label = "mesh";
-            linux,code = <BTN_9>;
-            linux,input-type = <EV_SW>;
-            gpios = <&pio 0 GPIO_ACTIVE_LOW>;
-        };
+gpio-leds {
+    compatible = "gpio-leds";
 
-        button-reset {
-            label = "reset";
-            linux,code = <KEY_RESTART>;
-            gpios = <&pio 1 GPIO_ACTIVE_LOW>;
-        };
+    status_red_led: led-0 {
+        label = "red:status";
+        gpios = <&pio 10 GPIO_ACTIVE_LOW>;
     };
 
-    gpio-leds {
-        compatible = "gpio-leds";
+    status_green_led: led-1 {
+        label = "green:status";
+        gpios = <&pio 11 GPIO_ACTIVE_LOW>;
+    };
 
-        status_red_led: led-0 {
-            label = "red:status";
-            gpios = <&pio 10 GPIO_ACTIVE_LOW>;
-        };
-
-        status_green_led: led-1 {
-            label = "green:status";
-            gpios = <&pio 11 GPIO_ACTIVE_LOW>;
-        };
-
-        status_blue_led: led-2 {
-            label = "blue:status";
-            gpios = <&pio 12 GPIO_ACTIVE_LOW>;
-        };
+    status_blue_led: led-2 {
+        label = "blue:status";
+        gpios = <&pio 12 GPIO_ACTIVE_LOW>;
     };
 };
 
@@ -138,7 +135,7 @@ gen_dts() {
         switch@0 {
             compatible = "mediatek,mt7531";
             reg = <31>;
-            reset-gpios = <&pio 39 0>;
+            reset-gpios = <&pio 39 GPIO_ACTIVE_LOW>;
 
             ports {
                 #address-cells = <1>;
@@ -183,27 +180,24 @@ gen_dts() {
         compatible = "mmc-card";
         reg = <0>;
 
-        block {
-            compatible = "block-device";
+        partitions {
+            factory: partition@0 {
+                label = "factory";
+                reg = <0x0 0x1000>;
 
-            partitions {
-                block-partition-factory {
-                    partname = "factory";
+                nvmem-layout {
+                    compatible = "fixed-layout";
+                    #address-cells = <1>;
+                    #size-cells = <1>;
 
-                    nvmem-layout {
-                        compatible = "fixed-layout";
-                        #address-cells = <1>;
-                        #size-cells = <1>;
+                    eeprom_factory_0: eeprom@0 {
+                        reg = <0x0 0x1000>;
+                    };
 
-                        eeprom_factory_0: eeprom@0 {
-                            reg = <0x0 0x1000>;
-                        };
-
-                        macaddr_factory_4: macaddr@4 {
-                            compatible = "mac-base";
-                            reg = <0x4 0x6>;
-                            #nvmem-cell-cells = <1>;
-                        };
+                    macaddr_factory_4: macaddr@4 {
+                        compatible = "mac-base";
+                        reg = <0x4 0x6>;
+                        #nvmem-cell-cells = <1>;
                     };
                 };
             };
@@ -231,7 +225,7 @@ gen_dts() {
 
     band@1 {
         reg = <1>;
-        nvmem-cells = <&macaddr_factory_4 1>;
+        nvmem-cells = <&macaddr_factory_4>;
         nvmem-cell-names = "mac-address";
     };
 };
