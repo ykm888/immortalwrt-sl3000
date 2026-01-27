@@ -35,29 +35,21 @@ jobs:
           fi
           echo "✅ Script found"
 
-      # 4. Lock files-6.6 (24.10 固定路径)
-      - name: Set FILES_DIR (6.6)
-        run: |
-          echo "FILES_DIR=target/linux/mediatek/files-6.6" >> $GITHUB_ENV
-          echo "Using FILES_DIR = target/linux/mediatek/files-6.6"
-
-      # 5. Add execute permission
+      # 4. Add execute permission
       - name: Add Execute Permission
         run: chmod 755 sl3000-tools/*.sh
 
-      # 6. Run script
+      # 5. Run script
       - name: Run Three-Piece Script
         run: |
           bash -x sl3000-tools/generate-three-piece.sh 2>&1 | tee sl3000-run.log
 
-      # 7. Strict verify (固定 6.6)
+      # 6. Strict verify (工程级路径)
       - name: Strict Verify Three-Piece
         run: |
-          FILES_DIR="target/linux/mediatek/files-6.6"
-
-          DTS_FILE="$FILES_DIR/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-          MK_FILE="target/linux/mediatek/image/filogic.mk"
-          CFG_FILE=".config"
+          DTS_FILE="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
+          MK_FILE="target/linux/mediatek/image/mt7981.mk"
+          CFG_FILE="sl3000-tools/sl3000-full-config.txt"
 
           echo "Verify DTS: $DTS_FILE"
           echo "Verify MK : $MK_FILE"
@@ -73,19 +65,19 @@ jobs:
             exit 1
           fi
 
-          if ! grep -q "mt7981b-sl3000-emmc" "$MK_FILE"; then
+          if ! grep -q "sl-3000-emmc" "$MK_FILE"; then
             echo "❌ MK missing SL3000 segment"
             exit 1
           fi
 
           echo "=== SL3000 MK Segment ==="
-          grep -A20 "define Device/mt7981b-sl3000-emmc" "$MK_FILE"
+          grep -A20 "define Device/sl-3000-emmc" "$MK_FILE"
 
           echo "DTS_FILE=$DTS_FILE" >> $GITHUB_ENV
           echo "MK_FILE=$MK_FILE" >> $GITHUB_ENV
           echo "CFG_FILE=$CFG_FILE" >> $GITHUB_ENV
 
-      # 8. Upload artifacts
+      # 7. Upload artifacts
       - name: Upload Three-Piece & Logs
         uses: actions/upload-artifact@v4
         with:
@@ -97,7 +89,7 @@ jobs:
             sl3000-run.log
           retention-days: 30
 
-      # 9. Commit & push
+      # 8. Commit & push
       - name: Git Commit & Push
         run: |
           git config user.name "github-actions[bot]"
