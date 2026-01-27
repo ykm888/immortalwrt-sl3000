@@ -1,34 +1,30 @@
 #!/bin/bash
 set -e
 
-DEVICE="mt7981b-sl3000-emmc"
-TARGET_DTS="target/linux/mediatek/dts/${DEVICE}.dts"
-TARGET_MK="target/linux/mediatek/image/filogic.mk"
-TARGET_CONFIG=".config"
+DEVICE_ID="mt7981b-sl-3000-emmc"
+DTS_FILE="target/linux/mediatek/dts/${DEVICE_ID}.dts"
+MK_FILE="target/linux/mediatek/image/mt7981.mk"
+CFG_FILE="sl3000-tools/sl3000-full-config.txt"
 
-echo "[SL3000] 旗舰版三件套生成开始"
-echo "设备: ${DEVICE}"
+echo "[SL3000] 三件套生成（旗舰版，对齐 ${DEVICE_ID}）"
+echo "DTS: ${DTS_FILE}"
+echo "MK : ${MK_FILE}"
+echo "CFG: ${CFG_FILE}"
 echo
 
 # -----------------------------
 # 1. 路径校验
 # -----------------------------
-if [ ! -d target/linux/mediatek/dts ]; then
-    echo "错误: 未找到 target/linux/mediatek/dts"
-    exit 1
-fi
-
-if [ ! -d target/linux/mediatek/image ]; then
-    echo "错误: 未找到 target/linux/mediatek/image"
-    exit 1
-fi
+[ -d "target/linux/mediatek/dts" ]    || { echo "❌ 缺少目录: target/linux/mediatek/dts"; exit 1; }
+[ -d "target/linux/mediatek/image" ]  || { echo "❌ 缺少目录: target/linux/mediatek/image"; exit 1; }
+[ -d "sl3000-tools" ]                 || { echo "❌ 缺少目录: sl3000-tools"; exit 1; }
 
 # -----------------------------
-# 2. 生成 DTS
+# 2. 生成 DTS（完全覆盖）
 # -----------------------------
-echo "[1/3] 生成 DTS: ${TARGET_DTS}"
+echo "[1/3] 写入 DTS: ${DTS_FILE}"
 
-cat > "${TARGET_DTS}" << 'EOF'
+cat > "${DTS_FILE}" << 'EOF'
 /* SPDX-License-Identifier: GPL-2.0-or-later OR MIT */
 
 /dts-v1/;
@@ -224,54 +220,59 @@ gpio-leds {
 &xhci { status = "okay"; };
 EOF
 
-echo "[OK] DTS 生成完成"
+echo "[OK] DTS 写入完成"
 echo
 
 # -----------------------------
-# 3. 生成 MK 设备段
+# 3. 生成 / 追加 MK 设备段（对齐 mt7981.mk）
 # -----------------------------
-echo "[2/3] 生成 MK 设备段"
+echo "[2/3] 对齐 MK: ${MK_FILE}"
 
-cat > "${TARGET_MK}" << 'EOF'
-define Device/mt7981b-sl3000-emmc
+if ! grep -q "Device/${DEVICE_ID}" "${MK_FILE}" 2>/dev/null; then
+    cat >> "${MK_FILE}" << EOF
+
+define Device/${DEVICE_ID}
   DEVICE_VENDOR := SL
   DEVICE_MODEL := SL3000
   DEVICE_VARIANT := eMMC
-  DEVICE_DTS := mt7981b-sl-3000-emmc
-  DEVICE_PACKAGES := kmod-usb3 kmod-usb2 kmod-mt7981-firmware \
-                     kmod-mt7981-wifi kmod-mt7531 \
-                     block-mount e2fsprogs fdisk \
-                     docker dockerd luci-app-dockerman \
-                     luci-app-passwall2
+  DEVICE_DTS := ${DEVICE_ID}
+  DEVICE_PACKAGES := kmod-usb3 kmod-usb2 kmod-mt7981-firmware \\
+\tkmod-mt7981-wifi kmod-mt7531 \\
+\tblock-mount e2fsprogs fdisk \\
+\tdocker dockerd luci-app-dockerman \\
+\tluci-app-passwall2
 endef
-TARGET_DEVICES += mt7981b-sl3000-emmc
+TARGET_DEVICES += ${DEVICE_ID}
 EOF
-
-echo "[OK] MK 生成完成"
+    echo "[OK] 已追加 Device/${DEVICE_ID} 到 ${MK_FILE}"
+else
+    echo "[SKIP] ${MK_FILE} 中已存在 Device/${DEVICE_ID}"
+fi
 echo
 
 # -----------------------------
-# 4. 生成 CONFIG
+# 4. 生成完整配置文件（对齐 CI: sl3000-full-config.txt）
 # -----------------------------
-echo "[3/3] 生成 .config"
+echo "[3/3] 写入 CFG: ${CFG_FILE}"
 
-cat > "${TARGET_CONFIG}" << 'EOF'
+cat > "${CFG_FILE}" << 'EOF'
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
-CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y
+CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl-3000-emmc=y
+
 CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-ssl=y
 CONFIG_PACKAGE_luci-app-passwall2=y
+
 CONFIG_PACKAGE_docker=y
 CONFIG_PACKAGE_dockerd=y
 CONFIG_PACKAGE_luci-app-dockerman=y
+
+CONFIG_PACKAGE_block-mount=y
+CONFIG_PACKAGE_e2fsprogs=y
+CONFIG_PACKAGE_fdisk=y
 EOF
 
-echo "[OK] CONFIG 生成完成"
+echo "[OK] CFG 写入完成"
 echo
-
-echo "[SL3000] 旗舰版三件套生成完成"
-echo "----------------------------------------"
-echo "DTS:    ${TARGET_DTS}"
-echo "MK:     ${TARGET_MK}"
-echo "CONFIG: ${TARGET_CONFIG}"
-echo "----------------------------------------"
+echo "[SL3000] 三件套生成完成（已对齐 mt7981b-sl-3000-emmc）"
