@@ -11,7 +11,7 @@
     compatible = "sl,sl3000-emmc", "mediatek,mt7981b";
 };
 
-/* 覆盖 LED */
+/* LED 覆盖 */
 &leds {
     led_status: led-status {
         label = "sl:blue:status";
@@ -21,7 +21,7 @@
     };
 };
 
-/* 覆盖按键 */
+/* 按键覆盖 */
 &keys {
     reset {
         label = "reset";
