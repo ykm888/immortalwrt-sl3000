@@ -72,21 +72,26 @@ jobs:
         working-directory: /mnt/openwrt
         run: make defconfig
 
-      - name: Copy SL3000 Three-Piece Set
+      - name: Copy SL3000 Three-Piece Set (aligned to repo)
         run: |
-          cp repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts \
-             /mnt/openwrt/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
+          # DTS：工程级路径
+          mkdir -p /mnt/openwrt/target/linux/mediatek/dts
+          cp repo/target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts \
+             /mnt/openwrt/target/linux/mediatek/dts/
 
-          cp repo/target/linux/mediatek/image/filogic.mk \
+          # MK：工程级路径
+          mkdir -p /mnt/openwrt/target/linux/mediatek/image
+          cp repo/target/linux/mediatek/image/mt7981.mk \
              /mnt/openwrt/target/linux/mediatek/image/
 
-          cp repo/.config /mnt/openwrt/.config
+          # CONFIG：用仓库三件套导出的 full config 作为 .config
+          cp repo/sl3000-tools/sl3000-full-config.txt /mnt/openwrt/.config
 
       - name: Final defconfig
         working-directory: /mnt/openwrt
         run: |
           make defconfig
-          grep -n "mt7981b-sl3000-emmc" .config || true
+          grep -n "mt7981b-sl-3000-emmc" .config || true
 
       - name: Toolchain self-heal
         working-directory: /mnt/openwrt
@@ -122,7 +127,7 @@ jobs:
         working-directory: /mnt/openwrt
         run: |
           ls -l bin/targets/mediatek/filogic/ || true
-          if ! ls bin/targets/mediatek/filogic/*sl3000* >/dev/null 2>&1; then
+          if ! ls bin/targets/mediatek/filogic/*sl-3000-emmc* >/dev/null 2>&1; then
             echo "❌ Firmware missing"
             exit 1
           fi
