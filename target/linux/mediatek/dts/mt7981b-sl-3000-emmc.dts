@@ -7,6 +7,6 @@
 #include <dt-bindings/leds/common.h>
 
 / {
-    model = "SL SL3000 eMMC Engineering Flagship Edition";
-    compatible = "sl,sl3000-emmc", "mediatek,mt7981b";
+    model = "SL-3000 eMMC bootstrap versions";
+    compatible = "sl,3000-emmc", "mediatek,mt7981";
 };
