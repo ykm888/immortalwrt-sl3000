@@ -44,17 +44,16 @@ jobs:
           rm -rf /mnt/openwrt || true
           git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
 
-      - name: Reset feeds
+      - name: Reset feeds (NO EOF)
         working-directory: /mnt/openwrt
         run: |
           rm -rf feeds
-          rm -f feeds.conf
-          cat > feeds.conf.default <<EOF
-src-git packages https://github.com/immortalwrt/packages.git;openwrt-24.10
-src-git luci https://github.com/immortalwrt/luci.git;openwrt-24.10
-src-git routing https://github.com/openwrt/routing.git;openwrt-24.10
-src-git telephony https://github.com/openwrt/telephony.git;openwrt-24.10
-EOF
+          rm -f feeds.conf feeds.conf.default
+          echo "src-git packages https://github.com/immortalwrt/packages.git;openwrt-24.10" > feeds.conf.default
+          echo "src-git luci https://github.com/immortalwrt/luci.git;openwrt-24.10" >> feeds.conf.default
+          echo "src-git routing https://github.com/openwrt/routing.git;openwrt-24.10" >> feeds.conf.default
+          echo "src-git telephony https://github.com/openwrt/telephony.git;openwrt-24.10" >> feeds.conf.default
+          cat feeds.conf.default
 
       - name: Update & install feeds
         working-directory: /mnt/openwrt
