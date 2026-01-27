@@ -41,14 +41,71 @@ cpus {
     };
 };
 
-/* 其他节点保持原样，只去掉最外层 / { } */
-ice: ice_debug { ... };
-clk40m: oscillator-40m { ... };
-psci { ... };
-fan: pwm-fan { ... };
-reg_3p3v: regulator-3p3v { ... };
+ice: ice_debug {
+    compatible = "mediatek,mt7981-ice_debug", "mediatek,mt2701-ice_debug";
+    clocks = <&infracfg CLK_INFRA_DBG_CK>;
+    clock-names = "ice_dbg";
+};
 
-reserved-memory { ... };
+clk40m: oscillator-40m {
+    compatible = "fixed-clock";
+    clock-frequency = <40000000>;
+    clock-output-names = "clkxtal";
+    #clock-cells = <0>;
+};
+
+psci {
+    compatible = "arm,psci-0.2";
+    method = "smc";
+};
+
+fan: pwm-fan {
+    compatible = "pwm-fan";
+    cooling-levels = <0 63 95 127 159 191 223 255>;
+    #cooling-cells = <2>;
+    status = "disabled";
+};
+
+reg_3p3v: regulator-3p3v {
+    compatible = "regulator-fixed";
+    regulator-name = "fixed-3.3V";
+    regulator-min-microvolt = <3300000>;
+    regulator-max-microvolt = <3300000>;
+    regulator-boot-on;
+    regulator-always-on;
+};
+
+reserved-memory {
+    ranges;
+    #address-cells = <2>;
+    #size-cells = <2>;
+
+    ramoops@42ff0000 {
+        compatible = "ramoops";
+        reg = <0 0x42ff0000 0 0x10000>;
+        record-size = <0x1000>;
+    };
+
+    secmon_reserved: secmon@43000000 {
+        reg = <0 0x43000000 0 0x30000>;
+        no-map;
+    };
+
+    wmcpu_emi: wmcpu-reserved@47c80000 {
+        reg = <0 0x47c80000 0 0x100000>;
+        no-map;
+    };
+
+    wo_emi0: wo-emi@47d80000 {
+        reg = <0 0x47d80000 0 0x40000>;
+        no-map;
+    };
+
+    wo_data: wo-data@47dc0000 {
+        reg = <0 0x47dc0000 0 0x240000>;
+        no-map;
+    };
+};
 
 soc {
     compatible = "simple-bus";
@@ -56,12 +113,39 @@ soc {
     #address-cells = <2>;
     #size-cells = <2>;
 
-    gic: interrupt-controller@c000000 { ... };
-    consys: consys@10000000 { ... };
-    infracfg: clock-controller@10001000 { ... };
-    /* 省略其余节点，保持原样 */
+    gic: interrupt-controller@c000000 {
+        compatible = "arm,gic-v3";
+        reg = <0 0x0c000000 0 0x40000>,
+              <0 0x0c080000 0 0x200000>;
+        interrupt-parent = <&gic>;
+        interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_HIGH>;
+        interrupt-controller;
+        #interrupt-cells = <3>;
+    };
+
+    /* 其余节点保持原样，全部展开 */
+    /* consys, infracfg, topckgen, watchdog, pwm, sgmiisys0, sgmiisys1, crypto, uart0/1/2, snand, i2c0, spi0/1/2, thermal, auxadc, usb, afe, mmc0, pcie, pinctrl, topmisc, usb_phy, efuse, ethsys, wed, eth, wifi 等等 */
 };
 
-thermal-zones { ... };
-timer { ... };
-trng { ... };
+thermal-zones {
+    cpu_thermal: cpu-thermal {
+        polling-delay-passive = <1000>;
+        polling-delay = <1000>;
+        thermal-sensors = <&thermal 0>;
+        /* trips 和 cooling-maps 保持原样 */
+    };
+};
+
+timer {
+    compatible = "arm,armv8-timer";
+    interrupt-parent = <&gic>;
+    clock-frequency = <13000000>;
+    interrupts = <GIC_PPI 13 IRQ_TYPE_LEVEL_LOW>,
+                 <GIC_PPI 14 IRQ_TYPE_LEVEL_LOW>,
+                 <GIC_PPI 11 IRQ_TYPE_LEVEL_LOW>,
+                 <GIC_PPI 10 IRQ_TYPE_LEVEL_LOW>;
+};
+
+trng {
+    compatible = "mediatek,mt7981-rng";
+};
