@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
 /dts-v1/;
 
 #include "mt7981.dtsi"
@@ -6,7 +7,7 @@
 #include <dt-bindings/leds/common.h>
 
 / {
-	model = "SL3000 eMMC Engineering Flagship";
+	model = "SL SL3000 eMMC Engineering Flagship Edition";
 	compatible = "sl,sl3000-emmc", "mediatek,mt7981b";
 
 	aliases {
@@ -15,6 +16,7 @@
 		led-failsafe = &led_status;
 		led-running = &led_status;
 		led-upgrade = &led_status;
+		label-mac-device = &gmac0;
 	};
 
 	chosen {
@@ -23,7 +25,7 @@
 
 	memory@40000000 {
 		device_type = "memory";
-		reg = <0x0 0x40000000 0x0 0x40000000>;
+		reg = <0x40000000 0x40000000>;
 	};
 
 	leds {
@@ -49,7 +51,9 @@
 	};
 };
 
-&uart0 { status = "okay"; };
+&uart0 {
+	status = "okay";
+};
 
 &mmc0 {
 	status = "okay";
@@ -57,21 +61,69 @@
 	mmc-hs200-1_8v;
 	non-removable;
 	cap-mmc-hw-reset;
+	mediatek,mmc-wp-disable;
 };
-
-&eth { status = "okay"; };
 
 &gmac0 {
 	status = "okay";
-	phy-mode = "2500base-x";
+	phy-mode = "rgmii";
 	phy-handle = <&phy0>;
+	nvmem-cells = <&macaddr_factory_4>;
+	nvmem-cell-names = "mac-address";
 };
 
 &mdio_bus {
 	status = "okay";
-	phy0: ethernet-phy@0 { reg = <0>; };
+
+	phy0: ethernet-phy@0 {
+		reg = <0>;
+	};
+
+	phy1: ethernet-phy@1 { reg = <1>; };
+	phy2: ethernet-phy@2 { reg = <2>; };
+	phy3: ethernet-phy@3 { reg = <3>; };
+	phy4: ethernet-phy@4 { reg = <4>; };
 };
 
-&switch { status = "okay"; };
+&switch {
+	status = "okay";
 
-&pcie { status = "okay"; };
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			label = "wan";
+			phy-handle = <&phy0>;
+		};
+
+		port@1 {
+			reg = <1>;
+			label = "lan1";
+			phy-handle = <&phy1>;
+		};
+
+		port@2 {
+			reg = <2>;
+			label = "lan2";
+			phy-handle = <&phy2>;
+		};
+
+		port@3 {
+			reg = <3>;
+			label = "lan3";
+			phy-handle = <&phy3>;
+		};
+	};
+};
+
+&pcie {
+	status = "okay";
+};
+
+&factory {
+	macaddr_factory_4: macaddr@4 {
+		reg = <0x4 0x6>;
+	};
+};
