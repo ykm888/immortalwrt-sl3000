@@ -28,7 +28,11 @@ cat > "$DTS" << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /dts-v1/;
 
-#include "mt7981.dtsi"
+/*
+ * 24.10 + 6.6：板级符号在 mt7981-rfb.dts 里，
+ * 直接继承参考板，下面只做差异覆盖。
+ */
+#include "mt7981-rfb.dts"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/leds/common.h>
@@ -164,12 +168,11 @@ if ! grep -q "mt7981b-sl3000-emmc" "$MK"; then
 cat >> "$MK" << 'EOF'
 
 define Device/mt7981b-sl3000-emmc
-  DEVICE_VENDOR := SL
-  DEVICE_MODEL := SL3000 eMMC Engineering Flagship
-  DEVICE_DTS := mt7981b-sl3000-emmc
-  DEVICE_DTS_DIR := mediatek
-  DEVICE_PACKAGES := kmod-mt7981-firmware kmod-fs-ext4 block-mount
-  IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
+	DEVICE_VENDOR := SL
+	DEVICE_MODEL := SL3000 eMMC Engineering Flagship
+	DEVICE_DTS := mt7981b-sl3000-emmc
+	DEVICE_PACKAGES := kmod-mt7981-firmware kmod-fs-ext4 block-mount
+	IMAGE/sysupgrade.bin := append-kernel | append-rootfs | pad-rootfs | append-metadata
 endef
 TARGET_DEVICES += mt7981b-sl3000-emmc
 EOF
@@ -211,7 +214,7 @@ CONFIG_VERSION_NUMBER="20260126"
 
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
 CONFIG_TARGET_ROOTFS_SQUASHFS_COMPRESSION_ZSTD=y
-CONFIG_TARGET_ROOTFS_SQUASHFS_BLOCK_SIZE=256k
+CONFIG_TARGET_ROOTFS_SQUASHFS_BLOCK_SIZE=256
 CONFIG_TARGET_ROOTFS_PARTSIZE=1024
 
 CONFIG_PACKAGE_ip-full=y
@@ -219,7 +222,7 @@ CONFIG_PACKAGE_sshd=y
 CONFIG_PACKAGE_wget=y
 CONFIG_PACKAGE_curl=y
 CONFIG_PACKAGE_htop=y
-CONFIG_PACKAGE_dnsmasq_full_remove_resolvconf=y
+CONFIG_PACKAGE_dnsmasq-full=y
 CONFIG_PACKAGE_wpad-basic-wolfssl=y
 CONFIG_PACKAGE_openssh-sftp-server=y
 CONFIG_PACKAGE_coreutils=y
