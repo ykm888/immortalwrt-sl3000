@@ -1,80 +1,159 @@
-name: Build SL3000 Firmware
+name: "Build OpenWrt 24.10 SL3000 eMMC (/mnt Build)"
 
 on:
-  workflow_dispatch:   # 只允许手动触发
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+  packages: write
 
 jobs:
-  build:
+  build-sl3000-2410:
     runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: "Checkout local repository"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: repo
 
-    - name: Cache Build Dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          dl
-          build_dir
-          staging_dir
-          tmp
-          .ccache
-        key: ${{ runner.os }}-openwrt-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-openwrt-
+      - name: "Optimize system disk space"
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true
+          sudo apt-get remove -y --purge azure-cli google-cloud-sdk dotnet powershell mono mysql-server php android snapd || true
+          sudo apt-get autoremove -y --purge
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
+          df -h
 
-    - name: Prepare Build Environment
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          build-essential clang flex bison g++ gawk gcc-multilib \
-          gettext git libncurses5-dev libssl-dev python3 python3-distutils \
-          rsync unzip zlib1g-dev file wget curl \
-          libelf-dev ccache bash coreutils
+      - name: "Prepare /mnt"
+        run: |
+          sudo chown -R runner:runner /mnt
+          sudo chmod -R 755 /mnt
+          mkdir -p /mnt/openwrt
+          df -h
 
-        # 修复 /usr/bin/env 和 /usr/bin/bash 缺失问题
-        if [ ! -f /usr/bin/env ]; then
-          sudo ln -s /bin/env /usr/bin/env || true
-        fi
-        if [ ! -f /usr/bin/bash ]; then
-          sudo ln -s /bin/bash /usr/bin/bash || true
-        fi
+      - name: "Install build dependencies"
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential git-core libncurses5-dev \
+            zlib1g-dev gawk flex gettext wget unzip python3 python3-distutils \
+            file libssl-dev rsync ccache device-tree-compiler subversion libelf-dev \
+            bc bison patch gcc-multilib g++-multilib swig libudev-dev libusb-1.0-0-dev
+          # 修复 env/bash 缺失
+          if [ ! -f /usr/bin/env ]; then
+            sudo ln -s /bin/env /usr/bin/env || true
+          fi
+          if [ ! -f /usr/bin/bash ]; then
+            sudo ln -s /bin/bash /usr/bin/bash || true
+          fi
 
-        which bash
-        ls -l /usr/bin/env
-        ls -l /usr/bin/bash
+      - name: "Clone OpenWrt 24.10"
+        run: |
+          rm -rf /mnt/openwrt || true
+          git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git /mnt/openwrt
 
-    - name: Update Feeds
-      run: |
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
+      - name: "Clean feeds and dl cache"
+        working-directory: /mnt/openwrt
+        run: |
+          rm -rf dl package/feeds
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-    - name: Copy SL3000 Three-Piece
-      run: |
-        mkdir -p target/linux/mediatek/dts
-        cp sl3000-tools/mt7981b-sl-3000-emmc.dts target/linux/mediatek/dts/
+      - name: "Cache downloads & ccache"
+        uses: actions/cache@v4
+        with:
+          path: |
+            /mnt/openwrt/dl
+            /mnt/openwrt/.ccache
+          key: ${{ runner.os }}-sl3000-2410
+          restore-keys: |
+            ${{ runner.os }}-sl3000-2410
 
-        # 追加 MK（避免重复）
-        if ! grep -q "Device/sl-3000-emmc" target/linux/mediatek/image/mt7981.mk; then
-          cat sl3000-tools/mt7981.mk >> target/linux/mediatek/image/mt7981.mk
-        fi
+      - name: "Base defconfig"
+        working-directory: /mnt/openwrt
+        run: |
+          make defconfig
 
-        # 覆盖 CONFIG
-        cp sl3000-tools/sl3000-full-config.txt .config
+      - name: "Copy SL3000 three-piece set (DTS/MK/CONFIG)"
+        run: |
+          OWRT=/mnt/openwrt
+          REPO=repo
 
-    - name: Defconfig
-      run: |
-        make defconfig
+          # DTS (24.10 path)
+          cp "$REPO/target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts" \
+             "$OWRT/target/linux/mediatek/dts/"
 
-    - name: Build Firmware
-      env:
-        SHELL: /bin/bash
-      run: |
-        make -j$(nproc) || make -j1 V=s
+          # MK (24.10 path)
+          cp "$REPO/target/linux/mediatek/image/mt7981.mk" \
+             "$OWRT/target/linux/mediatek/image/mt7981.mk"
 
-    - name: Upload Firmware
-      uses: actions/upload-artifact@v4
-      with:
-        name: sl3000-firmware
-        path: bin/targets/
+          # CONFIG
+          cp "$REPO/sl3000-tools/sl3000-full-config.txt" "$OWRT/.config"
+
+      - name: "Finalize defconfig & verify SL3000"
+        working-directory: /mnt/openwrt
+        run: |
+          make defconfig
+          echo '===== FINAL CONFIG (grep sl3000-emmc) ====='
+          grep -n sl3000-emmc .config || true
+
+      - name: "Build SL3000 eMMC firmware (24.10)"
+        working-directory: /mnt/openwrt
+        env:
+          SKIPTARGETCHECK: "1"
+          FORCE: "1"
+        run: |
+          make download -j8 || echo '[WARN] download failed (non-fatal)'
+
+          for i in 1 2; do
+            make -j"$(nproc)" V=s 2>&1 | tee firmware-build.log && break
+            echo "[SELF-HEAL] Build failed (attempt $i) → retrying"
+          done
+
+          test -f firmware-build.log || echo '[ERROR] firmware-build.log missing' > firmware-build.log
+
+      - name: "Check firmware output"
+        working-directory: /mnt/openwrt/bin/targets/mediatek/mt7981
+        run: |
+          echo "===== FIRMWARE OUTPUT ====="
+          ls -lh
+
+      - name: "Upload build logs"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sl3000-2410-build-logs
+          path: /mnt/openwrt/firmware-build.log
+          retention-days: 7
+
+      - name: "Upload firmware artifacts"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-2410-sl3000-emmc-firmware
+          path: |
+            /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
+            /mnt/openwrt/bin/targets/mediatek/mt7981/initramfs.bin
+          retention-days: 30
+
+      - name: "Auto Release firmware (24.10)"
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tagname: sl3000-emmc-openwrt-2410-${{ github.run_number }}-${{ github.run_id }}
+          name: SL3000 EMMC OpenWrt 24.10 #${{ github.run_number }}
+          body: |
+            OpenWrt 24.10 stable
+            Target: SL3000 (MT7981B eMMC)
+            Three-piece set (DTS/MK/CONFIG)
+          files: |
+            /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
+            /mnt/openwrt/bin/targets/mediatek/mt7981/initramfs.bin
+          prerelease: false
