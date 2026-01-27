@@ -13,20 +13,17 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      # 1. Checkout
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: true
 
-      # 2. Install dependencies
       - name: Install Core Dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y device-tree-compiler dos2unix libc-bin
 
-      # 3. Check script exists
       - name: Check Script Exists
         run: |
           if [ ! -f "sl3000-tools/generate-three-piece.sh" ]; then
@@ -35,28 +32,24 @@ jobs:
           fi
           echo "✅ Script found"
 
-      # 4. Add execute permission
       - name: Add Execute Permission
         run: chmod 755 sl3000-tools/*.sh
 
-      # 5. Clone ImmortalWrt 24.10 (三件套必须在源码根目录生成)
       - name: Clone ImmortalWrt 24.10
         run: |
           git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git openwrt-src
 
-      # 6. Run script inside OpenWrt root
       - name: Run Three-Piece Script
         working-directory: openwrt-src
         run: |
           bash -x $GITHUB_WORKSPACE/sl3000-tools/generate-three-piece.sh 2>&1 | tee $GITHUB_WORKSPACE/sl3000-run.log
 
-      # 7. Strict verify (工程级路径)
       - name: Strict Verify Three-Piece
         working-directory: openwrt-src
         run: |
           DTS_FILE="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
           MK_FILE="target/linux/mediatek/image/mt7981.mk"
-          CFG_FILE="$GITHUB_WORKSPACE/sl3000-tools/sl3000-full-config.txt"
+          CFG_FILE="sl3000-tools/sl3000-full-config.txt"   # ✅ 这里：相对 openwrt-src
 
           echo "Verify DTS: $DTS_FILE"
           echo "Verify MK : $MK_FILE"
@@ -69,6 +62,7 @@ jobs:
 
           if [ ! -s "$CFG_FILE" ]; then
             echo "❌ CONFIG missing or empty"
+            ls -R .
             exit 1
           fi
 
@@ -84,7 +78,6 @@ jobs:
           echo "MK_FILE=$MK_FILE" >> $GITHUB_ENV
           echo "CFG_FILE=$CFG_FILE" >> $GITHUB_ENV
 
-      # 8. Upload artifacts
       - name: Upload Three-Piece & Logs
         uses: actions/upload-artifact@v4
         with:
@@ -92,21 +85,19 @@ jobs:
           path: |
             openwrt-src/${{ env.DTS_FILE }}
             openwrt-src/${{ env.MK_FILE }}
-            ${{ env.CFG_FILE }}
+            openwrt-src/${{ env.CFG_FILE }}   # ✅ 这里：从 openwrt-src 拿 config
             sl3000-run.log
           retention-days: 30
 
-      # 9. Commit & push back to repo
       - name: Git Commit & Push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # DTS/MK 从 openwrt-src 复制回仓库
+          # 从 openwrt-src 拷回仓库
           cp openwrt-src/${{ env.DTS_FILE }} target/linux/mediatek/dts/
           cp openwrt-src/${{ env.MK_FILE }} target/linux/mediatek/image/
-
-          # CONFIG 本来就在仓库，不需要复制
+          cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/   # ✅ 这里：把 config 拷回仓库
 
           git add -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
           git add -f target/linux/mediatek/image/mt7981.mk
