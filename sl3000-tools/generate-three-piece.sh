@@ -1,42 +1,34 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
+set -e
 
-# ============================================================
-#  SL3000 官方工程级三件套生成脚本（只负责一键生成三件套）
-#  - DTS:    target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
-#  - MK:     target/linux/mediatek/image/mt7981.mk
-#  - CONFIG: sl3000-tools/sl3000-full-config.txt（仅导出，不写入 .config）
-# ============================================================
+DEVICE="mt7981b-sl3000-emmc"
+TARGET_DTS="target/linux/mediatek/dts/${DEVICE}.dts"
+TARGET_MK="target/linux/mediatek/image/filogic.mk"
+TARGET_CONFIG=".config"
 
-BOARD_ID="sl-3000-emmc"
-BOARD_DTS="mt7981b-sl-3000-emmc.dts"
+echo "[SL3000] 旗舰版三件套生成开始"
+echo "设备: ${DEVICE}"
+echo
 
-DTS_DIR="target/linux/mediatek/dts"
-IMAGE_MK="target/linux/mediatek/image/mt7981.mk"
-CONFIG_OUT="sl3000-tools/sl3000-full-config.txt"
+# -----------------------------
+# 1. 路径校验
+# -----------------------------
+if [ ! -d target/linux/mediatek/dts ]; then
+    echo "错误: 未找到 target/linux/mediatek/dts"
+    exit 1
+fi
 
-ensure_root() {
-    if [ ! -d target/linux/mediatek ] || [ ! -f target/Makefile ]; then
-        echo "错误：请在 OpenWrt/ImmortalWrt 源码根目录运行此脚本" >&2
-        exit 1
-    fi
-}
+if [ ! -d target/linux/mediatek/image ]; then
+    echo "错误: 未找到 target/linux/mediatek/image"
+    exit 1
+fi
 
-# ============================================================
-# 1. 生成 DTS（延续你发的版本 + 修复重复 SPDX）
-# ============================================================
-gen_dts() {
-    local dst="${DTS_DIR}/${BOARD_DTS}"
+# -----------------------------
+# 2. 生成 DTS
+# -----------------------------
+echo "[1/3] 生成 DTS: ${TARGET_DTS}"
 
-    if [ -f "${dst}" ]; then
-        echo "[DTS] 已存在：${dst}"
-        return
-    fi
-
-    echo "[DTS] 生成 ${dst}"
-    mkdir -p "${DTS_DIR}"
-
-    cat > "${dst}" << 'EOF'
+cat > "${TARGET_DTS}" << 'EOF'
 /* SPDX-License-Identifier: GPL-2.0-or-later OR MIT */
 
 /dts-v1/;
@@ -62,8 +54,6 @@ gen_dts() {
         bootargs = "root=PARTLABEL=rootfs rootwait";
         stdout-path = "serial0:115200n8";
     };
-
-    /* MT7981 memory is defined in SoC dtsi, do NOT redefine */
 };
 
 gpio-keys {
@@ -233,134 +223,55 @@ gpio-leds {
 &usb_phy { status = "okay"; };
 &xhci { status = "okay"; };
 EOF
-}
 
-# ============================================================
-# 2. 生成 MK（延续你发的版本）
-# ============================================================
-gen_mk() {
-    if grep -q "^define Device/${BOARD_ID}" "${IMAGE_MK}"; then
-        echo "[MK] ${BOARD_ID} 已存在"
-        return
-    fi
+echo "[OK] DTS 生成完成"
+echo
 
-    echo "[MK] 追加 ${BOARD_ID} 到 ${IMAGE_MK}"
+# -----------------------------
+# 3. 生成 MK 设备段
+# -----------------------------
+echo "[2/3] 生成 MK 设备段"
 
-    cat >> "${IMAGE_MK}" << 'EOF'
-
-define Device/sl-3000-emmc
+cat > "${TARGET_MK}" << 'EOF'
+define Device/mt7981b-sl3000-emmc
   DEVICE_VENDOR := SL
-  DEVICE_MODEL := SL-3000
+  DEVICE_MODEL := SL3000
   DEVICE_VARIANT := eMMC
   DEVICE_DTS := mt7981b-sl-3000-emmc
-  DEVICE_DTS_DIR := ../dts
-  DEVICE_PACKAGES := kmod-mt7981-firmware kmod-usb3 kmod-mmc
-
-  BLOCKSIZE := 128k
-  PAGESIZE := 2048
-
-  IMAGES := sysupgrade.bin
-  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-
-  ARTIFACTS := emmc-gpt.bin
-  ARTIFACT/emmc-gpt.bin := mt798x-gpt emmc
+  DEVICE_PACKAGES := kmod-usb3 kmod-usb2 kmod-mt7981-firmware \
+                     kmod-mt7981-wifi kmod-mt7531 \
+                     block-mount e2fsprogs fdisk \
+                     docker dockerd luci-app-dockerman \
+                     luci-app-passwall2
 endef
-TARGET_DEVICES += sl-3000-emmc
+TARGET_DEVICES += mt7981b-sl3000-emmc
 EOF
-}
 
-# ============================================================
-# 3. 生成 CONFIG（延续你发的版本）
-# ============================================================
-gen_config() {
-    echo "[CONFIG] 生成完整 SL3000 工程级配置：${CONFIG_OUT}"
+echo "[OK] MK 生成完成"
+echo
 
-    mkdir -p sl3000-tools
+# -----------------------------
+# 4. 生成 CONFIG
+# -----------------------------
+echo "[3/3] 生成 .config"
 
-    cat > "${CONFIG_OUT}" << 'EOF'
+cat > "${TARGET_CONFIG}" << 'EOF'
 CONFIG_TARGET_mediatek=y
-CONFIG_TARGET_mediatek_mt7981=y
-CONFIG_TARGET_MULTI_PROFILE=y
-
-CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl-3000-emmc=y
-CONFIG_TARGET_DEVICE_PACKAGES_mediatek_mt7981_DEVICE_sl-3000-emmc=""
-
-CONFIG_MMC=y
-CONFIG_MMC_MTK=y
-CONFIG_MMC_BLOCK=y
-
-CONFIG_USB_XHCI_HCD=y
-CONFIG_USB_XHCI_MTK=y
-
-CONFIG_NET_DSA_MT7530=y
-CONFIG_NET_DSA_MT7530_MDIO=y
-
-CONFIG_MTK_CHIP_MT7981=y
-CONFIG_MTK_MT_WIFI=m
-CONFIG_MTK_WIFI_DRIVER=y
-CONFIG_MTK_WIFI_BASIC_FUNC=y
-CONFIG_MTK_WIFI_FW_BIN_LOAD=y
-CONFIG_MTK_MT_MAC=y
-CONFIG_MTK_MT7981_NEW_FW=y
-CONFIG_MTK_DOT11_HE_AX=y
-CONFIG_MTK_DOT11_N_SUPPORT=y
-CONFIG_MTK_DOT11_VHT_AC=y
-CONFIG_MTK_DOT11W_PMF_SUPPORT=y
-CONFIG_MTK_WPA3_SUPPORT=y
-CONFIG_MTK_WSC_INCLUDED=y
-CONFIG_MTK_WSC_V2_SUPPORT=y
-CONFIG_MTK_UAPSD=y
-CONFIG_MTK_TPC_SUPPORT=y
-CONFIG_MTK_TXBF_SUPPORT=y
-CONFIG_MTK_MU_RA_SUPPORT=y
-CONFIG_MTK_MUMIMO_SUPPORT=y
-CONFIG_MTK_DBDC_MODE=y
-CONFIG_MTK_WHNAT_SUPPORT=m
-CONFIG_MTK_WARP_V2=y
-CONFIG_WED_HW_RRO_SUPPORT=y
-
-CONFIG_CONNINFRA_AUTO_UP=y
-CONFIG_CONNINFRA_EMI_SUPPORT=y
-CONFIG_MTK_CONNINFRA_APSOC=y
-CONFIG_MTK_CONNINFRA_APSOC_MT7981=y
-
-CONFIG_DEVEL=y
-CONFIG_TOOLCHAINOPTS=y
-CONFIG_BUSYBOX_CUSTOM=y
-CONFIG_TARGET_PER_DEVICE_ROOTFS=y
-CONFIG_INCLUDE_CONFIG=y
-CONFIG_JSON_OVERVIEW_IMAGE_INFO=y
-
-CONFIG_PACKAGE_kmod-mediatek_hnat=y
-CONFIG_PACKAGE_kmod-nf-flow=y
-CONFIG_PACKAGE_kmod-ipt-offload=y
-CONFIG_PACKAGE_kmod-warp=y
-
-CONFIG_PACKAGE_kmod-usb3=y
-CONFIG_PACKAGE_kmod-fs-vfat=y
-CONFIG_PACKAGE_kmod-fs-autofs4=y
-CONFIG_PACKAGE_kmod-scsi-core=y
-
-CONFIG_PACKAGE_ethtool=y
-CONFIG_PACKAGE_htop=y
-CONFIG_PACKAGE_tcpdump=y
-CONFIG_PACKAGE_switch=y
-CONFIG_PACKAGE_wireless-regdb=y
-CONFIG_PACKAGE_wireless-tools=y
-CONFIG_PACKAGE_zram-swap=y
+CONFIG_TARGET_mediatek_filogic=y
+CONFIG_TARGET_mediatek_filogic_DEVICE_mt7981b-sl3000-emmc=y
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-app-passwall2=y
+CONFIG_PACKAGE_docker=y
+CONFIG_PACKAGE_dockerd=y
+CONFIG_PACKAGE_luci-app-dockerman=y
 EOF
-}
 
-# ============================================================
-# 主流程
-# ============================================================
-main() {
-    ensure_root
-    gen_dts
-    gen_mk
-    gen_config
-    echo "[OK] SL3000 三件套（DTS + MK + CONFIG）已全部生成完成"
-    echo "请查看：git diff"
-}
+echo "[OK] CONFIG 生成完成"
+echo
 
-main "$@"
+echo "[SL3000] 旗舰版三件套生成完成"
+echo "----------------------------------------"
+echo "DTS:    ${TARGET_DTS}"
+echo "MK:     ${TARGET_MK}"
+echo "CONFIG: ${TARGET_CONFIG}"
+echo "----------------------------------------"
