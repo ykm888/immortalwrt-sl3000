@@ -34,84 +34,78 @@ jobs:
           restore-keys: |
             openwrt-2410-src-
 
-      - name: 📦 Clone OpenWrt 24.10 (3x Retry + Integrity Check)
+      - name: 📦 Clone OpenWrt 24.10 (3x Retry + Path Check)
         if: steps.cache-openwrt-src.outputs.cache-hit != 'true'
         run: |
           RETRIES=3
           COUNT=0
-          # 3次重试拉取源码，网络波动自动重连
           until [ $COUNT -ge $RETRIES ]; do
             rm -rf openwrt-src && git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt-src && break
             COUNT=$((COUNT+1))
             echo "Clone failed, retry $COUNT/$RETRIES... (sleep 5s)"
             sleep 5
           done
-          # 拉取失败直接终止
           if [ $COUNT -ge $RETRIES ]; then
             echo "❌ Fatal: Clone OpenWrt 24.10 failed after $RETRIES retries"
             exit 1
           fi
-          # 校验核心文件，防止源码目录结构变更导致后续失败
-          if [ ! -f "openwrt-src/target/linux/mediatek/image/filogic.mk" ]; then
-            echo "❌ Fatal: OpenWrt 24.10 missing filogic.mk (directory structure changed)"
+          # 预校验MK/DTS父路径是否存在（匹配指定路径）
+          if [ ! -d "openwrt-src/target/linux/mediatek/dts" ] || [ ! -f "openwrt-src/target/linux/mediatek/image/filogic.mk" ]; then
+            echo "❌ Fatal: 指定的MK/DTS路径不存在，源码结构异常"
             exit 1
           fi
-          echo "✅ OpenWrt 24.10 cloned and verified successfully"
+          echo "✅ OpenWrt 24.10 cloned and path verified successfully"
 
-      - name: 🔧 Fix OpenWrt Source Directory Permissions (Writable)
+      - name: 🔧 Fix Source Directory Permissions (Writable)
         run: chmod -R 755 openwrt-src
 
-      - name: 🧹 Clean Pre-existing Empty Config (Avoid Overwrite)
+      - name: 🧹 Clean Pre-existing Config (Avoid Overwrite)
         working-directory: openwrt-src
         run: rm -f .config
 
-      - name: 🚀 Run Three-Piece Generation Script (Strict Env)
+      - name: 🚀 Run Three-Piece Script (Specified Path)
         working-directory: openwrt-src
         run: |
-          # 绝对路径执行脚本，强制源码根目录环境
           bash $GITHUB_WORKSPACE/sl3000-tools/generate-three-piece.sh
           SCRIPT_EXIT_CODE=$?
-          # 校验脚本执行返回码，非0直接终止
           if [ $SCRIPT_EXIT_CODE -ne 0 ]; then
-            echo "❌ Fatal: Generation script exited with code $SCRIPT_EXIT_CODE"
+            echo "❌ Fatal: Script exited with code $SCRIPT_EXIT_CODE"
             exit 1
           fi
-          # 即时验证.config生成结果
-          if [ ! -s ".config" ]; then
-            echo "❌ Fatal: .config not generated or empty after script run"
-            exit 1
-          fi
-          echo "✅ Generation script executed successfully, .config generated"
+          echo "✅ Script executed, three-piece generated to specified paths"
 
-      - name: ✅ Strict Three-Piece Validation (Exist+Content+Unique)
+      - name: ✅ Strict Validation (Specified Path + Content + Standard)
         working-directory: openwrt-src
         run: |
-          # 定义核心文件路径
+          # 严格匹配你指定的三件套路径
           DTS_FILE="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
           MK_FILE="target/linux/mediatek/image/filogic.mk"
           CFG_FILE=".config"
-          # 校验文件存在且非空
-          [ -s "$DTS_FILE" ] || { echo "❌ Fatal: DTS missing or empty"; exit 1; }
-          [ -s "$MK_FILE" ]  || { echo "❌ Fatal: MK missing or empty"; exit 1; }
-          [ -s "$CFG_FILE" ] || { echo "❌ Fatal: CONFIG missing or empty"; exit 1; }
-          # 校验核心配置项生效
-          grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CFG_FILE" \
-            || { echo "❌ Fatal: CONFIG missing device enable config"; exit 1; }
-          grep -q "define Device/sl_3000-emmc" "$MK_FILE" \
-            || { echo "❌ Fatal: MK missing sl_3000-emmc device segment"; exit 1; }
-          # 校验MK设备段唯一，防止重复添加
+          
+          # 路径+非空校验
+          [ -s "$DTS_FILE" ] || { echo "❌ Fatal: DTS路径错误或文件为空"; exit 1; }
+          [ -s "$MK_FILE" ]  || { echo "❌ Fatal: MK路径错误或文件为空"; exit 1; }
+          [ -s "$CFG_FILE" ] || { echo "❌ Fatal: CONFIG路径错误或文件为空"; exit 1; }
+          
+          # 核心内容校验
+          grep -q "sl,3000-emmc" "$DTS_FILE" || { echo "❌ Fatal: DTS缺少设备标识"; exit 1; }
+          grep -q "define Device/sl_3000-emmc" "$MK_FILE" || { echo "❌ Fatal: MK缺少设备段"; exit 1; }
+          grep -q "TARGET_DEVICES += sl_3000-emmc" "$MK_FILE" || { echo "❌ Fatal: MK缺少官方变量"; exit 1; }
+          grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CFG_FILE" || { echo "❌ Fatal: CONFIG设备未启用"; exit 1; }
+          
+          # 唯一性校验
           MK_SEG_COUNT=$(grep -c "define Device/sl_3000-emmc" "$MK_FILE")
           if [ $MK_SEG_COUNT -ne 1 ]; then
-            echo "❌ Fatal: MK has $MK_SEG_COUNT device segments (expected 1, duplicate found)"
-            exit 1
+            echo "❌ Fatal: MK存在$MK_SEG_COUNT个重复设备段"; exit 1;
           fi
-          # 传递文件路径到环境变量
+          
+          # 传递路径到环境变量
           echo "DTS_FILE=$DTS_FILE" >> $GITHUB_ENV
           echo "MK_FILE=$MK_FILE" >> $GITHUB_ENV
           echo "CFG_FILE=$CFG_FILE" >> $GITHUB_ENV
-          echo "✅ All three-piece files validated successfully (exist+content+unique)"
+          echo "✅ All three-piece validated: specified path + valid content + official standard"
 
-      - name: 📤 Upload Three-Piece + Execution Log (Artifact)
+      - name: 📤 Upload Artifact (Three-Piece + Log)
         uses: actions/upload-artifact@v4
         with:
           name: sl3000-three-piece-2410-mt7981
@@ -123,24 +117,23 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      - name: 📝 Sync Three-Piece to Repository (Auto Commit/Push)
+      - name: 📝 Sync to Repository (Specified Path Copy)
         if: success()
         run: |
-          # 创建仓库内三件套持久化目录
+          # 仓库内持久化目录，按版本存放
           mkdir -p sl3000-three-piece/24.10
-          # 复制最新生成的三件套到仓库目录
+          # 从指定路径复制产物
           cp openwrt-src/${{ env.DTS_FILE }} sl3000-three-piece/24.10/
           cp openwrt-src/${{ env.MK_FILE }} sl3000-three-piece/24.10/
           cp openwrt-src/${{ env.CFG_FILE }} sl3000-three-piece/24.10/
-          # 配置Git提交信息
+          
+          # Git自动提交（仅变更时）
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # 仅当有变更时提交，避免空提交
           git add sl3000-three-piece/
           git commit -m "chore: update SL3000 three-piece (24.10/mt7981) [auto-workflow]" || {
             echo "✅ No changes to three-piece, skip commit"
             exit 0
           }
-          # 推送变更到仓库
           git push origin $GITHUB_REF_NAME
-          echo "✅ Three-piece synced to repository successfully"
+          echo "✅ Three-piece synced to repository successfully!"
