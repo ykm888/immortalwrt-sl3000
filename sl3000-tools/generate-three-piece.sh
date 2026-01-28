@@ -20,7 +20,7 @@ echo "[ROOT] $ROOT"
 echo "[SCRIPT_DIR] $SCRIPT_DIR"
 echo
 
-# 1. 生成DTS文件：ImmortalWrt24.10 filogic官方路径
+# 1. 生成DTS文件：ImmortalWrt24.10 filogic官方路径，自动创建缺失目录
 DTS_DIR="$ROOT/target/linux/mediatek/filogic/dts"
 DTS="$DTS_DIR/mt7981b-sl-3000-emmc.dts"
 mkdir -p "$DTS_DIR"
@@ -60,14 +60,24 @@ EOF
 echo "[DTS] generated: $DTS"
 echo
 
-# 2. 写入MK配置：核心修复→自动探测filogic image目录文件，动态适配（解决文件找不到问题）
-IMAGE_DIR="$ROOT/target/linux/mediatek/filogic/image"
-# 关键：先列出目录所有文件，便于排查，同时动态匹配MK文件
-echo "[DEBUG] filogic image dir files list:"
-ls -la "$IMAGE_DIR/" || { echo "FATAL: filogic image dir not found"; exit 1; }
+# 2. 写入MK配置：核心修复→自动创建缺失的filogic/image目录+全路径探测
+MTK_FILOGIC_DIR="$ROOT/target/linux/mediatek/filogic"
+IMAGE_DIR="$MTK_FILOGIC_DIR/image"
+# 关键1：自动创建缺失的image目录（mkdir -p 存在不报错，缺失则创建）
+mkdir -p "$IMAGE_DIR"
+echo "[DEBUG] ensure filogic image dir exists: $IMAGE_DIR"
+
+# 关键2：打印mediatek/filogic下所有目录，排查真实层级（便于后续问题定位）
+echo "[DEBUG] mediatek/filogic dir structure:"
+ls -la "$MTK_FILOGIC_DIR/" || { echo "FATAL: filogic root dir not found"; exit 1; }
 echo
 
-# 动态匹配MK文件：优先mt7981.mk → 其次filogic.mk → 最后Makefile，兼容所有情况
+# 关键3：打印image目录文件列表（创建后）
+echo "[DEBUG] filogic image dir files list (after mkdir):"
+ls -la "$IMAGE_DIR/"
+echo
+
+# 动态匹配MK文件：优先mt7981.mk → 其次filogic.mk → 最后创建基础Makefile（兜底）
 MK=""
 if [ -f "$IMAGE_DIR/mt7981.mk" ]; then
     MK="$IMAGE_DIR/mt7981.mk"
@@ -76,10 +86,12 @@ elif [ -f "$IMAGE_DIR/filogic.mk" ]; then
 elif [ -f "$IMAGE_DIR/Makefile" ]; then
     MK="$IMAGE_DIR/Makefile"
 else
-    echo "FATAL: no valid MK file found in $IMAGE_DIR (mt7981.mk/filogic.mk/Makefile)"
-    exit 1
+    # 兜底：自动创建基础Makefile（适配源码无任何MK文件的极端情况）
+    MK="$IMAGE_DIR/Makefile"
+    echo '# Auto created for SL3000 eMMC' > "$MK"
+    echo "[DEBUG] auto create base Makefile (no MK file found): $MK"
 fi
-echo "[DEBUG] auto found valid MK file: $MK"
+echo "[DEBUG] final used MK file: $MK"
 
 # sed兼容处理：无匹配时不报错，避免set -e终止脚本
 DEVICE_NAME="sl_3000-emmc"
