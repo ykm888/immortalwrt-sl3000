@@ -54,10 +54,14 @@ jobs:
           rm -rf /mnt/openwrt || true
           git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git /mnt/openwrt
 
+      - name: "Initial feeds update (required to create feeds directory)"
+        working-directory: /mnt/openwrt
+        run: |
+          ./scripts/feeds update -a
+
       - name: "Lock feeds to OpenWrt 24.10 release"
         working-directory: /mnt/openwrt
         run: |
-          # 锁定 feeds 到 24.10 官方发布版本，避免 ustream-ssl-mbedtls 版本冲突
           (cd feeds/packages && git fetch && git checkout openwrt-24.10)
           (cd feeds/luci && git fetch && git checkout openwrt-24.10)
           (cd feeds/routing && git fetch && git checkout openwrt-24.10)
@@ -67,8 +71,8 @@ jobs:
         working-directory: /mnt/openwrt
         run: |
           rm -rf dl package/feeds
-          ./scripts/feeds update -a || { echo "[WARN] feeds update failed → retrying"; rm -rf package/feeds; ./scripts/feeds update -a; }
-          ./scripts/feeds install -a || { echo "[WARN] feeds install failed → retrying"; ./scripts/feeds install -a; }
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
       - name: "Cache downloads & build dirs"
         uses: actions/cache@v4
