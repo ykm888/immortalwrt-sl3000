@@ -54,7 +54,7 @@ jobs:
           rm -rf /mnt/openwrt || true
           git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git /mnt/openwrt
 
-      - name: "Initial feeds update (required to create feeds directory)"
+      - name: "Initial feeds update"
         working-directory: /mnt/openwrt
         run: |
           ./scripts/feeds update -a
@@ -67,10 +67,10 @@ jobs:
           (cd feeds/routing && git fetch && git checkout openwrt-24.10)
           (cd feeds/telephony && git fetch && git checkout openwrt-24.10)
 
-      - name: "Clean feeds and dl cache"
+      - name: "Refresh feeds (safe)"
         working-directory: /mnt/openwrt
         run: |
-          rm -rf dl package/feeds
+          mkdir -p dl
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
@@ -107,9 +107,10 @@ jobs:
 
           cp "$REPO/sl3000-tools/sl3000-full-config.txt" "$OWRT/.config"
 
-      - name: "Verify SL3000 three-piece registration"
+      - name: "Finalize defconfig & verify SL3000"
         working-directory: /mnt/openwrt
         run: |
+          make defconfig
           echo "=== Check DTS ==="
           test -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts || { echo "[FATAL] DTS missing"; exit 1; }
           grep -q "mt7981b-sl-3000-emmc" target/linux/mediatek/image/mt7981.mk || { echo "[FATAL] DTS not referenced in MK"; exit 1; }
@@ -121,24 +122,45 @@ jobs:
           echo "=== Check CONFIG ==="
           grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl-3000-emmc=y" .config || { echo "[FATAL] CONFIG missing device enable"; exit 1; }
 
-          echo "[OK] SL3000 three-piece set verified"
-
-      - name: "Finalize defconfig & verify SL3000"
-        working-directory: /mnt/openwrt
-        run: |
-          make defconfig
           echo '===== FINAL CONFIG (grep sl-3000-emmc) ====='
           grep -n sl-3000-emmc .config || true
+          echo "[OK] SL3000 three-piece set verified"
+
+      - name: "Prune unused packages (safe mode)"
+        working-directory: /mnt/openwrt
+        run: |
+          echo "=== Pruning unused packages ==="
+          make package/symlinks >/dev/null
+
+          ENABLED_PKGS=$(grep '^CONFIG_PACKAGE_' .config | grep '=y' | sed 's/CONFIG_PACKAGE_//;s/=y//')
+
+          for pkgdir in package/*; do
+            [ -d "$pkgdir" ] || continue
+            pkgname=$(basename "$pkgdir")
+
+            case "$pkgname" in
+              base-files|toolchain|kernel|firmware|boot|libs|network|system|utils)
+                continue
+                ;;
+            esac
+
+            if ! echo "$ENABLED_PKGS" | grep -q "^$pkgname$"; then
+              echo "[PRUNE] Removing unused package: $pkgname"
+              rm -rf "$pkgdir"
+            fi
+          done
+
+          echo "=== Prune complete ==="
 
       - name: "Auto-repair toolchain"
         working-directory: /mnt/openwrt
         run: |
-          make toolchain/install -j$(nproc) || { echo "[WARN] Toolchain failed → cleaning and retrying"; make toolchain/clean; make toolchain/install -j$(nproc); }
+          make toolchain/install -j"$(nproc)" || { echo "[WARN] Toolchain failed → cleaning and retrying"; make toolchain/clean; make toolchain/install -j"$(nproc)"; }
 
       - name: "Auto-repair kernel"
         working-directory: /mnt/openwrt
         run: |
-          make target/linux/compile -j$(nproc) || { echo "[WARN] Kernel build failed → cleaning and retrying"; make target/linux/clean; make target/linux/compile -j$(nproc); }
+          make target/linux/compile -j"$(nproc)" || { echo "[WARN] Kernel build failed → cleaning and retrying"; make target/linux/clean; make target/linux/compile -j"$(nproc)"; }
 
       - name: "Auto-repair packages"
         working-directory: /mnt/openwrt
