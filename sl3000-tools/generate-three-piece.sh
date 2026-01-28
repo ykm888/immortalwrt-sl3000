@@ -23,6 +23,7 @@ cat > "$DTS" << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 
 /dts-v1/;
+
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/leds/common.h>
@@ -30,15 +31,15 @@ cat > "$DTS" << 'EOF'
 #include "mt7981.dtsi"
 
 / {
-	model = "SL-3000 eMMC bootstrap versions";
+	model = "SL3000 eMMC";
 	compatible = "sl,3000-emmc", "mediatek,mt7981";
 
 	aliases {
 		serial0 = &uart0;
-		led-boot = &status_red_led;
-		led-failsafe = &status_red_led;
-		led-running = &status_green_led;
-		led-upgrade = &status_blue_led;
+		led-boot = &statusredled;
+		led-failsafe = &statusredled;
+		led-running = &statusgreenled;
+		led-upgrade = &statusblueled;
 	};
 
 	chosen {
@@ -46,8 +47,9 @@ cat > "$DTS" << 'EOF'
 		stdout-path = "serial0:115200n8";
 	};
 
-	/* 内存 1GB */
+	/* 1GB RAM */
 	memory@40000000 {
+		device_type = "memory";
 		reg = <0 0x40000000 0 0x40000000>;
 	};
 
@@ -57,7 +59,6 @@ cat > "$DTS" << 'EOF'
 		button-mesh {
 			label = "mesh";
 			linux,code = <BTN_9>;
-			linux,input-type = <EV_SW>;
 			gpios = <&pio 0 GPIO_ACTIVE_LOW>;
 		};
 
@@ -71,17 +72,17 @@ cat > "$DTS" << 'EOF'
 	gpio-leds {
 		compatible = "gpio-leds";
 
-		status_red_led: led-0 {
+		statusredled: led-0 {
 			label = "red:status";
 			gpios = <&pio 10 GPIO_ACTIVE_LOW>;
 		};
 
-		status_green_led: led-1 {
+		statusgreenled: led-1 {
 			label = "green:status";
 			gpios = <&pio 11 GPIO_ACTIVE_LOW>;
 		};
 
-		status_blue_led: led-2 {
+		statusblueled: led-2 {
 			label = "blue:status";
 			gpios = <&pio 12 GPIO_ACTIVE_LOW>;
 		};
@@ -92,26 +93,22 @@ cat > "$DTS" << 'EOF'
 	status = "okay";
 
 	gmac0: mac@0 {
-		compatible = "mediatek,eth-mac";
 		reg = <0>;
 		phy-mode = "2500base-x";
 
 		fixed-link {
 			speed = <2500>;
 			full-duplex;
-			pause;
 		};
 	};
 
 	gmac1: mac@1 {
-		compatible = "mediatek,eth-mac";
 		reg = <1>;
 		phy-mode = "2500base-x";
 
 		fixed-link {
 			speed = <2500>;
 			full-duplex;
-			pause;
 		};
 	};
 
@@ -122,31 +119,16 @@ cat > "$DTS" << 'EOF'
 		switch@0 {
 			compatible = "mediatek,mt7531";
 			reg = <31>;
-			reset-gpios = <&pio 39 0>;
+			reset-gpios = <&pio 39 GPIO_ACTIVE_LOW>;
 
 			ports {
 				#address-cells = <1>;
 				#size-cells = <0>;
 
-				port@0 {
-					reg = <0>;
-					label = "lan1";
-				};
-
-				port@1 {
-					reg = <1>;
-					label = "lan2";
-				};
-
-				port@2 {
-					reg = <2>;
-					label = "lan3";
-				};
-
-				port@3 {
-					reg = <3>;
-					label = "wan";
-				};
+				port@0 { reg = <0>; label = "lan1"; };
+				port@1 { reg = <1>; label = "lan2"; };
+				port@2 { reg = <2>; label = "lan3"; };
+				port@3 { reg = <3>; label = "wan"; };
 
 				port@6 {
 					reg = <6>;
@@ -157,7 +139,6 @@ cat > "$DTS" << 'EOF'
 					fixed-link {
 						speed = <2500>;
 						full-duplex;
-						pause;
 					};
 				};
 			};
@@ -173,8 +154,8 @@ cat > "$DTS" << 'EOF'
 	no-sdio;
 	non-removable;
 	pinctrl-names = "default", "state_uhs";
-	pinctrl-0 = <&mmc0_pins_default>;
-	pinctrl-1 = <&mmc0_pins_uhs>;
+	pinctrl-0 = <&mmc0pinsdefault>;
+	pinctrl-1 = <&mmc0pinsuhs>;
 	vmmc-supply = <&reg_3p3v>;
 	status = "okay";
 
@@ -194,11 +175,11 @@ cat > "$DTS" << 'EOF'
 						#address-cells = <1>;
 						#size-cells = <1>;
 
-						eeprom_factory_0: eeprom@0 {
+						eepromfactory0: eeprom@0 {
 							reg = <0x0 0x1000>;
 						};
 
-						macaddr_factory_4: macaddr@4 {
+						macaddrfactory4: macaddr@4 {
 							compatible = "mac-base";
 							reg = <0x4 0x6>;
 							#nvmem-cell-cells = <1>;
@@ -210,48 +191,21 @@ cat > "$DTS" << 'EOF'
 	};
 };
 
-&pio {
-	mmc0_pins_default: mmc0-pins-default {
-		mux {
-			function = "flash";
-			groups = "emmc_45";
-		};
-	};
-
-	mmc0_pins_uhs: mmc0-pins-uhs {
-		mux {
-			function = "flash";
-			groups = "emmc_45";
-		};
-	};
-};
-
-&uart0 {
-	status = "okay";
-};
-
-&watchdog {
-	status = "okay";
-};
+&uart0 { status = "okay"; };
+&watchdog { status = "okay"; };
+&usb_phy { status = "okay"; };
+&xhci { status = "okay"; };
 
 &wifi {
-	nvmem-cells = <&eeprom_factory_0>;
+	nvmem-cells = <&eepromfactory0>;
 	nvmem-cell-names = "eeprom";
 	status = "okay";
 
 	band@1 {
 		reg = <1>;
-		nvmem-cells = <&macaddr_factory_4 1>;
+		nvmem-cells = <&macaddrfactory4 1>;
 		nvmem-cell-names = "mac-address";
 	};
-};
-
-&usb_phy {
-	status = "okay";
-};
-
-&xhci {
-	status = "okay";
 };
 EOF
 
@@ -266,8 +220,8 @@ ${TAB}DEVICE_MODEL := SL3000
 ${TAB}DEVICE_VARIANT := eMMC
 ${TAB}DEVICE_DTS := mt7981b-sl-3000-emmc
 ${TAB}DEVICE_DTS_DIR := ../dts
-${TAB}DEVICE_PACKAGES := kmod-usb3 kmod-fs-ext4 block-mount f2fs-tools \
-${TAB}${TAB}luci luci-base luci-i18n-base-zh-cn \
+${TAB}DEVICE_PACKAGES := kmod-usb3 kmod-fs-ext4 block-mount f2fs-tools \\
+${TAB}${TAB}luci luci-base luci-i18n-base-zh-cn \\
 ${TAB}${TAB}luci-app-eqos-mtk luci-app-mtwifi-cfg luci-app-turboacc-mtk luci-app-wrtbwmon
 ${TAB}IMAGES := sysupgrade.bin
 ${TAB}IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
@@ -301,6 +255,12 @@ CONFIG_PACKAGE_luci-app-eqos-mtk=y
 CONFIG_PACKAGE_luci-app-mtwifi-cfg=y
 CONFIG_PACKAGE_luci-app-turboacc-mtk=y
 CONFIG_PACKAGE_luci-app-wrtbwmon=y
+
+# Fix OpenWrt 24.10 SSL breakage
+CONFIG_PACKAGE_libustream-mbedtls=n
+CONFIG_PACKAGE_libustream-wolfssl=y
+CONFIG_PACKAGE_libwolfssl=y
+CONFIG_PACKAGE_libmbedtls=n
 EOF
 
 echo "=== Stage 4: Validation ==="
@@ -309,7 +269,7 @@ echo "=== Stage 4: Validation ==="
 [ -s "$MK" ]  || { echo "[FATAL] MK missing"; exit 1; }
 [ -s "$CFG" ] || { echo "[FATAL] CONFIG missing"; exit 1; }
 
-echo "=== Three-piece generation complete (1GB RAM, SL-3000 eMMC) ==="
+echo "=== Three-piece generation complete (SL3000 eMMC) ==="
 echo "[OUT] DTS: $DTS"
 echo "[OUT] MK : $MK"
 echo "[OUT] CFG: $CFG"
