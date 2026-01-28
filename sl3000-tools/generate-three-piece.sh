@@ -13,7 +13,6 @@ TAB=$'\t'
 DTS_DIR="$ROOT/target/linux/mediatek/dts"
 DTS="$DTS_DIR/mt7981b-sl-3000-emmc.dts"
 
-# --- 修复点：自动探测 MK 文件 ---
 IMAGE_DIR="$ROOT/target/linux/mediatek/image"
 if [ -f "$IMAGE_DIR/mt7981.mk" ]; then
     MK="$IMAGE_DIR/mt7981.mk"
@@ -288,4 +287,13 @@ echo "=== Stage 4: Validation ==="
 
 [ -s "$DTS" ] || { echo "[FATAL] DTS missing"; exit 1; }
 [ -s "$MK" ]  || { echo "[FATAL] MK missing"; exit 1; }
-[ -s "$CFG" ] || { echo "[FATAL] CONFIG
+[ -s "$CFG" ] || { echo "[FATAL] CONFIG missing"; exit 1; }
+
+grep -q "Device/sl-3000-emmc" "$MK" || { echo "[FATAL] MK missing device block"; exit 1; }
+grep -q "TARGET_DEVICES += sl-3000-emmc" "$MK" || { echo "[FATAL] MK missing TARGET_DEVICES"; exit 1; }
+
+echo "=== Three-piece generation complete (SL3000 eMMC) ==="
+echo "[OUT] DTS: $DTS"
+echo "[OUT] MK : $MK"
+echo "[OUT] CFG: $CFG"
+echo "[OUT] .config updated"
