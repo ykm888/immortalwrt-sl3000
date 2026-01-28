@@ -35,9 +35,9 @@ jobs:
       - name: Add Execute Permission
         run: chmod 755 sl3000-tools/*.sh
 
-      - name: Clone ImmortalWrt 24.10
+      - name: Clone OpenWrt 24.10
         run: |
-          git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git openwrt-src
+          git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt-src
 
       - name: Run Three-Piece Script
         working-directory: openwrt-src
@@ -49,7 +49,7 @@ jobs:
         run: |
           DTS_FILE="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
           MK_FILE="target/linux/mediatek/image/mt7981.mk"
-          CFG_FILE=".config"   # ⬅️ 新版脚本写入 .config
+          CFG_FILE=".config"
 
           echo "Verify DTS: $DTS_FILE"
           echo "Verify MK : $MK_FILE"
@@ -89,7 +89,7 @@ jobs:
           path: |
             openwrt-src/${{ env.DTS_FILE }}
             openwrt-src/${{ env.MK_FILE }}
-            openwrt-src/${{ env.CFG_FILE }}   # ⬅️ 上传 .config
+            openwrt-src/${{ env.CFG_FILE }}
             sl3000-run.log
           retention-days: 30
 
@@ -101,7 +101,8 @@ jobs:
           # 从 openwrt-src 拷回仓库
           cp openwrt-src/${{ env.DTS_FILE }} target/linux/mediatek/dts/
           cp openwrt-src/${{ env.MK_FILE }} target/linux/mediatek/image/
-          cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/sl3000-full-config.txt   # ⬅️ 保留旧文件名，但内容来自 .config
+          # 保持仓库里还是 sl3000-full-config.txt，但内容来自 .config
+          cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/sl3000-full-config.txt
 
           git add -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
           git add -f target/linux/mediatek/image/mt7981.mk
