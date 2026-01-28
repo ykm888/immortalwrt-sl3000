@@ -11,70 +11,136 @@ jobs:
   rebuild-sl3000-three-piece:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
 
     steps:
-      - name: Checkout Repository
+      - name: 📥 Checkout Repository (Full History)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Ensure Script Executable
+      - name: ⚙️ Ensure Generation Script Executable
         run: chmod +x sl3000-tools/generate-three-piece.sh
 
-      - name: Clone OpenWrt 24.10
-        run: |
-          git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt-src
+      - name: 🗄️ Cache OpenWrt 24.10 Source (Reduce Redownload)
+        uses: actions/cache@v3
+        id: cache-openwrt-src
+        with:
+          path: openwrt-src
+          key: openwrt-2410-src-filogic-mt7981
+          restore-keys: |
+            openwrt-2410-src-
 
-      # 🟦 修复 1：确保 openwrt-src 可写
-      - name: Fix Permissions
+      - name: 📦 Clone OpenWrt 24.10 (3x Retry + Integrity Check)
+        if: steps.cache-openwrt-src.outputs.cache-hit != 'true'
+        run: |
+          RETRIES=3
+          COUNT=0
+          # 3次重试拉取源码，网络波动自动重连
+          until [ $COUNT -ge $RETRIES ]; do
+            rm -rf openwrt-src && git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt-src && break
+            COUNT=$((COUNT+1))
+            echo "Clone failed, retry $COUNT/$RETRIES... (sleep 5s)"
+            sleep 5
+          done
+          # 拉取失败直接终止
+          if [ $COUNT -ge $RETRIES ]; then
+            echo "❌ Fatal: Clone OpenWrt 24.10 failed after $RETRIES retries"
+            exit 1
+          fi
+          # 校验核心文件，防止源码目录结构变更导致后续失败
+          if [ ! -f "openwrt-src/target/linux/mediatek/image/filogic.mk" ]; then
+            echo "❌ Fatal: OpenWrt 24.10 missing filogic.mk (directory structure changed)"
+            exit 1
+          fi
+          echo "✅ OpenWrt 24.10 cloned and verified successfully"
+
+      - name: 🔧 Fix OpenWrt Source Directory Permissions (Writable)
         run: chmod -R 755 openwrt-src
 
-      # 🟦 修复 2：删除可能存在的空 .config
-      - name: Remove Pre-existing .config
+      - name: 🧹 Clean Pre-existing Empty Config (Avoid Overwrite)
         working-directory: openwrt-src
         run: rm -f .config
 
-      # 🟦 修复 3：用绝对路径执行脚本，保证 pwd = openwrt-src
-      - name: Run Three-Piece Script
+      - name: 🚀 Run Three-Piece Generation Script (Strict Env)
         working-directory: openwrt-src
         run: |
+          # 绝对路径执行脚本，强制源码根目录环境
           bash $GITHUB_WORKSPACE/sl3000-tools/generate-three-piece.sh
-
-          # 立即验证 .config 是否生成
-          if [ ! -s ".config" ]; then
-            echo "❌ .config not generated after script"
+          SCRIPT_EXIT_CODE=$?
+          # 校验脚本执行返回码，非0直接终止
+          if [ $SCRIPT_EXIT_CODE -ne 0 ]; then
+            echo "❌ Fatal: Generation script exited with code $SCRIPT_EXIT_CODE"
             exit 1
           fi
-          echo "✅ .config generated"
+          # 即时验证.config生成结果
+          if [ ! -s ".config" ]; then
+            echo "❌ Fatal: .config not generated or empty after script run"
+            exit 1
+          fi
+          echo "✅ Generation script executed successfully, .config generated"
 
-      - name: Strict Verify Three-Piece
+      - name: ✅ Strict Three-Piece Validation (Exist+Content+Unique)
         working-directory: openwrt-src
         run: |
+          # 定义核心文件路径
           DTS_FILE="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
           MK_FILE="target/linux/mediatek/image/filogic.mk"
           CFG_FILE=".config"
-
-          [ -s "$DTS_FILE" ] || { echo "❌ DTS missing or empty"; exit 1; }
-          [ -s "$MK_FILE" ]  || { echo "❌ MK missing or empty"; exit 1; }
-          [ -s "$CFG_FILE" ] || { echo "❌ CONFIG missing or empty"; exit 1; }
-
+          # 校验文件存在且非空
+          [ -s "$DTS_FILE" ] || { echo "❌ Fatal: DTS missing or empty"; exit 1; }
+          [ -s "$MK_FILE" ]  || { echo "❌ Fatal: MK missing or empty"; exit 1; }
+          [ -s "$CFG_FILE" ] || { echo "❌ Fatal: CONFIG missing or empty"; exit 1; }
+          # 校验核心配置项生效
           grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CFG_FILE" \
-            || { echo "❌ CONFIG missing device enable"; exit 1; }
-
+            || { echo "❌ Fatal: CONFIG missing device enable config"; exit 1; }
           grep -q "define Device/sl_3000-emmc" "$MK_FILE" \
-            || { echo "❌ MK missing sl_3000-emmc segment"; exit 1; }
-
+            || { echo "❌ Fatal: MK missing sl_3000-emmc device segment"; exit 1; }
+          # 校验MK设备段唯一，防止重复添加
+          MK_SEG_COUNT=$(grep -c "define Device/sl_3000-emmc" "$MK_FILE")
+          if [ $MK_SEG_COUNT -ne 1 ]; then
+            echo "❌ Fatal: MK has $MK_SEG_COUNT device segments (expected 1, duplicate found)"
+            exit 1
+          fi
+          # 传递文件路径到环境变量
           echo "DTS_FILE=$DTS_FILE" >> $GITHUB_ENV
           echo "MK_FILE=$MK_FILE" >> $GITHUB_ENV
           echo "CFG_FILE=$CFG_FILE" >> $GITHUB_ENV
+          echo "✅ All three-piece files validated successfully (exist+content+unique)"
 
-      - name: Upload Three-Piece
+      - name: 📤 Upload Three-Piece + Execution Log (Artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-three-piece-2410
+          name: sl3000-three-piece-2410-mt7981
           path: |
             openwrt-src/${{ env.DTS_FILE }}
             openwrt-src/${{ env.MK_FILE }}
             openwrt-src/${{ env.CFG_FILE }}
+            $GITHUB_WORKSPACE/sl3000-tools/sl3000-three-piece.log
           retention-days: 30
+          if-no-files-found: error
+
+      - name: 📝 Sync Three-Piece to Repository (Auto Commit/Push)
+        if: success()
+        run: |
+          # 创建仓库内三件套持久化目录
+          mkdir -p sl3000-three-piece/24.10
+          # 复制最新生成的三件套到仓库目录
+          cp openwrt-src/${{ env.DTS_FILE }} sl3000-three-piece/24.10/
+          cp openwrt-src/${{ env.MK_FILE }} sl3000-three-piece/24.10/
+          cp openwrt-src/${{ env.CFG_FILE }} sl3000-three-piece/24.10/
+          # 配置Git提交信息
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # 仅当有变更时提交，避免空提交
+          git add sl3000-three-piece/
+          git commit -m "chore: update SL3000 three-piece (24.10/mt7981) [auto-workflow]" || {
+            echo "✅ No changes to three-piece, skip commit"
+            exit 0
+          }
+          # 推送变更到仓库
+          git push origin $GITHUB_REF_NAME
+          echo "✅ Three-piece synced to repository successfully"
