@@ -1,16 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
-# 基础校验：是否在OpenWrt/ImmortalWrt根目录
+# 基础校验：是否在ImmortalWrt 24.10根目录（校验filogic平台+核心文件）
 if [ ! -d "target/linux/mediatek/filogic" ] || [ ! -f "Makefile" ]; then
-    echo "FATAL: not in ImmortalWrt 24.10 root (missing filogic platform)"
+    echo "FATAL: not in ImmortalWrt 24.10 root (missing filogic platform or Makefile)"
     exit 1
 fi
 
 ROOT="$(pwd)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# 日志初始化：保留原日志路径，终端+日志双输出
+# 日志初始化：终端+日志文件双输出，保留原日志路径
 LOG="$SCRIPT_DIR/sl3000-three-piece.log"
 : > "$LOG"
 exec > >(tee -a "$LOG") 2>&1
@@ -20,21 +20,17 @@ echo "[ROOT] $ROOT"
 echo "[SCRIPT_DIR] $SCRIPT_DIR"
 echo
 
-# 1. 生成DTS文件：修正为ImmortalWrt24.10 filogic官方路径
+# 1. 生成DTS文件：ImmortalWrt24.10 filogic官方路径
 DTS_DIR="$ROOT/target/linux/mediatek/filogic/dts"
 DTS="$DTS_DIR/mt7981b-sl-3000-emmc.dts"
 mkdir -p "$DTS_DIR"
 
-# 保留你原脚本的DTS内容，无多余修改
 cat > "$DTS" << 'EOF'
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
-
 /dts-v1/;
-
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/leds/common.h>
-
 #include "mt7981.dtsi"
 
 / {
@@ -64,21 +60,21 @@ EOF
 echo "[DTS] generated: $DTS"
 echo
 
-# 2. 写入MK配置：修正为ImmortalWrt24.10 filogic官方Makefile路径
+# 2. 写入MK配置：核心修复→适配官方mt7981.mk（方案一关键修改）
 IMAGE_DIR="$ROOT/target/linux/mediatek/filogic/image"
-MK="$IMAGE_DIR/Makefile"
+MK="$IMAGE_DIR/mt7981.mk"  # 修复：Makefile → mt7981.mk
 
 if [ ! -f "$MK" ]; then
-  echo "FATAL: filogic Makefile not found at $MK"
+  echo "FATAL: filogic mt7981.mk not found at $MK"
   exit 1
 fi
 
-# 兼容修改：sed无匹配时不报错，避免脚本终止
+# sed兼容处理：无匹配时不报错，避免set -e终止脚本
 DEVICE_NAME="sl_3000-emmc"
 sed -i '/Device\/'${DEVICE_NAME}'/,/endef/d' "$MK" 2>/dev/null || true
 sed -i '/TARGET_DEVICES += '${DEVICE_NAME}'/d' "$MK" 2>/dev/null || true
 
-# 保留你原脚本的设备配置，仅修正变量兼容（$->\$）
+# 追加SL3000 eMMC设备配置（原配置不变，Makefile变量转义正常）
 cat >> "$MK" << 'EOF'
 
 define Device/sl_3000-emmc
@@ -99,7 +95,7 @@ EOF
 echo "[MK] updated: $MK"
 echo
 
-# 3. 生成.config：修正为ImmortalWrt24.10 filogic平台配置项
+# 3. 生成.config：适配ImmortalWrt24.10 filogic平台配置项
 CFG="$ROOT/.config"
 
 cat > "$CFG" << 'EOF'
@@ -125,14 +121,16 @@ EOF
 echo "[CONFIG] written: $CFG"
 echo
 
-# 4. 保留原脚本的校验逻辑，仅修正路径和配置项
-[ -s "$DTS" ] || { echo "FATAL: DTS missing"; exit 1; }
-[ -s "$MK" ]  || { echo "FATAL: MK missing"; exit 1; }
-[ -s "$CFG" ] || { echo "FATAL: CONFIG missing"; exit 1; }
+# 4. 全量校验：路径+配置项全对齐，确保文件有效
+[ -s "$DTS" ] || { echo "FATAL: DTS missing or empty"; exit 1; }
+[ -s "$MK" ]  || { echo "FATAL: MK missing or empty"; exit 1; }
+[ -s "$CFG" ] || { echo "FATAL: CONFIG missing or empty"; exit 1; }
 
+# 校验MK核心配置
 grep -q "define Device/sl_3000-emmc" "$MK" || { echo "FATAL: MK device block missing"; exit 1; }
 grep -q "TARGET_DEVICES += sl3000-emmc" "$MK" || { echo "FATAL: MK TARGET_DEVICES missing"; exit 1; }
-# 修正CONFIG校验项，对齐filogic平台
+
+# 校验CONFIG核心配置（filogic平台）
 grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_sl_3000-emmc=y' "$CFG" || { echo "FATAL: CONFIG device enable missing"; exit 1; }
 
 echo "=== SL3000 three-piece generation complete ==="
