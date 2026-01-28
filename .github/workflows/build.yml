@@ -1,4 +1,4 @@
-name: "Build OpenWrt 24.10 SL3000 eMMC (/mnt Build)"
+name: "Build OpenWrt 24.10 SL3000 eMMC (Full Self-Heal /mnt)"
 
 on:
   workflow_dispatch:
@@ -29,10 +29,10 @@ jobs:
           sudo apt-get remove -y --purge azure-cli google-cloud-sdk dotnet powershell mono mysql-server php android snapd || true
           sudo apt-get autoremove -y --purge
           sudo apt-get clean
-          sudo rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man
+          sudo rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man || true
           df -h
 
-      - name: "Prepare /mnt"
+      - name: "Prepare /mnt build directory"
         run: |
           sudo chown -R runner:runner /mnt
           sudo chmod -R 755 /mnt
@@ -63,16 +63,19 @@ jobs:
         working-directory: /mnt/openwrt
         run: |
           rm -rf dl package/feeds
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          ./scripts/feeds update -a || { echo "[WARN] feeds update failed → retrying"; rm -rf package/feeds; ./scripts/feeds update -a; }
+          ./scripts/feeds install -a || { echo "[WARN] feeds install failed → retrying"; ./scripts/feeds install -a; }
 
-      - name: "Cache downloads & ccache"
+      - name: "Cache downloads & build dirs"
         uses: actions/cache@v4
         with:
           path: |
             /mnt/openwrt/dl
+            /mnt/openwrt/build_dir
+            /mnt/openwrt/staging_dir
+            /mnt/openwrt/tmp
             /mnt/openwrt/.ccache
-          key: ${{ runner.os }}-sl3000-2410
+          key: ${{ runner.os }}-sl3000-2410-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-sl3000-2410
 
@@ -86,15 +89,14 @@ jobs:
           OWRT=/mnt/openwrt
           REPO=repo
 
-          # DTS (24.10 path)
           cp "$REPO/target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts" \
              "$OWRT/target/linux/mediatek/dts/"
 
-          # MK (24.10 path)
-          cp "$REPO/target/linux/mediatek/image/mt7981.mk" \
-             "$OWRT/target/linux/mediatek/image/mt7981.mk"
+          # MK 追加而非覆盖
+          if ! grep -q "Device/sl3000-emmc" "$OWRT/target/linux/mediatek/image/mt7981.mk"; then
+            cat "$REPO/target/linux/mediatek/image/mt7981.mk" >> "$OWRT/target/linux/mediatek/image/mt7981.mk"
+          fi
 
-          # CONFIG
           cp "$REPO/sl3000-tools/sl3000-full-config.txt" "$OWRT/.config"
 
       - name: "Finalize defconfig & verify SL3000"
@@ -104,13 +106,38 @@ jobs:
           echo '===== FINAL CONFIG (grep sl3000-emmc) ====='
           grep -n sl3000-emmc .config || true
 
+      - name: "Auto-repair toolchain"
+        working-directory: /mnt/openwrt
+        run: |
+          make toolchain/install -j$(nproc) || { echo "[WARN] Toolchain failed → cleaning and retrying"; make toolchain/clean; make toolchain/install -j$(nproc); }
+
+      - name: "Auto-repair kernel"
+        working-directory: /mnt/openwrt
+        run: |
+          make target/linux/compile -j$(nproc) || { echo "[WARN] Kernel build failed → cleaning and retrying"; make target/linux/clean; make target/linux/compile -j$(nproc); }
+
+      - name: "Auto-repair packages"
+        working-directory: /mnt/openwrt
+        run: |
+          make package/compile V=s || { echo "[WARN] package compile failed → cleaning and retrying"; make package/clean; make package/compile V=s; }
+
+      - name: "Auto-repair image build"
+        working-directory: /mnt/openwrt
+        run: |
+          make target/image/compile V=s || { echo "[WARN] image build failed → cleaning and retrying"; make target/image/clean; make target/image/compile V=s; }
+
+      - name: "Auto-repair world build"
+        working-directory: /mnt/openwrt
+        run: |
+          make V=s || { echo "[WARN] world build failed → cleaning and retrying"; make package/clean; make target/clean; make V=s; }
+
       - name: "Build SL3000 eMMC firmware (24.10)"
         working-directory: /mnt/openwrt
         env:
           SKIPTARGETCHECK: "1"
           FORCE: "1"
         run: |
-          make download -j8 || echo '[WARN] download failed (non-fatal)'
+          make download -j8 || { echo "[WARN] download failed → cleaning dl cache"; rm -rf dl/*; make download -j8; }
 
           for i in 1 2; do
             make -j"$(nproc)" V=s 2>&1 | tee firmware-build.log && break
@@ -140,20 +167,13 @@ jobs:
           name: openwrt-2410-sl3000-emmc-firmware
           path: |
             /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/initramfs.bin
+            /mnt/openwrt/bin/targets/mediatek/mt7981/*factory.bin
+            /mnt/openwrt/bin/targets/mediatek/mt7981/*initramfs.bin
+            /mnt/openwrt/bin/targets/mediatek/mt7981/*combined*.img.gz
           retention-days: 30
 
       - name: "Auto Release firmware (24.10)"
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tagname: sl3000-emmc-openwrt-2410-${{ github.run_number }}-${{ github.run_id }}
-          name: SL3000 EMMC OpenWrt 24.10 #${{ github.run_number }}
-          body: |
-            OpenWrt 24.10 stable
-            Target: SL3000 (MT7981B eMMC)
-            Three-piece set (DTS/MK/CONFIG)
-          files: |
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/initramfs.bin
-          prerelease: false
+          tagname: sl3000-emmc-openwrt-2410-${
