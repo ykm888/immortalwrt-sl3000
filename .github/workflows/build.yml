@@ -84,24 +84,38 @@ jobs:
           OWRT=/mnt/openwrt
           REPO=repo
 
-          # DTS
+          mkdir -p "$OWRT/target/linux/mediatek/dts"
           cp "$REPO/target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts" \
              "$OWRT/target/linux/mediatek/dts/"
 
-          # MK 追加而非覆盖
-          if ! grep -q "Device/sl3000-emmc" "$OWRT/target/linux/mediatek/image/mt7981.mk"; then
+          if ! grep -q "Device/sl-3000-emmc" "$OWRT/target/linux/mediatek/image/mt7981.mk"; then
             cat "$REPO/target/linux/mediatek/image/mt7981.mk" >> "$OWRT/target/linux/mediatek/image/mt7981.mk"
           fi
 
-          # CONFIG
           cp "$REPO/sl3000-tools/sl3000-full-config.txt" "$OWRT/.config"
+
+      - name: "Verify SL3000 three-piece registration"
+        working-directory: /mnt/openwrt
+        run: |
+          echo "=== Check DTS ==="
+          test -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts || { echo "[FATAL] DTS missing"; exit 1; }
+          grep -q "mt7981b-sl-3000-emmc" target/linux/mediatek/image/mt7981.mk || { echo "[FATAL] DTS not referenced in MK"; exit 1; }
+
+          echo "=== Check MK ==="
+          grep -q "Device/sl-3000-emmc" target/linux/mediatek/image/mt7981.mk || { echo "[FATAL] MK missing device definition"; exit 1; }
+          grep -q "TARGET_DEVICES.*sl-3000-emmc" target/linux/mediatek/image/mt7981.mk || { echo "[FATAL] MK missing TARGET_DEVICES entry"; exit 1; }
+
+          echo "=== Check CONFIG ==="
+          grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl-3000-emmc=y" .config || { echo "[FATAL] CONFIG missing device enable"; exit 1; }
+
+          echo "[OK] SL3000 three-piece set verified"
 
       - name: "Finalize defconfig & verify SL3000"
         working-directory: /mnt/openwrt
         run: |
           make defconfig
-          echo '===== FINAL CONFIG (grep sl3000-emmc) ====='
-          grep -n sl3000-emmc .config || true
+          echo '===== FINAL CONFIG (grep sl-3000-emmc) ====='
+          grep -n sl-3000-emmc .config || true
 
       - name: "Auto-repair toolchain"
         working-directory: /mnt/openwrt
@@ -165,7 +179,7 @@ jobs:
           path: |
             /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
             /mnt/openwrt/bin/targets/mediatek/mt7981/*factory.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*initramfs.bin
+            /mnt/openwrt/bin/targets/mediatek/mt7981/*initramfs*.bin
             /mnt/openwrt/bin/targets/mediatek/mt7981/*combined*.img.gz
           retention-days: 30
 
@@ -184,6 +198,6 @@ jobs:
           files: |
             /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
             /mnt/openwrt/bin/targets/mediatek/mt7981/*factory.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*initramfs.bin
+            /mnt/openwrt/bin/targets/mediatek/mt7981/*initramfs*.bin
             /mnt/openwrt/bin/targets/mediatek/mt7981/*combined*.img.gz
           prerelease: false
