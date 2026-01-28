@@ -102,13 +102,15 @@ jobs:
           [ -s "$DTS" ] || { echo "[FATAL] DTS missing: $DTS"; exit 1; }
 
           echo "=== Check MK ==="
+          # 🟩 修复 1：加上下划线
           grep -q "define Device/sl_3000-emmc" "$MK" || { echo "[FATAL] MK missing Device/sl_3000-emmc"; exit 1; }
-          grep -q "TARGET_DEVICES += sl_3000-emmc" "$MK" || { echo "[FATAL] MK missing TARGET_DEVICES"; exit 1; }
+          grep -q "TARGETDEVICES += sl3000-emmc" "$MK" || { echo "[FATAL] MK missing TARGET_DEVICES"; exit 1; }
 
           echo "=== Check CONFIG ==="
+          # 🟩 修复 2：对齐脚本生成的 key
           if ! grep -q '^CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y' "$CFG"; then
             echo "[FATAL] CONFIG missing device enable (mt7981 / sl_3000-emmc)"
-            grep '^CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_' "$CFG" || true
+            grep '^CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE' "$CFG" || true
             exit 1
           fi
 
@@ -129,7 +131,7 @@ jobs:
         working-directory: /mnt/openwrt
         run: |
           make package/symlinks
-          ENABLED_PKGS=$(grep '^CONFIG_PACKAGE_.*=y' .config | sed 's/^CONFIG_PACKAGE_//;s/=y//' | sort -u)
+          ENABLEDPKGS=$(grep '^CONFIGPACKAGE.*=y' .config | sed 's/^CONFIGPACKAGE_//;s/=y//' | sort -u)
 
           for pkgdir in package/*; do
             [ -d "$pkgdir" ] || continue
@@ -223,20 +225,20 @@ jobs:
           path: |
             /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
             /mnt/openwrt/bin/targets/mediatek/mt7981/*factory.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*initramfs*.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*combined*.img.gz
+            /mnt/openwrt/bin/targets/mediatek/mt7981/initramfs.bin
+            /mnt/openwrt/bin/targets/mediatek/mt7981/combined.img.gz
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          tagname: sl3000-2410-${{ github.run_number }}-${{ github.run_id }}
+          tagname: sl3000-2410-${{ github.runnumber }}-${{ github.runid }}
           name: SL3000 OpenWrt 24.10
           draft: false
           prerelease: false
           files: |
             /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
             /mnt/openwrt/bin/targets/mediatek/mt7981/*factory.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*initramfs*.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*combined*.img.gz
+            /mnt/openwrt/bin/targets/mediatek/mt7981/initramfs.bin
+            /mnt/openwrt/bin/targets/mediatek/mt7981/combined.img.gz
             /mnt/openwrt/firmware-build.log
