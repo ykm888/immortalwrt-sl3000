@@ -91,7 +91,14 @@ jobs:
         working-directory: /mnt/openwrt
         run: |
           DTS=target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
-          MK=target/linux/mediatek/image/mt7981.mk
+
+          # ⭐ 自动适配 MK 文件（24.10=filogic.mk，25.xx=mt7981.mk）
+          if [ -f target/linux/mediatek/image/mt7981.mk ]; then
+            MK=target/linux/mediatek/image/mt7981.mk
+          else
+            MK=target/linux/mediatek/image/filogic.mk
+          fi
+
           CFG=.config
 
           echo "=== Check DTS ==="
