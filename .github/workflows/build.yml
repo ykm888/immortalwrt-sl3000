@@ -90,7 +90,6 @@ jobs:
         run: |
           DTS=target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
 
-          # 自动适配 MK（24.10=filogic.mk，25.xx=mt7981.mk）
           if [ -f target/linux/mediatek/image/mt7981.mk ]; then
             MK=target/linux/mediatek/image/mt7981.mk
           else
@@ -103,14 +102,12 @@ jobs:
           [ -s "$DTS" ] || { echo "[FATAL] DTS missing: $DTS"; exit 1; }
 
           echo "=== Check MK ==="
-          grep -q "Device/sl-3000-emmc" "$MK" || { echo "[FATAL] MK missing Device/sl-3000-emmc"; exit 1; }
+          grep -q "define Device/sl-3000-emmc" "$MK" || { echo "[FATAL] MK missing Device/sl-3000-emmc"; exit 1; }
           grep -q "TARGET_DEVICES += sl-3000-emmc" "$MK" || { echo "[FATAL] MK missing TARGET_DEVICES"; exit 1; }
 
           echo "=== Check CONFIG ==="
-          # ⭐ 一次性彻底解决：不再依赖具体符号名，只要 sl3000 设备被启用即可
           if ! grep -Eq '^CONFIG_TARGET_DEVICE_.*sl.*3000.*=y' "$CFG"; then
             echo "[FATAL] CONFIG missing device enable"
-            echo "=== Dump CONFIG_TARGET_DEVICE lines ==="
             grep '^CONFIG_TARGET_DEVICE_' "$CFG" || true
             exit 1
           fi
@@ -234,7 +231,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         with:
           tag_name: sl3000-2410-${{ github.run_number }}-${{ github.run_id }}
-          name: SL3000 OpenWrt 24.10 #2410-${{ github.run_number }}
+          name: SL3000 OpenWrt 24.10
           draft: false
           prerelease: false
           files: |
