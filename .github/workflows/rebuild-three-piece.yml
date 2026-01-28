@@ -49,7 +49,7 @@ jobs:
         run: |
           DTS_FILE="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
           MK_FILE="target/linux/mediatek/image/mt7981.mk"
-          CFG_FILE="sl3000-tools/sl3000-full-config.txt"   # ✅ 这里：相对 openwrt-src
+          CFG_FILE=".config"   # ⬅️ 新版脚本写入 .config
 
           echo "Verify DTS: $DTS_FILE"
           echo "Verify MK : $MK_FILE"
@@ -62,12 +62,16 @@ jobs:
 
           if [ ! -s "$CFG_FILE" ]; then
             echo "❌ CONFIG missing or empty"
-            ls -R .
             exit 1
           fi
 
           if ! grep -q "sl-3000-emmc" "$MK_FILE"; then
             echo "❌ MK missing SL3000 segment"
+            exit 1
+          fi
+
+          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl-3000-emmc=y" "$CFG_FILE"; then
+            echo "❌ CONFIG missing device enable"
             exit 1
           fi
 
@@ -85,7 +89,7 @@ jobs:
           path: |
             openwrt-src/${{ env.DTS_FILE }}
             openwrt-src/${{ env.MK_FILE }}
-            openwrt-src/${{ env.CFG_FILE }}   # ✅ 这里：从 openwrt-src 拿 config
+            openwrt-src/${{ env.CFG_FILE }}   # ⬅️ 上传 .config
             sl3000-run.log
           retention-days: 30
 
@@ -97,7 +101,7 @@ jobs:
           # 从 openwrt-src 拷回仓库
           cp openwrt-src/${{ env.DTS_FILE }} target/linux/mediatek/dts/
           cp openwrt-src/${{ env.MK_FILE }} target/linux/mediatek/image/
-          cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/   # ✅ 这里：把 config 拷回仓库
+          cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/sl3000-full-config.txt   # ⬅️ 保留旧文件名，但内容来自 .config
 
           git add -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
           git add -f target/linux/mediatek/image/mt7981.mk
