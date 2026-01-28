@@ -55,8 +55,7 @@ jobs:
 
       - name: Initial feeds update
         working-directory: /mnt/openwrt
-        run: |
-          ./scripts/feeds update -a
+        run: ./scripts/feeds update -a
 
       - name: Lock feeds to openwrt-24.10
         working-directory: /mnt/openwrt
@@ -84,15 +83,14 @@ jobs:
 
       - name: Base defconfig
         working-directory: /mnt/openwrt
-        run: |
-          make defconfig
+        run: make defconfig
 
       - name: Validate SL3000 three-piece set
         working-directory: /mnt/openwrt
         run: |
           DTS=target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
 
-          # ⭐ 自动适配 MK 文件（24.10=filogic.mk，25.xx=mt7981.mk）
+          # ⭐ 自动适配 MK（24.10=filogic.mk，25.xx=mt7981.mk）
           if [ -f target/linux/mediatek/image/mt7981.mk ]; then
             MK=target/linux/mediatek/image/mt7981.mk
           else
@@ -109,7 +107,12 @@ jobs:
           grep -q "TARGET_DEVICES += sl-3000-emmc" "$MK" || { echo "[FATAL] MK missing TARGET_DEVICES"; exit 1; }
 
           echo "=== Check CONFIG ==="
-          grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl-3000-emmc=y" "$CFG" || { echo "[FATAL] CONFIG missing device enable"; exit 1; }
+          # ⭐ 兼容 defconfig 自动把 - 改成 _
+          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl-3000-emmc=y" "$CFG" \
+          && ! grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000_emmc=y" "$CFG"; then
+            echo "[FATAL] CONFIG missing device enable"
+            exit 1
+          fi
 
       - name: Cache build dirs
         uses: actions/cache@v4
@@ -204,8 +207,8 @@ jobs:
       - name: List firmware outputs
         working-directory: /mnt/openwrt
         run: |
-          ls -lh bin/targets/mediatek/mt7981 || {
-            echo "[WARN] no firmware found under bin/targets/mediatek/mt7981"
+          ls -lh bin/targets/mediatek/filogic || {
+            echo "[WARN] no firmware found under bin/targets/mediatek/filogic"
             exit 1
           }
 
@@ -220,10 +223,10 @@ jobs:
         with:
           name: sl3000-2410-firmware
           path: |
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*factory.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*initramfs*.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*combined*.img.gz
+            /mnt/openwrt/bin/targets/mediatek/filogic/*sysupgrade.bin
+            /mnt/openwrt/bin/targets/mediatek/filogic/*factory.bin
+            /mnt/openwrt/bin/targets/mediatek/filogic/*initramfs*.bin
+            /mnt/openwrt/bin/targets/mediatek/filogic/*combined*.img.gz
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -234,8 +237,8 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*factory.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*initramfs*.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*combined*.img.gz
+            /mnt/openwrt/bin/targets/mediatek/filogic/*sysupgrade.bin
+            /mnt/openwrt/bin/targets/mediatek/filogic/*factory.bin
+            /mnt/openwrt/bin/targets/mediatek/filogic/*initramfs*.bin
+            /mnt/openwrt/bin/targets/mediatek/filogic/*combined*.img.gz
             /mnt/openwrt/firmware-build.log
