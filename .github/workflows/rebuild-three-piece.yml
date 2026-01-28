@@ -27,7 +27,8 @@ jobs:
       - name: Check Script Exists
         run: |
           if [ ! -f "sl3000-tools/generate-three-piece.sh" ]; then
-            echo "❌ Script not found"
+            echo "❌ Script not found: sl3000-tools/generate-three-piece.sh"
+            ls -R
             exit 1
           fi
           echo "✅ Script found"
@@ -42,7 +43,16 @@ jobs:
       - name: Run Three-Piece Script
         working-directory: openwrt-src
         run: |
+          echo "=== PWD ==="
+          pwd
+          echo "=== LS ==="
+          ls
+          echo "=== Run generate-three-piece.sh ==="
           bash -x ../sl3000-tools/generate-three-piece.sh 2>&1 | tee $GITHUB_WORKSPACE/sl3000-run.log
+          echo "=== After script: .config status ==="
+          ls -l .config || echo "no .config"
+          echo "=== .config head ==="
+          head -n 40 .config || echo "cannot read .config"
 
       - name: Strict Verify Three-Piece
         working-directory: openwrt-src
@@ -55,22 +65,35 @@ jobs:
           echo "Verify MK : $MK_FILE"
           echo "Verify CFG: $CFG_FILE"
 
-          [ -s "$DTS_FILE" ] || { echo "❌ DTS missing or empty"; exit 1; }
-          [ -s "$CFG_FILE" ] || { echo "❌ CONFIG missing or empty"; exit 1; }
-
-          # ⭐ 正确的 mt7981 CONFIG 校验
-          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CFG_FILE"; then
-            echo "❌ CONFIG missing device enable (mt7981 / sl_3000-emmc)"
+          if [ ! -s "$DTS_FILE" ]; then
+            echo "❌ DTS missing or empty: $DTS_FILE"
             exit 1
           fi
 
+          if [ ! -s "$CFG_FILE" ]; then
+            echo "❌ CONFIG missing or empty: $CFG_FILE"
+            echo "=== DEBUG: .config content (if any) ==="
+            ls -l "$CFG_FILE" || true
+            head -n 40 "$CFG_FILE" || true
+            exit 1
+          fi
+
+          echo "=== Check CONFIG for device enable ==="
+          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CFG_FILE"; then
+            echo "❌ CONFIG missing device enable (mt7981 / sl_3000-emmc)"
+            echo "=== grep CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_ ==="
+            grep '^CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_' "$CFG_FILE" || true
+            exit 1
+          fi
+
+          echo "=== Check MK segment ==="
           if ! grep -q "define Device/sl_3000-emmc" "$MK_FILE"; then
             echo "❌ MK missing sl_3000-emmc segment"
             exit 1
           fi
 
-          echo "=== SL3000 MK Segment ==="
-          grep -A20 "define Device/sl_3000-emmc" "$MK_FILE"
+          echo "=== SL3000 MK Segment Preview ==="
+          grep -A20 "define Device/sl_3000-emmc" "$MK_FILE" || true
 
           echo "DTS_FILE=$DTS_FILE" >> $GITHUB_ENV
           echo "MK_FILE=$MK_FILE" >> $GITHUB_ENV
