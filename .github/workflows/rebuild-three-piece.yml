@@ -1,16 +1,15 @@
-name: build-sl3000-openwrt-2410
+name: generate-sl3000-three-piece
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
-  build-sl3000-2410:
+  generate-three-piece:
     runs-on: ubuntu-22.04
-    timeout-minutes: 360
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repo
@@ -18,82 +17,35 @@ jobs:
         with:
           path: repo
 
-      - name: Prepare disk space
+      - name: Prepare workspace
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache
-          sudo apt-get update
-          sudo apt-get remove -y '^aspnetcore-.' '^dotnet-.' '^llvm-.' 'php.' '^mongodb-.' '^mysql-.' '^postgresql-.' '^google-.' '^azure-.*' '^powershell$' || true
-          sudo apt-get autoremove -y
-          sudo apt-get clean
-          sudo rm -rf /usr/share/man /usr/share/doc /usr/share/doc-base
-
-      - name: Prepare /mnt/openwrt
-        run: |
+          sudo rm -rf /mnt/openwrt
           sudo mkdir -p /mnt/openwrt
-          sudo chown -R $USER:$USER /mnt
-          mkdir -p /mnt/openwrt
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential libncurses5-dev zlib1g-dev gawk flex gettext git-core \
-            libssl-dev rsync ccache unzip python3 python3-distutils python3-setuptools \
-            subversion swig libncursesw5-dev libelf-dev ecj fastjar java-propose-classpath \
-            libglib2.0-dev libfuse-dev liblzma-dev pkg-config libusb-1.0-0-dev \
-            libudev-dev libpci-dev libreadline-dev libyaml-dev libjson-c-dev \
-            bison bc
+          sudo chown -R $USER:$USER /mnt/openwrt
 
       - name: Clone OpenWrt 24.10
         run: |
-          rm -rf /mnt/openwrt
-          git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git /mnt/openwrt
+          git clone --depth=1 -b openwrt-24.10 \
+            https://github.com/openwrt/openwrt.git /mnt/openwrt
 
-      - name: Initial feeds update
-        working-directory: /mnt/openwrt
-        run: ./scripts/feeds update -a
+      - name: Ensure script executable
+        run: chmod +x repo/sl3000-tools/generate-three-piece.sh
 
-      - name: Lock feeds to openwrt-24.10
-        working-directory: /mnt/openwrt
-        run: |
-          for f in packages luci routing telephony; do
-            if [ -d "feeds/$f/.git" ]; then
-              cd "feeds/$f"
-              git fetch --all
-              git checkout openwrt-24.10 || true
-              cd - >/dev/null
-            fi
-          done
-
-      - name: Refresh feeds
+      - name: Run three-piece generator
         working-directory: /mnt/openwrt
         run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-      - name: Generate SL3000 three-piece set (DTS/MK/CONFIG)
-        working-directory: /mnt/openwrt
-        run: |
-          chmod +x $GITHUB_WORKSPACE/repo/sl3000-tools/generate-three-piece.sh
-
-          # 🔥 关键修复：确保 .config 不被旧文件污染
+          echo "PWD: $(pwd)"
           rm -f .config
 
-          # 🔥 关键修复：强制脚本在 /mnt/openwrt 下运行
           bash $GITHUB_WORKSPACE/repo/sl3000-tools/generate-three-piece.sh
 
-          # 🔥 关键修复：立即检查 .config 是否生成
+          echo "=== After script, check .config ==="
           if [ ! -s ".config" ]; then
             echo "❌ .config not generated"
             exit 1
           fi
 
-      - name: Base defconfig
-        working-directory: /mnt/openwrt
-        run: make defconfig
-
-      - name: Validate SL3000 three-piece set
+      - name: Validate three-piece
         working-directory: /mnt/openwrt
         run: |
           DTS=target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
@@ -107,144 +59,23 @@ jobs:
           CFG=.config
 
           echo "=== Check DTS ==="
-          [ -s "$DTS" ] || { echo "[FATAL] DTS missing: $DTS"; exit 1; }
+          [ -s "$DTS" ] || { echo "[FATAL] DTS missing"; exit 1; }
 
           echo "=== Check MK ==="
-          # 🔥 修复：MK 正确 key
-          grep -q "define Device/sl_3000-emmc" "$MK" || { echo "[FATAL] MK missing Device/sl_3000-emmc"; exit 1; }
-          grep -q "TARGET_DEVICES += sl3000-emmc" "$MK" || { echo "[FATAL] MK missing TARGET_DEVICES"; exit 1; }
+          grep -q "define Device/sl_3000-emmc" "$MK" \
+            || { echo "[FATAL] MK missing Device/sl_3000-emmc"; exit 1; }
+          grep -q "TARGET_DEVICES += sl3000-emmc" "$MK" \
+            || { echo "[FATAL] MK missing TARGET_DEVICES"; exit 1; }
 
           echo "=== Check CONFIG ==="
-          # 🔥 修复：CONFIG 正确 key
           grep -q '^CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y' "$CFG" \
             || { echo "[FATAL] CONFIG missing device enable"; exit 1; }
 
-      # 下面所有构建步骤保持不变……
-      - name: Cache build dirs
-        uses: actions/cache@v4
-        with:
-          path: |
-            /mnt/openwrt/dl
-            /mnt/openwrt/build_dir
-            /mnt/openwrt/staging_dir
-            /mnt/openwrt/tmp
-            /mnt/openwrt/.ccache
-          key: ${{ runner.os }}-sl3000-2410-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-sl3000-2410-
-
-      - name: Prune unused packages
-        working-directory: /mnt/openwrt
-        run: |
-          make package/symlinks
-          ENABLEDPKGS=$(grep '^CONFIGPACKAGE.*=y' .config | sed 's/^CONFIGPACKAGE_//;s/=y//' | sort -u)
-
-          for pkgdir in package/*; do
-            [ -d "$pkgdir" ] || continue
-            pkgname=$(basename "$pkgdir")
-
-            case "$pkgname" in
-              base-files|toolchain|kernel|firmware|boot|libs|network|system|utils)
-                continue
-                ;;
-            esac
-
-            echo "$ENABLED_PKGS" | grep -qx "$pkgname" || {
-              echo "[PRUNE] remove package/$pkgname"
-              rm -rf "$pkgdir"
-            }
-          done
-
-      - name: Download sources
-        working-directory: /mnt/openwrt
-        run: |
-          make download -j8 || {
-            echo "[WARN] download failed, clean dl and retry"
-            rm -rf dl/*
-            make download -j4
-          }
-
-      - name: Build toolchain
-        working-directory: /mnt/openwrt
-        run: |
-          make toolchain/install -j"$(nproc)" || {
-            make toolchain/clean
-            make toolchain/install -j"$(nproc)"
-          }
-
-      - name: Build target kernel
-        working-directory: /mnt/openwrt
-        run: |
-          make target/linux/compile -j"$(nproc)" || {
-            make target/linux/clean
-            make target/linux/compile -j"$(nproc)"
-          }
-
-      - name: Build packages
-        working-directory: /mnt/openwrt
-        run: |
-          make package/compile -j"$(nproc)" V=s || {
-            make package/clean
-            make package/compile -j"$(nproc)" V=s
-          }
-
-      - name: Build images
-        working-directory: /mnt/openwrt
-        run: |
-          make target/image/compile -j"$(nproc)" V=s || {
-            make target/image/clean
-            make target/image/compile -j"$(nproc)" V=s
-          }
-
-      - name: Full world build with self-heal
-        working-directory: /mnt/openwrt
-        run: |
-          LOG=/mnt/openwrt/firmware-build.log
-          : > "$LOG"
-
-          echo "=== First world build ===" | tee -a "$LOG"
-          if ! make -j"$(nproc)" V=s | tee -a "$LOG"; then
-            echo "=== World build failed, clean and retry ===" | tee -a "$LOG"
-            make package/clean
-            make target/clean
-            make -j"$(nproc)" V=s | tee -a "$LOG"
-          fi
-
-      - name: List firmware outputs
-        working-directory: /mnt/openwrt
-        run: |
-          ls -lh bin/targets/mediatek/mt7981 || {
-            echo "[WARN] no firmware found under bin/targets/mediatek/mt7981"
-            exit 1
-          }
-
-      - name: Upload build log
+      - name: Upload three-piece artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-2410-build-log
-          path: /mnt/openwrt/firmware-build.log
-
-      - name: Upload firmware artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: sl3000-2410-firmware
+          name: sl3000-three-piece
           path: |
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*factory.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/initramfs.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/combined.img.gz
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main'
-        with:
-          tagname: sl3000-2410-${{ github.runnumber }}-${{ github.runid }}
-          name: SL3000 OpenWrt 24.10
-          draft: false
-          prerelease: false
-          files: |
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*factory.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/initramfs.bin
-            /mnt/openwrt/bin/targets/mediatek/mt7981/combined.img.gz
-            /mnt/openwrt/firmware-build.log
+            /mnt/openwrt/target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
+            /mnt/openwrt/target/linux/mediatek/image/filogic.mk
+            /mnt/openwrt/.config
