@@ -24,7 +24,7 @@ echo "[SCRIPT_DIR] $SCRIPT_DIR"
 echo
 
 ##################################
-# 1. DTS（你贴的别人仓库成功案例）
+# 1. DTS（别人仓库成功案例）
 ##################################
 echo "=== Stage 1: Generate DTS ==="
 
@@ -72,22 +72,23 @@ echo "[DTS] generated: $DTS"
 echo
 
 ##################################
-# 2. MK（你贴的别人仓库成功案例）
+# 2. MK（别人仓库成功案例）
 ##################################
 echo "=== Stage 2: Generate MK ==="
 
 IMAGE_DIR="$ROOT/target/linux/mediatek/image"
-MK="$IMAGE_DIR/filogic.mk"   # 24.10 必须用 filogic.mk
+MK="$IMAGE_DIR/filogic.mk"   # 24.10 必须使用 filogic.mk
 
 if [ ! -f "$MK" ]; then
   echo "[FATAL] filogic.mk not found: $MK"
   exit 1
 fi
 
+# 删除旧段
 sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK"
 sed -i '/sl_3000-emmc/d' "$MK"
 
-cat >> "$MK" << EOF
+cat >> "$MK" << 'EOF'
 
 define Device/sl_3000-emmc
   DEVICE_VENDOR := SL
@@ -95,9 +96,9 @@ define Device/sl_3000-emmc
   DEVICE_DTS := mt7981b-sl-3000-emmc
   DEVICEDTSDIR := ../dts
   DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware automount coremark blkid blockdev fdisk f2fsck mkf2fs kmod-mmc
-  KERNEL := kernel-bin | lzma | fit lzma \$\$(KDIR)/image-\$\$(firstword \$\$(DEVICE_DTS)).dtb
-  KERNEL_INITRAMFS := kernel-bin | lzma | \\
-	fit lzma \$\$(KDIR)/image-\$\$(firstword \$\$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+  KERNEL := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 
@@ -108,7 +109,7 @@ echo "[MK] updated: $MK"
 echo
 
 ##################################
-# 3. CONFIG（你贴的别人仓库成功案例）
+# 3. CONFIG（别人仓库成功案例）
 ##################################
 echo "=== Stage 3: Generate .config ==="
 
@@ -119,7 +120,7 @@ CONFIGTARGETmediatek=y
 CONFIGTARGETmediatek_mt7981=y
 CONFIGTARGETMULTI_PROFILE=y
 
-CONFIGTARGETDEVICEmediatekmt7981DEVICEsl_3000-emmc=y
+CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y
 CONFIGTARGETDEVICEPACKAGESmediatekmt7981DEVICEsl3000-emmc=""
 
 CONFIGTARGETROOTFS_SQUASHFS=y
