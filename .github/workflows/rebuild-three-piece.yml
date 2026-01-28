@@ -19,31 +19,29 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Check Script Exists
-        run: |
-          if [ ! -f "sl3000-tools/generate-three-piece.sh" ]; then
-            echo "❌ Script not found"
-            exit 1
-          fi
-          echo "✅ Script found"
-
-      - name: Add Execute Permission
-        run: chmod 755 sl3000-tools/*.sh
+      - name: Ensure Script Executable
+        run: chmod +x sl3000-tools/generate-three-piece.sh
 
       - name: Clone OpenWrt 24.10
         run: |
           git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt-src
 
-      # 🟦 修复 1：给 openwrt-src 添加写权限（让 .config 能写入）
+      # 🟦 修复 1：确保 openwrt-src 可写
       - name: Fix Permissions
         run: chmod -R 755 openwrt-src
 
+      # 🟦 修复 2：删除可能存在的空 .config
+      - name: Remove Pre-existing .config
+        working-directory: openwrt-src
+        run: rm -f .config
+
+      # 🟦 修复 3：用绝对路径执行脚本，保证 pwd = openwrt-src
       - name: Run Three-Piece Script
         working-directory: openwrt-src
         run: |
-          bash ../sl3000-tools/generate-three-piece.sh
+          bash $GITHUB_WORKSPACE/sl3000-tools/generate-three-piece.sh
 
-          # 🟦 修复 2：脚本运行后立即检查 .config 是否生成
+          # 立即验证 .config 是否生成
           if [ ! -s ".config" ]; then
             echo "❌ .config not generated after script"
             exit 1
@@ -71,7 +69,7 @@ jobs:
           echo "MK_FILE=$MK_FILE" >> $GITHUB_ENV
           echo "CFG_FILE=$CFG_FILE" >> $GITHUB_ENV
 
-      - name: Upload Three-Piece & Logs
+      - name: Upload Three-Piece
         uses: actions/upload-artifact@v4
         with:
           name: sl3000-three-piece-2410
@@ -80,19 +78,3 @@ jobs:
             openwrt-src/${{ env.MK_FILE }}
             openwrt-src/${{ env.CFG_FILE }}
           retention-days: 30
-
-      - name: Git Commit & Push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          cp openwrt-src/${{ env.DTS_FILE }} target/linux/mediatek/dts/
-          cp openwrt-src/${{ env.MK_FILE }} target/linux/mediatek/image/
-          cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/sl3000-full-config.txt
-
-          git add -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
-          git add -f target/linux/mediatek/image/filogic.mk
-          git add -f sl3000-tools/sl3000-full-config.txt
-
-          git commit -m "ci: rebuild SL3000 three-piece (24.10 / mt7981)" || exit 0
-          git push
