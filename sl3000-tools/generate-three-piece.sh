@@ -47,7 +47,6 @@ cat > "$DTS" << 'EOF'
 		stdout-path = "serial0:115200n8";
 	};
 
-	/* 1GB RAM */
 	memory@40000000 {
 		device_type = "memory";
 		reg = <0 0x40000000 0 0x40000000>;
@@ -220,12 +219,19 @@ ${TAB}DEVICE_MODEL := SL3000
 ${TAB}DEVICE_VARIANT := eMMC
 ${TAB}DEVICE_DTS := mt7981b-sl-3000-emmc
 ${TAB}DEVICE_DTS_DIR := ../dts
+
+${TAB}KERNEL := kernel-bin
+${TAB}KERNEL_INITRAMFS := kernel-bin | gzip
+
+${TAB}ROOTFS := squashfs | gzip
+${TAB}IMAGES := sysupgrade.bin initramfs.bin
+
+${TAB}IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+${TAB}IMAGE/initramfs.bin := append-dtb | uImage | gzip | append-metadata
+
 ${TAB}DEVICE_PACKAGES := kmod-usb3 kmod-fs-ext4 block-mount f2fs-tools \\
 ${TAB}${TAB}luci luci-base luci-i18n-base-zh-cn \\
 ${TAB}${TAB}luci-app-eqos-mtk luci-app-mtwifi-cfg luci-app-turboacc-mtk luci-app-wrtbwmon
-${TAB}IMAGES := sysupgrade.bin
-${TAB}IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-${TAB}IMAGE/initramfs.bin := append-dtb | uImage | append-metadata
 endef
 TARGET_DEVICES += sl-3000-emmc
 EOF
