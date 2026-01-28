@@ -16,15 +16,13 @@ mkdir -p "$SCRIPT_DIR"
 : > "$LOG"
 exec > >(tee -a "$LOG") 2>&1
 
-TAB=$'\t'
-
 echo "=== SL3000 three-piece generation start ==="
 echo "[ROOT]       $ROOT"
 echo "[SCRIPT_DIR] $SCRIPT_DIR"
 echo
 
 ########################################
-# 1. DTS（别人仓库成功案例 + 内存修正为 1GB）
+# 1. DTS
 ########################################
 echo "=== Stage 1: Generate DTS ==="
 
@@ -40,7 +38,6 @@ cat > "$DTS" << 'EOF'
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/leds/common.h>
-
 #include "mt7981.dtsi"
 
 / {
@@ -101,163 +98,29 @@ cat > "$DTS" << 'EOF'
 		};
 	};
 };
-
-&eth {
-	status = "okay";
-
-	gmac0: mac@0 {
-		compatible = "mediatek,eth-mac";
-		reg = <0>;
-		phy-mode = "2500base-x";
-
-		fixed-link {
-			speed = <2500>;
-			full-duplex;
-			pause;
-		};
-	};
-
-	gmac1: mac@1 {
-		compatible = "mediatek,eth-mac";
-		reg = <1>;
-		phy-mode = "2500base-x";
-
-		fixed-link {
-			speed = <2500>;
-			full-duplex;
-			pause;
-		};
-	};
-
-	mdio: mdio-bus {
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		switch@0 {
-			compatible = "mediatek,mt7531";
-			reg = <31>;
-			reset-gpios = <&pio 39 0>;
-
-			ports {
-				#address-cells = <1>;
-				#size-cells = <0>;
-
-				port@0 { reg = <0>; label = "lan1"; };
-				port@1 { reg = <1>; label = "lan2"; };
-				port@2 { reg = <2>; label = "lan3"; };
-				port@3 { reg = <3>; label = "wan"; };
-
-				port@6 {
-					reg = <6>;
-					label = "cpu";
-					ethernet = <&gmac0>;
-					phy-mode = "2500base-x";
-
-					fixed-link {
-						speed = <2500>;
-						full-duplex;
-						pause;
-					};
-				};
-			};
-		};
-	};
-};
-
-&mmc0 {
-	bus-width = <8>;
-	cap-mmc-highspeed;
-	max-frequency = <52000000>;
-	no-sd;
-	no-sdio;
-	non-removable;
-	pinctrl-names = "default", "state_uhs";
-	pinctrl-0 = <&mmc0_pins_default>;
-	pinctrl-1 = <&mmc0_pins_uhs>;
-	vmmc-supply = <&reg_3p3v>;
-	status = "okay";
-
-	card@0 {
-		compatible = "mmc-card";
-		reg = <0>;
-
-		block {
-			compatible = "block-device";
-
-			partitions {
-				block-partition-factory {
-					partname = "factory";
-
-					nvmem-layout {
-						compatible = "fixed-layout";
-						#address-cells = <1>;
-						#size-cells = <1>;
-
-						eeprom_factory_0: eeprom@0 {
-							reg = <0x0 0x1000>;
-						};
-
-						macaddr_factory_4: macaddr@4 {
-							compatible = "mac-base";
-							reg = <0x4 0x6>;
-							#nvmem-cell-cells = <1>;
-						};
-					};
-				};
-			};
-		};
-	};
-};
-
-&pio {
-	mmc0_pins_default: mmc0-pins-default {
-		mux { function = "flash"; groups = "emmc_45"; };
-	};
-
-	mmc0_pins_uhs: mmc0-pins-uhs {
-		mux { function = "flash"; groups = "emmc_45"; };
-	};
-};
-
-&uart0 { status = "okay"; };
-&watchdog { status = "okay"; };
-
-&wifi {
-	nvmem-cells = <&eeprom_factory_0>;
-	nvmem-cell-names = "eeprom";
-	status = "okay";
-
-	band@1 {
-		reg = <1>;
-		nvmem-cells = <&macaddr_factory_4 1>;
-		nvmem-cell-names = "mac-address";
-	};
-};
-
-&usb_phy { status = "okay"; };
-&xhci { status = "okay"; };
 EOF
 
 echo "[DTS] generated: $DTS"
 echo
 
 ########################################
-# 2. MK（别人仓库成功案例完整版本）
+# 2. MK（写入 filogic.mk）
 ########################################
 echo "=== Stage 2: Generate MK ==="
 
 IMAGE_DIR="$ROOT/target/linux/mediatek/image"
-MK="$IMAGE_DIR/mt7981.mk"
+MK="$IMAGE_DIR/filogic.mk"
 
 if [ ! -f "$MK" ]; then
-  echo "[FATAL] mt7981.mk not found: $MK"
+  echo "[FATAL] filogic.mk not found: $MK"
   exit 1
 fi
 
+# 清理旧段
 sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK"
 sed -i '/sl_3000-emmc/d' "$MK"
 
-cat >> "$MK" << EOF
+cat >> "$MK" << 'EOF'
 
 define Device/sl_3000-emmc
   DEVICE_VENDOR := SL
@@ -265,9 +128,9 @@ define Device/sl_3000-emmc
   DEVICE_DTS := mt7981b-sl-3000-emmc
   DEVICE_DTS_DIR := ../dts
   DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware automount coremark blkid blockdev fdisk f2fsck mkf2fs kmod-mmc
-  KERNEL := kernel-bin | lzma | fit lzma \$\$(KDIR)/image-\$\$(firstword \$\$(DEVICE_DTS)).dtb
-  KERNEL_INITRAMFS := kernel-bin | lzma | \\
-	fit lzma \$\$(KDIR)/image-\$\$(firstword \$\$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+  KERNEL := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 
@@ -278,7 +141,7 @@ echo "[MK] updated: $MK"
 echo
 
 ########################################
-# 3. CONFIG（基于别人仓库结构的 SL3000 单设备配置）
+# 3. CONFIG
 ########################################
 echo "=== Stage 3: Generate .config ==="
 
