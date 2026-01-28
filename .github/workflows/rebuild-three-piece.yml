@@ -1,4 +1,4 @@
-name: Rebuild SL3000 Three-Piece (24.10 / 6.6)
+name: Rebuild SL3000 Three-Piece (24.10 / mt7981)
 
 on:
   workflow_dispatch:
@@ -48,14 +48,7 @@ jobs:
         working-directory: openwrt-src
         run: |
           DTS_FILE="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
-
-          # MK 自动适配（filogic 为主）
-          if [ -f "target/linux/mediatek/image/mt7981.mk" ]; then
-            MK_FILE="target/linux/mediatek/image/mt7981.mk"
-          else
-            MK_FILE="target/linux/mediatek/image/filogic.mk"
-          fi
-
+          MK_FILE="target/linux/mediatek/image/mt7981.mk"
           CFG_FILE=".config"
 
           echo "Verify DTS: $DTS_FILE"
@@ -72,19 +65,19 @@ jobs:
             exit 1
           fi
 
-          # ⭐ 正确的 filogic CONFIG 校验
-          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_sl-3000-emmc=y" "$CFG_FILE"; then
-            echo "❌ CONFIG missing device enable (filogic)"
+          # ⭐ 正确的 mt7981 CONFIG 校验
+          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CFG_FILE"; then
+            echo "❌ CONFIG missing device enable (mt7981 / sl_3000-emmc)"
             exit 1
           fi
 
-          if ! grep -q "define Device/sl-3000-emmc" "$MK_FILE"; then
-            echo "❌ MK missing SL3000 segment"
+          if ! grep -q "define Device/sl_3000-emmc" "$MK_FILE"; then
+            echo "❌ MK missing sl_3000-emmc segment"
             exit 1
           fi
 
           echo "=== SL3000 MK Segment ==="
-          grep -A20 "define Device/sl-3000-emmc" "$MK_FILE"
+          grep -A20 "define Device/sl_3000-emmc" "$MK_FILE"
 
           echo "DTS_FILE=$DTS_FILE" >> $GITHUB_ENV
           echo "MK_FILE=$MK_FILE" >> $GITHUB_ENV
@@ -106,17 +99,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # 拷回仓库（保持官方结构）
+          # 拷回仓库
           cp openwrt-src/${{ env.DTS_FILE }} target/linux/mediatek/dts/
           cp openwrt-src/${{ env.MK_FILE }} target/linux/mediatek/image/
           cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/sl3000-full-config.txt
 
           git add -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
-          git add -f target/linux/mediatek/image/mt7981.mk || true
-          git add -f target/linux/mediatek/image/filogic.mk || true
+          git add -f target/linux/mediatek/image/mt7981.mk
           git add -f sl3000-tools/sl3000-full-config.txt
 
-          git commit -m "ci: rebuild SL3000 three-piece (24.10 / 6.6)" || {
+          git commit -m "ci: rebuild SL3000 three-piece (24.10 / mt7981)" || {
             echo "No changes to commit"
             exit 0
           }
