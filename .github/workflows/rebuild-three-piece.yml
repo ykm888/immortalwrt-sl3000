@@ -22,7 +22,7 @@ jobs:
       - name: Check Script Exists
         run: |
           if [ ! -f "sl3000-tools/generate-three-piece.sh" ]; then
-            echo "❌ Script not found: sl3000-tools/generate-three-piece.sh"
+            echo "❌ Script not found"
             exit 1
           fi
           echo "✅ Script found"
@@ -43,7 +43,7 @@ jobs:
         working-directory: openwrt-src
         run: |
           DTS_FILE="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
-          MK_FILE="target/linux/mediatek/image/mt7981.mk"
+          MK_FILE="target/linux/mediatek/image/filogic.mk"
           CFG_FILE=".config"
 
           [ -s "$DTS_FILE" ] || { echo "❌ DTS missing or empty"; exit 1; }
@@ -51,7 +51,7 @@ jobs:
           [ -s "$CFG_FILE" ] || { echo "❌ CONFIG missing or empty"; exit 1; }
 
           grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CFG_FILE" \
-            || { echo "❌ CONFIG missing device enable (mt7981 / sl_3000-emmc)"; exit 1; }
+            || { echo "❌ CONFIG missing device enable"; exit 1; }
 
           grep -q "define Device/sl_3000-emmc" "$MK_FILE" \
             || { echo "❌ MK missing sl_3000-emmc segment"; exit 1; }
@@ -80,7 +80,7 @@ jobs:
           cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/sl3000-full-config.txt
 
           git add -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
-          git add -f target/linux/mediatek/image/mt7981.mk
+          git add -f target/linux/mediatek/image/filogic.mk
           git add -f sl3000-tools/sl3000-full-config.txt
 
           git commit -m "ci: rebuild SL3000 three-piece (24.10 / mt7981)" || exit 0
