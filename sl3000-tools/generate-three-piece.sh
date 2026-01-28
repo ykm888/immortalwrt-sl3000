@@ -1,157 +1,104 @@
-#!/bin/bash
-set -euo pipefail
+name: Rebuild SL3000 Three-Piece (24.10 / mt7981)
 
-##################################
-# SL3000 三件套（DTS / MK / CONFIG）
-# 基于别人仓库成功案例（mt7981 平台 + FIT）
-# 内存：1GB
-# 设备名：sl_3000-emmc
-##################################
+on:
+  workflow_dispatch:
 
-ROOT="$(pwd)"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+permissions:
+  contents: write
+  actions: read
 
-LOG="$SCRIPT_DIR/sl3000-three-piece.log"
-mkdir -p "$SCRIPT_DIR"
-: > "$LOG"
-exec > >(tee -a "$LOG") 2>&1
+jobs:
+  rebuild-sl3000-three-piece:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
 
-TAB=$'\t'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
-echo "=== SL3000 three-piece generation start ==="
-echo "[ROOT]       $ROOT"
-echo "[SCRIPT_DIR] $SCRIPT_DIR"
-echo
+      - name: Check Script Exists
+        run: |
+          if [ ! -f "sl3000-tools/generate-three-piece.sh" ]; then
+            echo "❌ Script not found"
+            exit 1
+          fi
+          echo "✅ Script found"
 
-##################################
-# 1. DTS
-##################################
-echo "=== Stage 1: Generate DTS ==="
+      - name: Add Execute Permission
+        run: chmod 755 sl3000-tools/*.sh
 
-DTS_DIR="$ROOT/target/linux/mediatek/dts"
-DTS="$DTS_DIR/mt7981b-sl-3000-emmc.dts"
+      - name: Clone OpenWrt 24.10
+        run: |
+          git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt-src
 
-mkdir -p "$DTS_DIR"
+      # 🟦 修复 1：确保 openwrt-src 可写
+      - name: Fix Permissions
+        run: chmod -R 755 openwrt-src
 
-cat > "$DTS" << 'EOF'
-// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+      # 🟦 修复 2：删除可能存在的空 .config
+      - name: Remove Pre-existing .config
+        working-directory: openwrt-src
+        run: rm -f .config
 
-/dts-v1/;
+      # 🟦 修复 3：用绝对路径执行脚本，保证 pwd = openwrt-src
+      - name: Run Three-Piece Script
+        working-directory: openwrt-src
+        run: |
+          bash $GITHUB_WORKSPACE/sl3000-tools/generate-three-piece.sh
 
-#include <dt-bindings/gpio/gpio.h>
-#include <dt-bindings/input/input.h>
-#include <dt-bindings/leds/common.h>
+          # 立即验证 .config 是否生成
+          if [ ! -s ".config" ]; then
+            echo "❌ .config not generated after script"
+            exit 1
+          fi
+          echo "✅ .config generated"
 
-#include "mt7981.dtsi"
+      - name: Strict Verify Three-Piece
+        working-directory: openwrt-src
+        run: |
+          DTS_FILE="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
+          MK_FILE="target/linux/mediatek/image/filogic.mk"
+          CFG_FILE=".config"
 
-/ {
-	model = "SL-3000 eMMC bootstrap versions";
-	compatible = "sl,3000-emmc", "mediatek,mt7981";
+          [ -s "$DTS_FILE" ] || { echo "❌ DTS missing or empty"; exit 1; }
+          [ -s "$MK_FILE" ]  || { echo "❌ MK missing or empty"; exit 1; }
+          [ -s "$CFG_FILE" ] || { echo "❌ CONFIG missing or empty"; exit 1; }
 
-	aliases {
-		serial0 = &uart0;
-		led-boot = &statusredled;
-		led-failsafe = &statusredled;
-		led-running = &statusgreenled;
-		led-upgrade = &statusblueled;
-	};
+          grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CFG_FILE" \
+            || { echo "❌ CONFIG missing device enable"; exit 1; }
 
-	chosen {
-		bootargs = "root=PARTLABEL=rootfs rootwait";
-		stdout-path = "serial0:115200n8";
-	};
+          grep -q "define Device/sl_3000-emmc" "$MK_FILE" \
+            || { echo "❌ MK missing sl_3000-emmc segment"; exit 1; }
 
-	/* 1GB RAM */
-	memory@40000000 {
-		reg = <0 0x40000000 0 0x40000000>;
-	};
-};
-EOF
+          echo "DTS_FILE=$DTS_FILE" >> $GITHUB_ENV
+          echo "MK_FILE=$MK_FILE" >> $GITHUB_ENV
+          echo "CFG_FILE=$CFG_FILE" >> $GITHUB_ENV
 
-echo "[DTS] generated: $DTS"
-echo
+      - name: Upload Three-Piece & Logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sl3000-three-piece-2410
+          path: |
+            openwrt-src/${{ env.DTS_FILE }}
+            openwrt-src/${{ env.MK_FILE }}
+            openwrt-src/${{ env.CFG_FILE }}
+          retention-days: 30
 
-##################################
-# 2. MK
-##################################
-echo "=== Stage 2: Generate MK ==="
+      - name: Git Commit & Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-IMAGE_DIR="$ROOT/target/linux/mediatek/image"
-MK="$IMAGE_DIR/filogic.mk"
+          cp openwrt-src/${{ env.DTS_FILE }} target/linux/mediatek/dts/
+          cp openwrt-src/${{ env.MK_FILE }} target/linux/mediatek/image/
+          cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/sl3000-full-config.txt
 
-if [ ! -f "$MK" ]; then
-  echo "[FATAL] filogic.mk not found: $MK"
-  exit 1
-fi
+          git add -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
+          git add -f target/linux/mediatek/image/filogic.mk
+          git add -f sl3000-tools/sl3000-full-config.txt
 
-sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK"
-sed -i '/sl_3000-emmc/d' "$MK"
-
-cat >> "$MK" << 'EOF'
-
-define Device/sl_3000-emmc
-  DEVICE_VENDOR := SL
-  DEVICE_MODEL := 3000 eMMC
-  DEVICE_DTS := mt7981b-sl-3000-emmc
-  DEVICEDTSDIR := ../dts
-  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware automount coremark blkid blockdev fdisk f2fsck mkf2fs kmod-mmc
-  KERNEL := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
-  KERNEL_INITRAMFS := kernel-bin | lzma | \
-	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
-  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-endef
-
-TARGETDEVICES += sl3000-emmc
-EOF
-
-echo "[MK] updated: $MK"
-echo
-
-##################################
-# 3. CONFIG（修复 heredoc，不改内容）
-##################################
-echo "=== Stage 3: Generate .config ==="
-
-CFG="$ROOT/.config"
-
-cat > "$CFG" << 'EOF'
-CONFIGTARGETmediatek=y
-CONFIGTARGETmediatek_mt7981=y
-CONFIGTARGETMULTI_PROFILE=y
-
-CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y
-CONFIGTARGETDEVICEPACKAGESmediatekmt7981DEVICEsl3000-emmc=""
-
-CONFIGTARGETROOTFS_SQUASHFS=y
-CONFIGTARGETIMAGES_GZIP=y
-
-CONFIGPACKAGEkmod-mt7915e=y
-CONFIGPACKAGEkmod-mt7981-firmware=y
-CONFIGPACKAGEmt7981-wo-firmware=y
-CONFIGPACKAGEkmod-mmc=y
-
-CONFIGPACKAGEluci=y
-CONFIGPACKAGEluci-base=y
-CONFIGPACKAGEluci-i18n-base-zh-cn=y
-EOF
-
-echo "[CONFIG] written: $CFG"
-echo
-
-##################################
-# 4. Validation
-##################################
-echo "=== Stage 4: Validation ==="
-
-[ -s "$DTS" ] || { echo "[FATAL] DTS missing: $DTS"; exit 1; }
-[ -s "$MK" ]  || { echo "[FATAL] MK missing: $MK"; exit 1; }
-[ -s "$CFG" ] || { echo "[FATAL] .config missing: $CFG"; exit 1; }
-
-grep -q "sl_3000-emmc" "$MK" || { echo "[FATAL] MK missing device"; exit 1; }
-grep -q "CONFIGTARGETmediatek_mt7981" "$CFG" || { echo "[FATAL] CONFIG missing mt7981"; exit 1; }
-
-echo
-echo "=== SL3000 three-piece generation complete ==="
-echo "[OUT] DTS : $DTS"
-echo "[OUT] MK  : $MK"
-echo "[OUT] CFG : $CFG"
+          git commit -m "ci: rebuild SL3000 three-piece (24.10 / mt7981)" || exit 0
+          git push
