@@ -19,18 +19,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Debug: List repo root
-        run: |
-          echo "=== REPO ROOT ==="
-          pwd
-          ls -R .
-
       - name: Check Script Exists
         run: |
-          echo "=== CHECK SCRIPT ==="
           if [ ! -f "sl3000-tools/generate-three-piece.sh" ]; then
             echo "❌ Script not found: sl3000-tools/generate-three-piece.sh"
-            ls -R sl3000-tools || true
             exit 1
           fi
           echo "✅ Script found"
@@ -41,18 +33,11 @@ jobs:
       - name: Clone OpenWrt 24.10
         run: |
           git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt-src
-          echo "=== After clone ==="
-          ls -R openwrt-src | head
 
       - name: Run Three-Piece Script
         working-directory: openwrt-src
         run: |
-          echo "=== RUN SCRIPT ==="
-          bash -x ../sl3000-tools/generate-three-piece.sh 2>&1 | tee $GITHUB_WORKSPACE/sl3000-run.log
-          echo "=== After script: check .config ==="
-          ls -l .config || echo "no .config"
-          echo "=== .config head ==="
-          head -n 40 .config || echo "cannot read .config"
+          bash ../sl3000-tools/generate-three-piece.sh
 
       - name: Strict Verify Three-Piece
         working-directory: openwrt-src
@@ -61,22 +46,15 @@ jobs:
           MK_FILE="target/linux/mediatek/image/mt7981.mk"
           CFG_FILE=".config"
 
-          echo "=== VERIFY FILES ==="
-          echo "DTS: $DTS_FILE"
-          echo "MK : $MK_FILE"
-          echo "CFG: $CFG_FILE"
+          [ -s "$DTS_FILE" ] || { echo "❌ DTS missing or empty"; exit 1; }
+          [ -s "$MK_FILE" ]  || { echo "❌ MK missing or empty"; exit 1; }
+          [ -s "$CFG_FILE" ] || { echo "❌ CONFIG missing or empty"; exit 1; }
 
-          [ -s "$DTS_FILE" ] || { echo "❌ DTS missing"; exit 1; }
-          [ -s "$MK_FILE" ]  || { echo "❌ MK missing"; exit 1; }
-          [ -s "$CFG_FILE" ] || { echo "❌ CONFIG missing"; exit 1; }
-
-          echo "=== VERIFY CONFIG DEVICE ==="
           grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CFG_FILE" \
-            || { echo "❌ CONFIG missing device enable"; exit 1; }
+            || { echo "❌ CONFIG missing device enable (mt7981 / sl_3000-emmc)"; exit 1; }
 
-          echo "=== VERIFY MK DEVICE ==="
           grep -q "define Device/sl_3000-emmc" "$MK_FILE" \
-            || { echo "❌ MK missing sl_3000-emmc"; exit 1; }
+            || { echo "❌ MK missing sl_3000-emmc segment"; exit 1; }
 
           echo "DTS_FILE=$DTS_FILE" >> $GITHUB_ENV
           echo "MK_FILE=$MK_FILE" >> $GITHUB_ENV
@@ -90,5 +68,20 @@ jobs:
             openwrt-src/${{ env.DTS_FILE }}
             openwrt-src/${{ env.MK_FILE }}
             openwrt-src/${{ env.CFG_FILE }}
-            sl3000-run.log
           retention-days: 30
+
+      - name: Git Commit & Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          cp openwrt-src/${{ env.DTS_FILE }} target/linux/mediatek/dts/
+          cp openwrt-src/${{ env.MK_FILE }} target/linux/mediatek/image/
+          cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/sl3000-full-config.txt
+
+          git add -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
+          git add -f target/linux/mediatek/image/mt7981.mk
+          git add -f sl3000-tools/sl3000-full-config.txt
+
+          git commit -m "ci: rebuild SL3000 three-piece (24.10 / mt7981)" || exit 0
+          git push
