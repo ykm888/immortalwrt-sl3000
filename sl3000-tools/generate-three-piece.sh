@@ -24,7 +24,7 @@ echo "[SCRIPT_DIR] $SCRIPT_DIR"
 echo
 
 ##################################
-# 1. DTS（别人仓库成功案例）
+# 1. DTS
 ##################################
 echo "=== Stage 1: Generate DTS ==="
 
@@ -72,19 +72,18 @@ echo "[DTS] generated: $DTS"
 echo
 
 ##################################
-# 2. MK（别人仓库成功案例）
+# 2. MK
 ##################################
 echo "=== Stage 2: Generate MK ==="
 
 IMAGE_DIR="$ROOT/target/linux/mediatek/image"
-MK="$IMAGE_DIR/filogic.mk"   # 24.10 必须使用 filogic.mk
+MK="$IMAGE_DIR/filogic.mk"
 
 if [ ! -f "$MK" ]; then
   echo "[FATAL] filogic.mk not found: $MK"
   exit 1
 fi
 
-# 删除旧段
 sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK"
 sed -i '/sl_3000-emmc/d' "$MK"
 
@@ -109,7 +108,7 @@ echo "[MK] updated: $MK"
 echo
 
 ##################################
-# 3. CONFIG（别人仓库成功案例）
+# 3. CONFIG（修复 heredoc，不改内容）
 ##################################
 echo "=== Stage 3: Generate .config ==="
 
