@@ -26,7 +26,7 @@ jobs:
 
       - name: Check Script Exists
         run: |
-          if [ ! -f "sl3000-tools/ggenerate-three-piece.sh" ]; then
+          if [ ! -f "sl3000-tools/generate-three-piece.sh" ]; then
             echo "❌ Script not found"
             exit 1
           fi
