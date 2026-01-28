@@ -26,7 +26,7 @@ jobs:
 
       - name: Check Script Exists
         run: |
-          if [ ! -f "sl3000-tools/generate-three-piece.sh" ]; then
+          if [ ! -f "sl3000-tools/ggenerate-three-piece.sh" ]; then
             echo "❌ Script not found"
             exit 1
           fi
@@ -55,15 +55,8 @@ jobs:
           echo "Verify MK : $MK_FILE"
           echo "Verify CFG: $CFG_FILE"
 
-          if [ ! -s "$DTS_FILE" ]; then
-            echo "❌ DTS missing or empty"
-            exit 1
-          fi
-
-          if [ ! -s "$CFG_FILE" ]; then
-            echo "❌ CONFIG missing or empty"
-            exit 1
-          fi
+          [ -s "$DTS_FILE" ] || { echo "❌ DTS missing or empty"; exit 1; }
+          [ -s "$CFG_FILE" ] || { echo "❌ CONFIG missing or empty"; exit 1; }
 
           # ⭐ 正确的 mt7981 CONFIG 校验
           if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CFG_FILE"; then
@@ -99,7 +92,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # 拷回仓库
           cp openwrt-src/${{ env.DTS_FILE }} target/linux/mediatek/dts/
           cp openwrt-src/${{ env.MK_FILE }} target/linux/mediatek/image/
           cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/sl3000-full-config.txt
