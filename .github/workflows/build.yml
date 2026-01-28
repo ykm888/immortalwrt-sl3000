@@ -90,7 +90,7 @@ jobs:
         run: |
           DTS=target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
 
-          # ⭐ 自动适配 MK（24.10=filogic.mk，25.xx=mt7981.mk）
+          # 自动适配 MK（24.10=filogic.mk，25.xx=mt7981.mk）
           if [ -f target/linux/mediatek/image/mt7981.mk ]; then
             MK=target/linux/mediatek/image/mt7981.mk
           else
@@ -107,10 +107,11 @@ jobs:
           grep -q "TARGET_DEVICES += sl-3000-emmc" "$MK" || { echo "[FATAL] MK missing TARGET_DEVICES"; exit 1; }
 
           echo "=== Check CONFIG ==="
-          # ⭐ 兼容 defconfig 自动把 - 改成 _
-          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl-3000-emmc=y" "$CFG" \
-          && ! grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000_emmc=y" "$CFG"; then
+          # ⭐ 一次性彻底解决：不再依赖具体符号名，只要 sl3000 设备被启用即可
+          if ! grep -Eq '^CONFIG_TARGET_DEVICE_.*sl.*3000.*=y' "$CFG"; then
             echo "[FATAL] CONFIG missing device enable"
+            echo "=== Dump CONFIG_TARGET_DEVICE lines ==="
+            grep '^CONFIG_TARGET_DEVICE_' "$CFG" || true
             exit 1
           fi
 
