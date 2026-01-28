@@ -60,14 +60,26 @@ EOF
 echo "[DTS] generated: $DTS"
 echo
 
-# 2. 写入MK配置：核心修复→适配官方mt7981.mk（方案一关键修改）
+# 2. 写入MK配置：核心修复→自动探测filogic image目录文件，动态适配（解决文件找不到问题）
 IMAGE_DIR="$ROOT/target/linux/mediatek/filogic/image"
-MK="$IMAGE_DIR/mt7981.mk"  # 修复：Makefile → mt7981.mk
+# 关键：先列出目录所有文件，便于排查，同时动态匹配MK文件
+echo "[DEBUG] filogic image dir files list:"
+ls -la "$IMAGE_DIR/" || { echo "FATAL: filogic image dir not found"; exit 1; }
+echo
 
-if [ ! -f "$MK" ]; then
-  echo "FATAL: filogic mt7981.mk not found at $MK"
-  exit 1
+# 动态匹配MK文件：优先mt7981.mk → 其次filogic.mk → 最后Makefile，兼容所有情况
+MK=""
+if [ -f "$IMAGE_DIR/mt7981.mk" ]; then
+    MK="$IMAGE_DIR/mt7981.mk"
+elif [ -f "$IMAGE_DIR/filogic.mk" ]; then
+    MK="$IMAGE_DIR/filogic.mk"
+elif [ -f "$IMAGE_DIR/Makefile" ]; then
+    MK="$IMAGE_DIR/Makefile"
+else
+    echo "FATAL: no valid MK file found in $IMAGE_DIR (mt7981.mk/filogic.mk/Makefile)"
+    exit 1
 fi
+echo "[DEBUG] auto found valid MK file: $MK"
 
 # sed兼容处理：无匹配时不报错，避免set -e终止脚本
 DEVICE_NAME="sl_3000-emmc"
