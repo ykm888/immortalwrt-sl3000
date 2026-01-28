@@ -1,20 +1,18 @@
 CONFIG_TARGET_mediatek=y
-CONFIG_TARGET_mediatek_filogic=y
+CONFIG_TARGET_mediatek_mt7981=y
 CONFIG_TARGET_MULTI_PROFILE=y
-CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_sl-3000-emmc=y
+
+CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y
+CONFIG_TARGET_DEVICE_PACKAGES_mediatek_mt7981_DEVICE_sl_3000-emmc=""
 
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
 CONFIG_TARGET_IMAGES_GZIP=y
 
+CONFIG_PACKAGE_kmod-mt7915e=y
+CONFIG_PACKAGE_kmod-mt7981-firmware=y
+CONFIG_PACKAGE_mt7981-wo-firmware=y
+CONFIG_PACKAGE_kmod-mmc=y
+
 CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-base=y
 CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
-
-CONFIG_PACKAGE_kmod-fs-ext4=y
-CONFIG_PACKAGE_block-mount=y
-CONFIG_PACKAGE_f2fs-tools=y
-
-CONFIG_PACKAGE_libustream-mbedtls=n
-CONFIG_PACKAGE_libustream-wolfssl=y
-CONFIG_PACKAGE_libwolfssl=y
-CONFIG_PACKAGE_libmbedtls=n
