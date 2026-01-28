@@ -210,8 +210,11 @@ EOF
 
 echo "=== Stage 2: Ensure MK device ==="
 
-if ! grep -q "Device/sl-3000-emmc" "$MK"; then
-  cat >> "$MK" << EOF
+# 强化：如果已有残缺定义，先删除旧的，再写入新的
+sed -i '/Device\/sl-3000-emmc/,/endef/d' "$MK"
+sed -i '/sl-3000-emmc/d' "$MK"
+
+cat >> "$MK" << EOF
 
 define Device/sl-3000-emmc
 ${TAB}DEVICE_VENDOR := SL
@@ -232,9 +235,9 @@ ${TAB}DEVICE_PACKAGES := kmod-usb3 kmod-fs-ext4 block-mount f2fs-tools \\
 ${TAB}${TAB}luci luci-base luci-i18n-base-zh-cn \\
 ${TAB}${TAB}luci-app-eqos-mtk luci-app-mtwifi-cfg luci-app-turboacc-mtk luci-app-wrtbwmon
 endef
+
 TARGET_DEVICES += sl-3000-emmc
 EOF
-fi
 
 echo "=== Stage 3: Generate CONFIG ==="
 
@@ -268,13 +271,20 @@ CONFIG_PACKAGE_libwolfssl=y
 CONFIG_PACKAGE_libmbedtls=n
 EOF
 
+# 自动写入 .config（关键增强）
+cp "$CFG" "$ROOT/.config"
+
 echo "=== Stage 4: Validation ==="
 
 [ -s "$DTS" ] || { echo "[FATAL] DTS missing"; exit 1; }
 [ -s "$MK" ]  || { echo "[FATAL] MK missing"; exit 1; }
 [ -s "$CFG" ] || { echo "[FATAL] CONFIG missing"; exit 1; }
 
+grep -q "Device/sl-3000-emmc" "$MK" || { echo "[FATAL] MK missing device block"; exit 1; }
+grep -q "TARGET_DEVICES += sl-3000-emmc" "$MK" || { echo "[FATAL] MK missing TARGET_DEVICES"; exit 1; }
+
 echo "=== Three-piece generation complete (SL3000 eMMC) ==="
 echo "[OUT] DTS: $DTS"
 echo "[OUT] MK : $MK"
 echo "[OUT] CFG: $CFG"
+echo "[OUT] .config updated"
