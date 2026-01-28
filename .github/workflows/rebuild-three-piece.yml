@@ -34,10 +34,21 @@ jobs:
         run: |
           git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt-src
 
+      # 🟦 修复 1：给 openwrt-src 添加写权限（让 .config 能写入）
+      - name: Fix Permissions
+        run: chmod -R 755 openwrt-src
+
       - name: Run Three-Piece Script
         working-directory: openwrt-src
         run: |
           bash ../sl3000-tools/generate-three-piece.sh
+
+          # 🟦 修复 2：脚本运行后立即检查 .config 是否生成
+          if [ ! -s ".config" ]; then
+            echo "❌ .config not generated after script"
+            exit 1
+          fi
+          echo "✅ .config generated"
 
       - name: Strict Verify Three-Piece
         working-directory: openwrt-src
