@@ -39,16 +39,28 @@ jobs:
         run: |
           git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt-src
 
+      # ⭐ 关键修复：把 sl3000-tools 放进 openwrt-src 里
+      - name: Copy tools into source tree
+        run: |
+          cp -r sl3000-tools openwrt-src/
+
       - name: Run Three-Piece Script
         working-directory: openwrt-src
         run: |
-          bash -x $GITHUB_WORKSPACE/sl3000-tools/generate-three-piece.sh 2>&1 | tee $GITHUB_WORKSPACE/sl3000-run.log
+          bash -x sl3000-tools/generate-three-piece.sh 2>&1 | tee $GITHUB_WORKSPACE/sl3000-run.log
 
       - name: Strict Verify Three-Piece
         working-directory: openwrt-src
         run: |
           DTS_FILE="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
-          MK_FILE="target/linux/mediatek/image/mt7981.mk"
+
+          # ⭐ MK 自动适配（脚本已处理，但校验也要兼容）
+          if [ -f "target/linux/mediatek/image/mt7981.mk" ]; then
+            MK_FILE="target/linux/mediatek/image/mt7981.mk"
+          else
+            MK_FILE="target/linux/mediatek/image/filogic.mk"
+          fi
+
           CFG_FILE=".config"
 
           echo "Verify DTS: $DTS_FILE"
@@ -101,11 +113,11 @@ jobs:
           # 从 openwrt-src 拷回仓库
           cp openwrt-src/${{ env.DTS_FILE }} target/linux/mediatek/dts/
           cp openwrt-src/${{ env.MK_FILE }} target/linux/mediatek/image/
-          # 保持仓库里还是 sl3000-full-config.txt，但内容来自 .config
           cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/sl3000-full-config.txt
 
           git add -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
-          git add -f target/linux/mediatek/image/mt7981.mk
+          git add -f target/linux/mediatek/image/mt7981.mk || true
+          git add -f target/linux/mediatek/image/filogic.mk || true
           git add -f sl3000-tools/sl3000-full-config.txt
 
           git commit -m "ci: rebuild SL3000 three-piece (24.10 / 6.6)" || {
