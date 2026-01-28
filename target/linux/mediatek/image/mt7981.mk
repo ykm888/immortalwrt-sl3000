@@ -5,11 +5,18 @@ define Device/sl-3000-emmc
 	DEVICE_VARIANT := eMMC
 	DEVICE_DTS := mt7981b-sl-3000-emmc
 	DEVICE_DTS_DIR := ../dts
+
+	KERNEL := kernel-bin
+	KERNEL_INITRAMFS := kernel-bin | gzip
+
+	ROOTFS := squashfs | gzip
+	IMAGES := sysupgrade.bin initramfs.bin
+
+	IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+	IMAGE/initramfs.bin := append-dtb | uImage | gzip | append-metadata
+
 	DEVICE_PACKAGES := kmod-usb3 kmod-fs-ext4 block-mount f2fs-tools \
 		luci luci-base luci-i18n-base-zh-cn \
 		luci-app-eqos-mtk luci-app-mtwifi-cfg luci-app-turboacc-mtk luci-app-wrtbwmon
-	IMAGES := sysupgrade.bin
-	IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-	IMAGE/initramfs.bin := append-dtb | uImage | append-metadata
 endef
 TARGET_DEVICES += sl-3000-emmc
