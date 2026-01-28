@@ -223,11 +223,10 @@ ${TAB}DEVICE_DTS_DIR := ../dts
 ${TAB}KERNEL := kernel-bin
 ${TAB}KERNEL_INITRAMFS := kernel-bin | gzip
 
-${TAB}ROOTFS := squashfs | gzip
 ${TAB}IMAGES := sysupgrade.bin initramfs.bin
 
 ${TAB}IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-${TAB}IMAGE/initramfs.bin := append-dtb | uImage | gzip | append-metadata
+${TAB}IMAGE/initramfs.bin := append-kernel
 
 ${TAB}DEVICE_PACKAGES := kmod-usb3 kmod-fs-ext4 block-mount f2fs-tools \\
 ${TAB}${TAB}luci luci-base luci-i18n-base-zh-cn \\
