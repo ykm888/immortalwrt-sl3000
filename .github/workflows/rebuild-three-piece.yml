@@ -39,22 +39,17 @@ jobs:
         run: |
           git clone --depth=1 -b openwrt-24.10 https://github.com/openwrt/openwrt.git openwrt-src
 
-      # ⭐ 关键修复：把 sl3000-tools 放进 openwrt-src 里
-      - name: Copy tools into source tree
-        run: |
-          cp -r sl3000-tools openwrt-src/
-
       - name: Run Three-Piece Script
         working-directory: openwrt-src
         run: |
-          bash -x sl3000-tools/generate-three-piece.sh 2>&1 | tee $GITHUB_WORKSPACE/sl3000-run.log
+          bash -x ../sl3000-tools/generate-three-piece.sh 2>&1 | tee $GITHUB_WORKSPACE/sl3000-run.log
 
       - name: Strict Verify Three-Piece
         working-directory: openwrt-src
         run: |
           DTS_FILE="target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts"
 
-          # ⭐ MK 自动适配（脚本已处理，但校验也要兼容）
+          # MK 自动适配（filogic 为主）
           if [ -f "target/linux/mediatek/image/mt7981.mk" ]; then
             MK_FILE="target/linux/mediatek/image/mt7981.mk"
           else
@@ -77,13 +72,14 @@ jobs:
             exit 1
           fi
 
-          if ! grep -q "sl-3000-emmc" "$MK_FILE"; then
-            echo "❌ MK missing SL3000 segment"
+          # ⭐ 正确的 filogic CONFIG 校验
+          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_sl-3000-emmc=y" "$CFG_FILE"; then
+            echo "❌ CONFIG missing device enable (filogic)"
             exit 1
           fi
 
-          if ! grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl-3000-emmc=y" "$CFG_FILE"; then
-            echo "❌ CONFIG missing device enable"
+          if ! grep -q "define Device/sl-3000-emmc" "$MK_FILE"; then
+            echo "❌ MK missing SL3000 segment"
             exit 1
           fi
 
@@ -110,7 +106,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # 从 openwrt-src 拷回仓库
+          # 拷回仓库（保持官方结构）
           cp openwrt-src/${{ env.DTS_FILE }} target/linux/mediatek/dts/
           cp openwrt-src/${{ env.MK_FILE }} target/linux/mediatek/image/
           cp openwrt-src/${{ env.CFG_FILE }} sl3000-tools/sl3000-full-config.txt
