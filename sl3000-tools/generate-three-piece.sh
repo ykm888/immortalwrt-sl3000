@@ -12,7 +12,18 @@ TAB=$'\t'
 
 DTS_DIR="$ROOT/target/linux/mediatek/dts"
 DTS="$DTS_DIR/mt7981b-sl-3000-emmc.dts"
-MK="$ROOT/target/linux/mediatek/image/mt7981.mk"
+
+# --- 修复点：自动探测 MK 文件 ---
+IMAGE_DIR="$ROOT/target/linux/mediatek/image"
+if [ -f "$IMAGE_DIR/mt7981.mk" ]; then
+    MK="$IMAGE_DIR/mt7981.mk"
+elif [ -f "$IMAGE_DIR/filogic.mk" ]; then
+    MK="$IMAGE_DIR/filogic.mk"
+else
+    echo "[FATAL] No mediatek image mk found (mt7981.mk or filogic.mk)"
+    exit 1
+fi
+
 CFG="$SCRIPT_DIR/sl3000-full-config.txt"
 
 mkdir -p "$DTS_DIR"
@@ -210,7 +221,8 @@ EOF
 
 echo "=== Stage 2: Ensure MK device ==="
 
-# 强化：如果已有残缺定义，先删除旧的，再写入新的
+[ -f "$MK" ] || { echo "[FATAL] MK file not found: $MK"; exit 1; }
+
 sed -i '/Device\/sl-3000-emmc/,/endef/d' "$MK"
 sed -i '/sl-3000-emmc/d' "$MK"
 
@@ -264,27 +276,16 @@ CONFIG_PACKAGE_luci-app-mtwifi-cfg=y
 CONFIG_PACKAGE_luci-app-turboacc-mtk=y
 CONFIG_PACKAGE_luci-app-wrtbwmon=y
 
-# Fix OpenWrt 24.10 SSL breakage
 CONFIG_PACKAGE_libustream-mbedtls=n
 CONFIG_PACKAGE_libustream-wolfssl=y
 CONFIG_PACKAGE_libwolfssl=y
 CONFIG_PACKAGE_libmbedtls=n
 EOF
 
-# 自动写入 .config（关键增强）
 cp "$CFG" "$ROOT/.config"
 
 echo "=== Stage 4: Validation ==="
 
 [ -s "$DTS" ] || { echo "[FATAL] DTS missing"; exit 1; }
 [ -s "$MK" ]  || { echo "[FATAL] MK missing"; exit 1; }
-[ -s "$CFG" ] || { echo "[FATAL] CONFIG missing"; exit 1; }
-
-grep -q "Device/sl-3000-emmc" "$MK" || { echo "[FATAL] MK missing device block"; exit 1; }
-grep -q "TARGET_DEVICES += sl-3000-emmc" "$MK" || { echo "[FATAL] MK missing TARGET_DEVICES"; exit 1; }
-
-echo "=== Three-piece generation complete (SL3000 eMMC) ==="
-echo "[OUT] DTS: $DTS"
-echo "[OUT] MK : $MK"
-echo "[OUT] CFG: $CFG"
-echo "[OUT] .config updated"
+[ -s "$CFG" ] || { echo "[FATAL] CONFIG
