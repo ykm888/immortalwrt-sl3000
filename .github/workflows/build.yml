@@ -46,13 +46,8 @@ jobs:
             zlib1g-dev gawk flex gettext wget unzip python3 python3-distutils \
             file libssl-dev rsync ccache device-tree-compiler subversion libelf-dev \
             bc bison patch gcc-multilib g++-multilib swig libudev-dev libusb-1.0-0-dev
-          # 修复 env/bash 缺失
-          if [ ! -f /usr/bin/env ]; then
-            sudo ln -s /bin/env /usr/bin/env || true
-          fi
-          if [ ! -f /usr/bin/bash ]; then
-            sudo ln -s /bin/bash /usr/bin/bash || true
-          fi
+          if [ ! -f /usr/bin/env ]; then sudo ln -s /bin/env /usr/bin/env || true; fi
+          if [ ! -f /usr/bin/bash ]; then sudo ln -s /bin/bash /usr/bin/bash || true; fi
 
       - name: "Clone OpenWrt 24.10"
         run: |
@@ -89,7 +84,8 @@ jobs:
           OWRT=/mnt/openwrt
           REPO=repo
 
-          cp "$REPO/target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts" \
+          # DTS
+          cp "$REPO/target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts" \
              "$OWRT/target/linux/mediatek/dts/"
 
           # MK 追加而非覆盖
@@ -97,6 +93,7 @@ jobs:
             cat "$REPO/target/linux/mediatek/image/mt7981.mk" >> "$OWRT/target/linux/mediatek/image/mt7981.mk"
           fi
 
+          # CONFIG
           cp "$REPO/sl3000-tools/sl3000-full-config.txt" "$OWRT/.config"
 
       - name: "Finalize defconfig & verify SL3000"
@@ -176,4 +173,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tagname: sl3000-emmc-openwrt-2410-${
+          tagname: sl3000-emmc-openwrt-2410-${{ github.run_number }}-${{ github.run_id }}
+          name: SL3000 EMMC OpenWrt 24.10 #${{ github.run_number }}
+          body: |
+            OpenWrt 24.10 stable
+            Target: SL3000 (MT7981B eMMC)
+            Three-piece set (DTS/MK/CONFIG)
+            Full self-heal workflow: feeds, downloads, toolchain, kernel, packages, image, world
+            Built on GitHub Actions runner (/mnt build, disk space optimized, cached)
+          files: |
+            /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
+            /mnt/openwrt/bin/targets/mediatek/mt7981/*factory.bin
+            /mnt/openwrt/bin/targets/mediatek/mt7981/*initramfs.bin
+            /mnt/openwrt/bin/targets/mediatek/mt7981/*combined*.img.gz
+          prerelease: false
