@@ -77,6 +77,12 @@ jobs:
             libffi-dev \
             libssl-dev
 
+      # 仅新增这一段：修复 flex/m4 崩溃，其他结构全部延续上一版
+      - name: Install m4 for flex/kconfig
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y m4
+
       - name: Apply DTS from repo
         run: |
           mkdir -p /mnt/openwrt/target/linux/mediatek/dts
