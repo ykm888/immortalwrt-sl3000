@@ -164,13 +164,4 @@ jobs:
       # 🔥 固件校验 + 上传
       # ---------------------------------------------------------
       - name: Validate firmware output
-        working-directory: /mnt/openwrt
-        run: ls -lh bin/targets/mediatek/filogic/*sl-3000-emmc*sysupgrade.bin
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: sl3000-2410-firmware
-          path: /mnt/openwrt/bin/targets/mediatek/filogic/*
-
-      # ------------------------------------------------
+        working
