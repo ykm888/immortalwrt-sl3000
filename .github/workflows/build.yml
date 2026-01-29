@@ -94,6 +94,26 @@ jobs:
           make toolchain/install -j$(nproc) V=s || \
           (make toolchain/clean && make toolchain/install -j$(nproc) V=s)
 
+      # 三件套检测
+      - name: Detect three-piece consistency
+        run: |
+          echo "🔍 Checking DTS/MK/CONFIG consistency..."
+          test -f repo/sl3000/dts/mt7981b-sl-3000-emmc.dts || (echo "❌ DTS missing" && exit 1)
+          test -f repo/sl3000/mk/filogic-sl3000.mk || (echo "❌ MK missing" && exit 1)
+          test -f repo/sl3000/config/sl3000.config || (echo "❌ CONFIG missing" && exit 1)
+
+          grep -q "mediatek,mt7981" repo/sl3000/dts/mt7981b-sl-3000-emmc.dts || (echo "❌ SoC mismatch" && exit 1)
+          grep -q "sl3000-emmc" repo/sl3000/mk/filogic-sl3000.mk || (echo "❌ MK device name mismatch" && exit 1)
+          grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" repo/sl3000/config/sl3000.config || (echo "❌ CONFIG device missing" && exit 1)
+
+      # 三件套自动修复
+      - name: Auto fix three-piece naming
+        run: |
+          echo "🛠 Auto fixing naming issues..."
+          sed -i 's/sl_3000-emmc/sl3000-emmc/g' repo/sl3000/config/sl3000.config || true
+          sed -i 's/sl_3000-emmc/sl3000-emmc/g' repo/sl3000/mk/filogic-sl3000.mk || true
+
+      # 三件套自动注册
       - name: Apply DTS
         run: |
           mkdir -p /mnt/openwrt/target/linux/mediatek/dts
@@ -102,8 +122,8 @@ jobs:
       - name: Apply MK
         run: |
           MK=/mnt/openwrt/target/linux/mediatek/image/filogic.mk
-          sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK"
-          sed -i '/TARGET_DEVICES += sl_3000-emmc/d' "$MK"
+          sed -i '/Device\/sl3000-emmc/,/endef/d' "$MK"
+          sed -i '/TARGET_DEVICES += sl3000-emmc/d' "$MK"
           cat repo/sl3000/mk/filogic-sl3000.mk >> "$MK"
 
       - name: Build kernel (self-heal)
