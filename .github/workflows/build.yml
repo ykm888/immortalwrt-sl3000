@@ -63,7 +63,6 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 🟩 新增：安装 OpenWrt host 构建依赖（彻底解决 defconfig exit 1）
       - name: Install OpenWrt build dependencies
         run: |
           sudo apt-get update
@@ -111,18 +110,17 @@ jobs:
 
       - name: Validate CONFIG device
         working-directory: /mnt/openwrt
-        run: grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" .config
+        run: grep -q "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_sl_3000-emmc=y" .config
 
       - name: Run defconfig
         working-directory: /mnt/openwrt
         run: |
           make defconfig
 
-      # 🟩 修复点：正确的设备名（-emmc，而不是 _emmc）
       - name: Validate CONFIG after defconfig
         working-directory: /mnt/openwrt
         run: |
-          grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" .config
+          grep -q "CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_sl_3000-emmc=y" .config
 
       - name: Validate DTS compiled
         working-directory: /mnt/openwrt
@@ -134,7 +132,7 @@ jobs:
         working-directory: /mnt/openwrt
         run: |
           make json_overview_image_info
-          grep -q '"id": "sl_3000-emmc"' bin/targets/mediatek/mt7981/profiles.json
+          grep -q '"id": "sl_3000-emmc"' bin/targets/mediatek/filogic/profiles.json
 
       - name: Generate three-piece diff
         run: |
@@ -190,13 +188,13 @@ jobs:
       - name: Validate firmware output
         working-directory: /mnt/openwrt
         run: |
-          ls bin/targets/mediatek/mt7981/*sl-3000-emmc*sysupgrade.bin
+          ls bin/targets/mediatek/filogic/*sl-3000-emmc*sysupgrade.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: sl3000-2410-firmware
-          path: /mnt/openwrt/bin/targets/mediatek/mt7981/*
+          path: /mnt/openwrt/bin/targets/mediatek/filogic/*
 
       - name: Auto Release firmware
         uses: softprops/action-gh-release@v2
@@ -214,7 +212,7 @@ jobs:
             - three-piece diff attached
             - auto registration checks (defconfig / DTB / profiles.json / firmware)
           files: |
-            /mnt/openwrt/bin/targets/mediatek/mt7981/*
+            /mnt/openwrt/bin/targets/mediatek/filogic/*
             repo/sl3000/dts/mt7981b-sl-3000-emmc.dts
             repo/sl3000/mk/filogic-sl3000.mk
             repo/sl3000/config/sl3000.config
