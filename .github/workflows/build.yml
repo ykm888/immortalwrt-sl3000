@@ -32,15 +32,17 @@ jobs:
           sudo apt-get clean
           sudo rm -rf /usr/share/man /usr/share/doc /usr/share/doc-base
 
-      # ccache 缓存
+      # ccache 缓存（修复 /mnt/ccache 权限为 755）
       - name: Setup ccache
         run: |
           sudo apt-get update
           sudo apt-get install -y ccache
+          sudo mkdir -p /mnt/ccache
+          sudo chmod 755 /mnt/ccache
+          sudo chown -R $USER:$USER /mnt/ccache
           echo 'export CC="ccache gcc"' >> ~/.bashrc
           echo 'export CXX="ccache g++"' >> ~/.bashrc
           echo 'export CCACHE_DIR=/mnt/ccache' >> ~/.bashrc
-          mkdir -p /mnt/ccache
 
       - name: Restore ccache
         uses: actions/cache@v4
