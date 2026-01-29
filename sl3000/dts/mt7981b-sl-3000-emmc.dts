@@ -1,0 +1,51 @@
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
+
+#include "mt7981.dtsi"
+
+/ {
+	model = "SL-3000 eMMC bootstrap versions";
+	compatible = "sl,3000-emmc", "mediatek,mt7981";
+
+	aliases {
+		serial0 = &uart0;
+		led-boot = &statusredled;
+		led-failsafe = &statusredled;
+		led-running = &statusgreenled;
+		led-upgrade = &statusblueled;
+	};
+
+	chosen {
+		bootargs = "root=PARTLABEL=rootfs rootwait";
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x0 0x40000000 0x0 0x40000000>;
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+&mmc0 {
+	status = "okay";
+	bus-width = <8>;
+	max-frequency = <52000000>;
+	cap-mmc-highspeed;
+	vmmc-supply = <&reg_3p3v>;
+	vqmmc-supply = <&reg_1p8v>;
+};
+
+&eth {
+	status = "okay";
+};
+
+&wifi {
+	status = "okay";
+};
