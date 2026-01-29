@@ -1,9 +1,9 @@
 #!/bin/bash
-# 智能清理所有依赖不存在模块的包，确保构建日志 0 警告
+# 全量 + 智能清理所有依赖不存在模块的包，确保构建日志 0 警告
 
 FEEDS_DIR="package/feeds/packages"
 
-# 不存在的依赖关键字（24.10 已移除）
+# 所有在 24.10 中已不存在的依赖关键字
 BAD_DEPS=(
   "python3"
   "python3-"
@@ -21,6 +21,13 @@ BAD_DEPS=(
   "libsasl2"
   "apr"
   "libapr"
+  "libmesa"
+  "libwayland"
+  "libgraphene"
+  "kmod-team"
+  "kmod-batman-adv"
+  "olsrd"
+  "jq/host"
 )
 
 echo "=== 自动扫描并删除依赖不存在的包 ==="
