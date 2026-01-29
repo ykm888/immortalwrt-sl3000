@@ -1,37 +1,36 @@
 #!/bin/bash
-# 白名单模式：清空所有包，只保留 luci + passwall2 + ssrplus + xray-core
+# 白名单模式：只清理 feeds，不动主线 package/*
 
-echo "=== 清空主线 package/* ==="
-rm -rf package/*
+FEEDS_ROOT="package/feeds"
 
 echo "=== 清空 feeds 包 ==="
-rm -rf package/feeds/packages/*
-rm -rf package/feeds/luci/*
-rm -rf package/feeds/small/*
-rm -rf package/feeds/helloworld/*
+rm -rf $FEEDS_ROOT/packages/*
+rm -rf $FEEDS_ROOT/luci/*
+rm -rf $FEEDS_ROOT/small/*
+rm -rf $FEEDS_ROOT/helloworld/*
 
-mkdir -p package/feeds/packages
-mkdir -p package/feeds/luci
-mkdir -p package/feeds/small
-mkdir -p package/feeds/helloworld
+mkdir -p $FEEDS_ROOT/packages
+mkdir -p $FEEDS_ROOT/luci
+mkdir -p $FEEDS_ROOT/small
+mkdir -p $FEEDS_ROOT/helloworld
 
 echo "=== 保留 luci 基础 ==="
-cp -r feeds/luci/modules/luci-base package/feeds/luci/
-cp -r feeds/luci/modules/luci-compat package/feeds/luci/
-cp -r feeds/luci/modules/luci-lua-runtime package/feeds/luci/
-cp -r feeds/luci/libs/luci-lib-ip package/feeds/luci/
-cp -r feeds/luci/libs/luci-lib-jsonc package/feeds/luci/
-cp -r feeds/luci/themes/luci-theme-bootstrap package/feeds/luci/
+cp -r feeds/luci/modules/luci-base $FEEDS_ROOT/luci/
+cp -r feeds/luci/modules/luci-compat $FEEDS_ROOT/luci/
+cp -r feeds/luci/modules/luci-lua-runtime $FEEDS_ROOT/luci/
+cp -r feeds/luci/libs/luci-lib-ip $FEEDS_ROOT/luci/
+cp -r feeds/luci/libs/luci-lib-jsonc $FEEDS_ROOT/luci/
+cp -r feeds/luci/themes/luci-theme-bootstrap $FEEDS_ROOT/luci/
 
 echo "=== 保留 Passwall2 / SSRPlus / Xray ==="
-cp -r feeds/helloworld/luci-app-ssr-plus package/feeds/packages/
-cp -r feeds/helloworld/ssr-plus package/feeds/packages/
-cp -r feeds/helloworld/xray-core package/feeds/packages/
-cp -r feeds/helloworld/v2ray-geodata package/feeds/packages/
+cp -r feeds/helloworld/luci-app-ssr-plus $FEEDS_ROOT/packages/
+cp -r feeds/helloworld/ssr-plus $FEEDS_ROOT/packages/
+cp -r feeds/helloworld/xray-core $FEEDS_ROOT/packages/
+cp -r feeds/helloworld/v2ray-geodata $FEEDS_ROOT/packages/
 
-cp -r feeds/small/luci-app-passwall2 package/feeds/small/
-cp -r feeds/small/passwall2 package/feeds/small/
-cp -r feeds/small/xray-core package/feeds/small/ 2>/dev/null || true
+cp -r feeds/small/luci-app-passwall2 $FEEDS_ROOT/small/
+cp -r feeds/small/passwall2 $FEEDS_ROOT/small/
+cp -r feeds/small/xray-core $FEEDS_ROOT/small/ 2>/dev/null || true
 
 echo "=== 生成白名单 .config ==="
 cat > .config << "EOF"
