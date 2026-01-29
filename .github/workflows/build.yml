@@ -1,7 +1,7 @@
 name: build-sl3000-openwrt-2410
 
 on:
-  workflow_dispatch:   # 仅手动触发
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,9 +13,6 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      # ============================================================
-      # 🔥 自动退出保护：防止保存 workflow 时自动构建
-      # ============================================================
       - name: Skip auto-run when workflow file is modified
         if: github.event_name == 'push' && contains(join(github.event.commits.*.modified), '.github/workflows/')
         run: |
@@ -70,7 +67,7 @@ jobs:
           ./scripts/feeds install -a
 
       # ============================================================
-      # 🔥 生成 DTS（无 EOF）
+      # 🔥 DTS
       # ============================================================
 
       - name: Generate SL3000 DTS
@@ -80,47 +77,27 @@ jobs:
           DTS=target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
           : > "$DTS"
           echo "// SPDX-License-Identifier: GPL-2.0-or-later OR MIT" >> "$DTS"
-          echo "" >> "$DTS"
           echo "/dts-v1/;" >> "$DTS"
-          echo "" >> "$DTS"
           echo "#include <dt-bindings/gpio/gpio.h>" >> "$DTS"
           echo "#include <dt-bindings/input/input.h>" >> "$DTS"
           echo "#include <dt-bindings/leds/common.h>" >> "$DTS"
-          echo "" >> "$DTS"
           echo "#include \"mt7981.dtsi\"" >> "$DTS"
-          echo "" >> "$DTS"
           echo "/ {" >> "$DTS"
           echo "  model = \"SL-3000 eMMC bootstrap versions\";" >> "$DTS"
           echo "  compatible = \"sl,3000-emmc\", \"mediatek,mt7981\";" >> "$DTS"
-          echo "" >> "$DTS"
-          echo "  aliases {" >> "$DTS"
-          echo "    serial0 = &uart0;" >> "$DTS"
-          echo "    led-boot = &statusredled;" >> "$DTS"
-          echo "    led-failsafe = &statusredled;" >> "$DTS"
-          echo "    led-running = &statusgreenled;" >> "$DTS"
-          echo "    led-upgrade = &statusblueled;" >> "$DTS"
-          echo "  };" >> "$DTS"
-          echo "" >> "$DTS"
-          echo "  chosen {" >> "$DTS"
-          echo "    bootargs = \"root=PARTLABEL=rootfs rootwait\";" >> "$DTS"
-          echo "    stdout-path = \"serial0:115200n8\";" >> "$DTS"
-          echo "  };" >> "$DTS"
-          echo "" >> "$DTS"
-          echo "  memory@40000000 {" >> "$DTS"
-          echo "    device_type = \"memory\";" >> "$DTS"
-          echo "    reg = <0x0 0x40000000 0x0 0x40000000>;" >> "$DTS"
-          echo "  };" >> "$DTS"
+          echo "  aliases { serial0 = &uart0; };" >> "$DTS"
+          echo "  chosen { stdout-path = \"serial0:115200n8\"; };" >> "$DTS"
+          echo "  memory@40000000 { device_type = \"memory\"; reg = <0x0 0x40000000 0x0 0x40000000>; };" >> "$DTS"
           echo "};" >> "$DTS"
 
       # ============================================================
-      # 🔥 生成 MK（无 EOF）
+      # 🔥 MK
       # ============================================================
 
       - name: Generate SL3000 MK
         working-directory: /mnt/openwrt
         run: |
           MK=target/linux/mediatek/image/filogic.mk
-
           sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK"
           sed -i '/TARGET_DEVICES += sl3000-emmc/d' "$MK"
 
@@ -147,7 +124,7 @@ jobs:
         run: make defconfig
 
       # ============================================================
-      # 🔥 生成 CONFIG（必须在 defconfig 之后）
+      # 🔥 CONFIG（必须在 defconfig 之后）
       # ============================================================
 
       - name: Generate SL3000 CONFIG
@@ -194,7 +171,7 @@ jobs:
             || { echo "[FATAL] CONFIG missing device enable"; exit 1; }
 
       # ============================================================
-      # 🔥 构建链（保持不变）
+      # 🔥 构建链
       # ============================================================
 
       - name: Download sources
