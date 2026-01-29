@@ -1,7 +1,7 @@
 name: build-sl3000-openwrt-2410
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # 仅手动触发，不自动构建
 
 permissions:
   contents: write
@@ -64,7 +64,7 @@ jobs:
       # 🔥 生成三件套（无 EOF、纯 echo）
       # ============================================================
 
-      - name: Generate SL3000 DTS (no EOF)
+      - name: Generate SL3000 DTS
         working-directory: /mnt/openwrt
         run: |
           mkdir -p target/linux/mediatek/dts
@@ -103,7 +103,7 @@ jobs:
           echo "  };" >> "$DTS"
           echo "};" >> "$DTS"
 
-      - name: Generate SL3000 MK (no EOF)
+      - name: Generate SL3000 MK
         working-directory: /mnt/openwrt
         run: |
           MK=target/linux/mediatek/image/filogic.mk
@@ -124,7 +124,7 @@ jobs:
           echo "" >> "$MK"
           echo "TARGET_DEVICES += sl3000-emmc" >> "$MK"
 
-      - name: Generate SL3000 CONFIG (no EOF)
+      - name: Generate SL3000 CONFIG
         working-directory: /mnt/openwrt
         run: |
           CFG=.config
@@ -148,7 +148,7 @@ jobs:
         run: make defconfig
 
       # ============================================================
-      # 🔥 校验三件套（路径已修复）
+      # 🔥 校验三件套
       # ============================================================
 
       - name: Validate SL3000 three-piece set
