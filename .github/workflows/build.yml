@@ -1,7 +1,7 @@
 name: build-sl3000-openwrt-2410
 
 on:
-  workflow_dispatch:   # 仅手动触发，不自动构建
+  workflow_dispatch:   # 仅手动触发
 
 permissions:
   contents: write
@@ -13,6 +13,15 @@ jobs:
     timeout-minutes: 360
 
     steps:
+      # ============================================================
+      # 🔥 自动退出保护：防止保存 workflow 时自动构建
+      # ============================================================
+      - name: Skip auto-run when workflow file is modified
+        if: github.event_name == 'push' && contains(join(github.event.commits.*.modified), '.github/workflows/')
+        run: |
+          echo "Workflow file modified. Skipping auto-run."
+          exit 0
+
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
@@ -107,6 +116,7 @@ jobs:
         working-directory: /mnt/openwrt
         run: |
           MK=target/linux/mediatek/image/filogic.mk
+
           sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK"
           sed -i '/TARGET_DEVICES += sl3000-emmc/d' "$MK"
 
@@ -158,10 +168,15 @@ jobs:
           MK=target/linux/mediatek/image/filogic.mk
           CFG=.config
 
+          echo "=== Check DTS ==="
           [ -s "$DTS" ] || { echo "[FATAL] DTS missing"; exit 1; }
-          grep -q "define Device/sl_3000-emmc" "$MK" || exit 1
-          grep -q "TARGET_DEVICES += sl3000-emmc" "$MK" || exit 1
-          grep -q '^CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y' "$CFG" || exit 1
+
+          echo "=== Check MK ==="
+          grep -q "define Device/sl_3000-emmc" "$MK" || { echo "[FATAL] MK missing Device/sl_3000-emmc"; exit 1; }
+          grep -q "TARGET_DEVICES += sl3000-emmc" "$MK" || { echo "[FATAL] MK missing TARGET_DEVICES"; exit 1; }
+
+          echo "=== Check CONFIG ==="
+          grep -q '^CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y' "$CFG" || { echo "[FATAL] CONFIG missing device enable"; exit 1; }
 
       # ============================================================
       # 🔥 构建链（保持不变）
