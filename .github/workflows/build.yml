@@ -63,7 +63,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 🟩 新增：安装 OpenWrt 构建依赖（彻底解决 defconfig 报错）
+      # 🟩 新增：安装 OpenWrt host 构建依赖（彻底解决 defconfig exit 1）
       - name: Install OpenWrt build dependencies
         run: |
           sudo apt-get update
@@ -111,17 +111,18 @@ jobs:
 
       - name: Validate CONFIG device
         working-directory: /mnt/openwrt
-        run: grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000_emmc=y" .config
+        run: grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" .config
 
       - name: Run defconfig
         working-directory: /mnt/openwrt
         run: |
           make defconfig
 
+      # 🟩 修复点：正确的设备名（-emmc，而不是 _emmc）
       - name: Validate CONFIG after defconfig
         working-directory: /mnt/openwrt
         run: |
-          grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000_emmc=y" .config
+          grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" .config
 
       - name: Validate DTS compiled
         working-directory: /mnt/openwrt
