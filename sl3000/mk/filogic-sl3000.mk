@@ -1,4 +1,4 @@
-define Device/sl_3000-emmc
+define Device/sl3000-emmc
   DEVICE_VENDOR := SL
   DEVICE_MODEL := 3000 eMMC
   DEVICE_DTS := mt7981b-sl-3000-emmc
@@ -22,4 +22,4 @@ define Device/sl_3000-emmc
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 
-TARGET_DEVICES += sl_3000-emmc
+TARGET_DEVICES += sl3000-emmc
