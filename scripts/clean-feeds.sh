@@ -1,6 +1,8 @@
 #!/bin/bash
-# 白名单模式 + SSRPlus 依赖目录补齐 + 禁用主线包扫描
+# 白名单模式 + SSRPlus 依赖目录补齐 + 底层库依赖补齐 + 禁用主线包扫描
 # 只改脚本，不动工作流，不动 package/*
+
+set -e
 
 FEEDS_ROOT="package/feeds"
 
@@ -16,22 +18,22 @@ mkdir -p $FEEDS_ROOT/small
 mkdir -p $FEEDS_ROOT/helloworld
 
 echo "=== 保留 luci 基础 ==="
-cp -r feeds/luci/modules/luci-base $FEEDS_ROOT/luci/
-cp -r feeds/luci/modules/luci-compat $FEEDS_ROOT/luci/
+cp -r feeds/luci/modules/luci-base        $FEEDS_ROOT/luci/
+cp -r feeds/luci/modules/luci-compat      $FEEDS_ROOT/luci/
 cp -r feeds/luci/modules/luci-lua-runtime $FEEDS_ROOT/luci/
-cp -r feeds/luci/libs/luci-lib-ip $FEEDS_ROOT/luci/
-cp -r feeds/luci/libs/luci-lib-jsonc $FEEDS_ROOT/luci/
+cp -r feeds/luci/libs/luci-lib-ip         $FEEDS_ROOT/luci/
+cp -r feeds/luci/libs/luci-lib-jsonc      $FEEDS_ROOT/luci/
 cp -r feeds/luci/themes/luci-theme-bootstrap $FEEDS_ROOT/luci/
 
 echo "=== 保留 Passwall2 / SSRPlus / Xray ==="
-cp -r feeds/helloworld/luci-app-ssr-plus $FEEDS_ROOT/helloworld/
-cp -r feeds/helloworld/ssr-plus $FEEDS_ROOT/helloworld/
-cp -r feeds/helloworld/xray-core $FEEDS_ROOT/helloworld/
-cp -r feeds/helloworld/v2ray-geodata $FEEDS_ROOT/helloworld/
+cp -r feeds/helloworld/luci-app-ssr-plus  $FEEDS_ROOT/helloworld/
+cp -r feeds/helloworld/ssr-plus           $FEEDS_ROOT/helloworld/
+cp -r feeds/helloworld/xray-core          $FEEDS_ROOT/helloworld/
+cp -r feeds/helloworld/v2ray-geodata      $FEEDS_ROOT/helloworld/
 
-cp -r feeds/small/luci-app-passwall2 $FEEDS_ROOT/small/
-cp -r feeds/small/passwall2 $FEEDS_ROOT/small/
-cp -r feeds/small/xray-core $FEEDS_ROOT/small/ 2>/dev/null || true
+cp -r feeds/small/luci-app-passwall2      $FEEDS_ROOT/small/
+cp -r feeds/small/passwall2               $FEEDS_ROOT/small/
+cp -r feeds/small/xray-core               $FEEDS_ROOT/small/ 2>/dev/null || true
 
 echo "=== 补齐 SSRPlus 依赖目录（不启用、不构建，只让它们存在） ==="
 SSR_DEPS=(
@@ -49,6 +51,25 @@ for dep in "${SSR_DEPS[@]}"; do
     cp -r "feeds/packages/$dep" "$FEEDS_ROOT/packages/"
   elif [ -d "feeds/small/$dep" ]; then
     cp -r "feeds/small/$dep" "$FEEDS_ROOT/small/"
+  fi
+done
+
+echo "=== 补齐底层库依赖（libev / libsodium / libudns / boost / rust/host / golang/host） ==="
+LIB_DEPS=(libev libsodium libudns boost boost-program_options boost-date_time)
+for dep in "${LIB_DEPS[@]}"; do
+  # 优先从 feeds/packages 拿
+  if [ -d "feeds/packages/$dep" ]; then
+    cp -r "feeds/packages/$dep" "$FEEDS_ROOT/packages/"
+  elif [ -d "feeds/helloworld/$dep" ]; then
+    cp -r "feeds/helloworld/$dep" "$FEEDS_ROOT/helloworld/"
+  fi
+done
+
+HOST_DEPS=(rust golang)
+for dep in "${HOST_DEPS[@]}"; do
+  if [ -d "feeds/packages/lang/$dep" ]; then
+    mkdir -p "$FEEDS_ROOT/packages/lang"
+    cp -r "feeds/packages/lang/$dep" "$FEEDS_ROOT/packages/lang/"
   fi
 done
 
