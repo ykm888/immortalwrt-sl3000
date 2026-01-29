@@ -1,7 +1,9 @@
 #!/bin/bash
 # 清理所有不相关/坏包，保持构建空间干净
 
-# packages feed - Python3 / libcrypt-compat / libxcrypt / 其他坏包
+# -------------------------------
+# packages feed - Python3 / 安全工具 / 其他坏包
+# -------------------------------
 rm -rf package/feeds/packages/python3 \
        package/feeds/packages/rtty \
        package/feeds/packages/samba4 \
@@ -24,9 +26,14 @@ rm -rf package/feeds/packages/python3 \
        package/feeds/packages/vectorscan \
        package/feeds/packages/vobject \
        package/feeds/packages/yt-dlp \
-       package/feeds/packages/xupnpd
+       package/feeds/packages/xupnpd \
+       package/feeds/packages/selinux-python \
+       package/feeds/packages/snort3 \
+       package/feeds/packages/suricata
 
+# -------------------------------
 # small feed - 已知坏包
+# -------------------------------
 rm -rf package/feeds/small/luci-app-fchomo \
        package/feeds/small/fchomo \
        package/feeds/small/nikki \
@@ -38,7 +45,9 @@ rm -rf package/feeds/small/luci-app-fchomo \
        package/feeds/small/momo \
        package/feeds/small/trojan-plus
 
+# -------------------------------
 # small feed - 不需要的代理插件
+# -------------------------------
 rm -rf package/feeds/small/luci-app-vssr* \
        package/feeds/small/luci-app-openclash* \
        package/feeds/small/luci-app-clash* \
@@ -48,7 +57,9 @@ rm -rf package/feeds/small/luci-app-vssr* \
        package/feeds/small/luci-app-ikoolproxy* \
        package/feeds/small/luci-app-adguardhome*
 
+# -------------------------------
 # small feed - 不需要的代理内核
+# -------------------------------
 rm -rf package/feeds/small/naiveproxy \
        package/feeds/small/brook \
        package/feeds/small/kcptun \
