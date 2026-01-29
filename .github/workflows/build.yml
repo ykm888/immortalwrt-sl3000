@@ -63,7 +63,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Install OpenWrt build dependencies (with m4)
+      - name: Install OpenWrt build dependencies (with flex+bison+m4)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -76,12 +76,22 @@ jobs:
             python3-venv \
             libffi-dev \
             libssl-dev \
+            flex \
+            bison \
             m4
 
-      - name: Validate m4
+      - name: Validate flex/bison/m4
         run: |
-          which m4
-          m4 --version
+          which flex && flex --version
+          which bison && bison --version
+          which m4 && m4 --version
+
+      - name: Fix bison share files
+        working-directory: /mnt/openwrt
+        run: |
+          mkdir -p staging_dir/host/share/bison
+          cp -r /usr/share/bison/* staging_dir/host/share/bison/
+          ls staging_dir/host/share/bison
 
       - name: Fix m4 link for flex
         working-directory: /mnt/openwrt
