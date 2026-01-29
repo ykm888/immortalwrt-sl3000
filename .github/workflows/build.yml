@@ -45,10 +45,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-openwrt-ccache-
 
-      # ---------------------------------------------------------
-      # 🔥 精简 feeds
-      # ---------------------------------------------------------
-      - name: Clean feeds to router-only + Passwall2 + SSRPlus
+      - name: Clean feeds config
         working-directory: /mnt/openwrt
         run: |
           cat > feeds.conf.default << "EOF"
@@ -64,19 +61,12 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # ---------------------------------------------------------
-      # 🔥 调用源头删除脚本
-      # ---------------------------------------------------------
-      - name: Add execute permission to clean-feeds.sh
-        run: chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
-
-      - name: Clean feeds (source deletion script)
+      - name: Run clean-feeds.sh
         working-directory: /mnt/openwrt
-        run: bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
+        run: |
+          chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
+          bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
 
-      # ---------------------------------------------------------
-      # 🔥 禁止 menuconfig
-      # ---------------------------------------------------------
       - name: Disable menuconfig globally
         run: |
           echo "KCONFIG_NONINTERACTIVE=1" >> $GITHUB_ENV
@@ -92,18 +82,12 @@ jobs:
           echo "# CONFIG_DEVEL is not set" >> .config
           echo "# CONFIG_TOOLCHAINOPTS is not set" >> .config
 
-      # ---------------------------------------------------------
-      # 🔥 下载源码（自愈）
-      # ---------------------------------------------------------
       - name: Download sources (self-heal)
         working-directory: /mnt/openwrt
         run: |
           make download -j$(nproc) || \
           (rm -rf dl/* && make download -j$(nproc))
 
-      # ---------------------------------------------------------
-      # 🔥 工具链自愈
-      # ---------------------------------------------------------
       - name: Build host tools (self-heal)
         working-directory: /mnt/openwrt
         run: |
@@ -116,22 +100,19 @@ jobs:
           make toolchain/install -j$(nproc) V=s || \
           (make toolchain/clean && make toolchain/install -j$(nproc) V=s)
 
-      # ---------------------------------------------------------
-      # 🔥 三件套应用
-      # ---------------------------------------------------------
-      - name: Apply DTS from repo
+      - name: Apply DTS
         run: |
           mkdir -p /mnt/openwrt/target/linux/mediatek/dts
           cp repo/sl3000/dts/mt7981b-sl-3000-emmc.dts /mnt/openwrt/target/linux/mediatek/dts/
 
-      - name: Apply MK from repo
+      - name: Apply MK
         run: |
           MK=/mnt/openwrt/target/linux/mediatek/image/filogic.mk
           sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK"
           sed -i '/TARGET_DEVICES += sl_3000-emmc/d' "$MK"
           cat repo/sl3000/mk/filogic-sl3000.mk >> "$MK"
 
-      - name: Apply CONFIG from repo
+      - name: Apply CONFIG
         working-directory: /mnt/openwrt
         run: cp $GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config .config
 
@@ -139,9 +120,6 @@ jobs:
         working-directory: /mnt/openwrt
         run: make defconfig
 
-      # ---------------------------------------------------------
-      # 🔥 kernel / packages / image 自愈
-      # ---------------------------------------------------------
       - name: Build kernel (self-heal)
         working-directory: /mnt/openwrt
         run: |
@@ -160,9 +138,6 @@ jobs:
           make target/image/compile -j$(nproc) V=s || \
           (make target/image/clean && make target/image/compile -j$(nproc) V=s)
 
-      # ---------------------------------------------------------
-      # 🔥 固件校验 + 上传
-      # ---------------------------------------------------------
       - name: Validate firmware output
         working-directory: /mnt/openwrt
         run: ls -lh bin/targets/mediatek/filogic/*sl-3000-emmc*sysupgrade.bin
@@ -173,9 +148,6 @@ jobs:
           name: sl3000-2410-firmware
           path: /mnt/openwrt/bin/targets/mediatek/filogic/*
 
-      # ---------------------------------------------------------
-      # 🔥 磁盘空间优化
-      # ---------------------------------------------------------
       - name: Optimize disk space
         working-directory: /mnt/openwrt
         run: |
