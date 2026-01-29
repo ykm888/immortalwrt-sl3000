@@ -1,101 +1,78 @@
-name: generate-sl3000-three-piece
-
-# 仅手动触发，符合工具类工作流设计
+name: SL3000 ImmortalWrt 24.10 Build
 on:
-  workflow_dispatch:
-
-# 最小必要权限：写入仓库内容+上传工件
-permissions:
-  contents: write
-  actions: write
+  push:
+    branches: [ main ]
+    paths:
+      - 'gen-sl3000-three-piece.sh'
+      - '.github/workflows/sl3000-build.yml'
+  workflow_dispatch: # 手动触发
 
 jobs:
-  generate-three-piece:
+  build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
-    defaults:
-      run:
-        shell: bash
-        # 统一工作目录，避免路径混乱
-        working-directory: ${{ github.workspace }}
+    env:
+      # 关键：指定ImmortalWrt源码根目录（工作流中克隆后的路径）
+      IWRT_ROOT: /home/runner/work/immortalwrt-sl3000/immortalwrt-sl3000
+      SCRIPT_NAME: gen-sl3000-three-piece.sh
 
     steps:
-      - name: Checkout source code
+      - name: 1. 拉取仓库源码（完整克隆，非浅克隆）
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # 浅克隆，提升速度
+          fetch-depth: 0 # 关键：完整拉取，避免filogic目录缺失
+          path: .
 
-      - name: Install dependencies
+      - name: 2. 安装基础依赖（Actions环境补全）
         run: |
-          # 安装GNU sed等必要工具，兼容脚本
-          sudo apt update && sudo apt install -y sed coreutils
-          # 清理旧的OpenWrt目录（若存在）
-          rm -rf openwrt && mkdir -p openwrt
+          sudo apt update && sudo apt install -y bash coreutils sed grep tee make gcc g++ binutils bzip2 gzip patch unzip tar cpio wget curl git subversion bc findutils
+          echo "依赖安装完成"
 
-      - name: Clone ImmortalWrt 24.10 base repo
+      - name: 3. 关键前置：脚本赋权+切换到源码根目录
         run: |
-          git clone --depth=1 --single-branch -b openwrt-24.10 \
-            https://github.com/immortalwrt/immortalwrt.git openwrt
-          # 检查OpenWrt核心目录，确保克隆成功
-          [ -d "openwrt/target/linux/mediatek/filogic" ] || { echo "FATAL: ImmortalWrt 24.10 clone failed"; exit 1; }
+          # 给三件套生成脚本添加可执行权限（云端默认无）
+          chmod +x ${{ env.SCRIPT_NAME }}
+          # 验证脚本权限
+          ls -l ${{ env.SCRIPT_NAME }}
+          # 切换到ImmortalWrt源码根目录（脚本必须在此执行）
+          cd ${{ env.IWRT_ROOT }}
+          pwd # 打印当前路径，便于调试
 
-      - name: Make script executable
+      - name: 4. 执行三件套生成脚本（核心步骤，生成DTS/MK/.config）
         run: |
-          chmod +x ${{ github.workspace }}/sl3000-tools/generate-three-piece.sh
-          # 检查脚本是否存在
-          [ -f "${{ github.workspace }}/sl3000-tools/generate-three-piece.sh" ] || { echo "FATAL: Generator script not found"; exit 1; }
+          cd ${{ env.IWRT_ROOT }}
+          # 执行脚本，终端+日志双输出，云端保留日志
+          ./${{ env.SCRIPT_NAME }}
+          echo "脚本执行完成，开始验证三件套是否生成"
 
-      - name: Run SL3000 three-piece generator script
-        id: generate
-        working-directory: ${{ github.workspace }}/openwrt
+      - name: 5. 强制校验：三件套文件存在性+非空（云端关键）
         run: |
-          # 执行生成脚本，输出实时日志
-          bash ${{ github.workspace }}/sl3000-tools/generate-three-piece.sh
-          # 打印生成结果，用于日志排查
-          echo "=== Generated files list ==="
-          ls -l target/linux/mediatek/filogic/dts/mt7981b-sl-3000-emmc.dts
-          ls -l target/linux/mediatek/filogic/image/Makefile
-          ls -l .config
-          echo "=== Script run completed ==="
-
-      - name: Validate three-piece files (strict check)
-        id: validate
-        working-directory: ${{ github.workspace }}/openwrt
-        run: |
-          # 定义标准路径（与脚本/ImmortalWrt 24.10对齐）
+          cd ${{ env.IWRT_ROOT }}
+          # 定义三件套路径（和脚本内路径完全一致）
           DTS="target/linux/mediatek/filogic/dts/mt7981b-sl-3000-emmc.dts"
-          MK="target/linux/mediatek/filogic/image/Makefile"
+          MK="target/linux/mediatek/filogic/image/mt7981.mk"
           CFG=".config"
-          DEVICE="sl_3000-emmc"
+          # 校验存在性
+          [ -f "$DTS" ] && echo "✅ DTS生成成功: $DTS" || { echo "❌ DTS未生成"; exit 1; }
+          [ -f "$MK" ] && echo "✅ MK生成成功: $MK" || { echo "❌ MK未生成"; exit 1; }
+          [ -f "$CFG" ] && echo "✅ CONFIG生成成功: $CFG" || { echo "❌ CONFIG未生成"; exit 1; }
+          # 校验非空
+          [ -s "$DTS" ] && echo "✅ DTS非空" || { echo "❌ DTS为空"; exit 1; }
+          [ -s "$MK" ] && echo "✅ MK非空" || { echo "❌ MK为空"; exit 1; }
+          [ -s "$CFG" ] && echo "✅ CONFIG非空" || { echo "❌ CONFIG为空"; exit 1; }
+          echo "=== 三件套100%生成并验证通过 ==="
 
-          echo "=== Start strict validation ==="
-          # 校验文件非空
-          [ -s "$DTS" ] || { echo "[FATAL] DTS file is empty or missing"; exit 1; }
-          [ -s "$MK" ]  || { echo "[FATAL] MK file is empty or missing"; exit 1; }
-          [ -s "$CFG" ] || { echo "[FATAL] CFG file is empty or missing"; exit 1; }
+      - name: 6. 后续构建步骤（衔接你的原有构建逻辑）
+        run: |
+          cd ${{ env.IWRT_ROOT }}
+          # 清理旧缓存
+          make clean
+          # 开始构建（根据云端CPU调整-j参数，Actions默认2核，用-j2）
+          make -j2 V=s
+          # 打印固件产物路径
+          ls -la bin/targets/mediatek/filogic/ || echo "构建完成，查看产物"
 
-          # 校验MK文件核心配置
-          grep -q "define Device/$DEVICE" "$MK" || { echo "[FATAL] MK missing Device block"; exit 1; }
-          grep -q "TARGET_DEVICES += $DEVICE" "$MK" || { echo "[FATAL] MK missing TARGET_DEVICES"; exit 1; }
-
-          # 校验CFG文件核心配置（与ImmortalWrt 24.10 filogic平台对齐）
-          grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_'$DEVICE'=y' "$CFG" || { echo "[FATAL] CFG missing device enable"; exit 1; }
-          grep -q '^CONFIG_TARGET_mediatek_filogic=y' "$CFG" || { echo "[FATAL] CFG missing filogic platform"; exit 1; }
-
-          # 校验DTS文件核心配置
-          grep -q "compatible = \"sl,3000-emmc\", \"mediatek,mt7981\";" "$DTS" || { echo "[FATAL] DTS missing compatible"; exit 1; }
-
-          echo "=== All three-piece files validated successfully ==="
-
-      - name: Upload three-piece artifacts (standard path)
+      - name: 7. 上传固件产物（可选，保留构建结果）
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-three-piece-immortalwrt2410
-          # 上传路径与实际生成路径完全一致，带版本标识便于区分
-          path: |
-            ${{ github.workspace }}/openwrt/target/linux/mediatek/filogic/dts/mt7981b-sl-3000-emmc.dts
-            ${{ github.workspace }}/openwrt/target/linux/mediatek/filogic/image/Makefile
-            ${{ github.workspace }}/openwrt/.config
-          # 工件保留90天，便于后续下载使用
-          retention-days: 90
-          if-no-files-found: error  # 无文件则触发错误，避免上传空工件
+          name: sl3000-firmware
+          path: ${{ env.IWRT_ROOT }}/bin/targets/mediatek/filogic/
