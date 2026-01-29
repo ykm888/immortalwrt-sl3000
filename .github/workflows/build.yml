@@ -83,6 +83,13 @@ jobs:
           which m4
           m4 --version
 
+      - name: Fix m4 link for flex
+        working-directory: /mnt/openwrt
+        run: |
+          mkdir -p staging_dir/host/bin
+          ln -sf $(which m4) staging_dir/host/bin/m4
+          ls -l staging_dir/host/bin/m4
+
       - name: Apply DTS from repo
         run: |
           mkdir -p /mnt/openwrt/target/linux/mediatek/dts
