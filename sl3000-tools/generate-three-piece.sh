@@ -20,7 +20,7 @@ echo "[ROOT] $ROOT"
 echo "[SCRIPT_DIR] $SCRIPT_DIR"
 echo
 
-# 1. 生成DTS文件：补全MT7981B eMMC完整硬件配置（网口/WiFi/USB/LED/按键/eMMC）
+# 1. 生成DTS文件：核心修复→compatible字段（适配校验规则），补全硬件配置
 DTS_DIR="$ROOT/target/linux/mediatek/filogic/dts"
 DTS="$DTS_DIR/mt7981b-sl-3000-emmc.dts"
 mkdir -p "$DTS_DIR"
@@ -35,7 +35,7 @@ cat > "$DTS" << 'EOF'
 
 / {
 	model = "SL 3000 eMMC";
-	compatible = "sl,sl_3000-emmc", "mediatek,mt7981";
+	compatible = "sl,3000-emmc", "mediatek,mt7981";
 
 	aliases {
 		serial0 = &uart0;
@@ -146,7 +146,7 @@ EOF
 echo "[DTS] generated: $DTS"
 echo
 
-# 2. 写入MK配置：核心修复→设备名统一/补全TARGET_DEVICES/旗舰功能包/EMMC适配
+# 2. 写入MK配置：设备名统一/补全TARGET_DEVICES/旗舰功能包/EMMC适配
 MTK_FILOGIC_DIR="$ROOT/target/linux/mediatek/filogic"
 IMAGE_DIR="$MTK_FILOGIC_DIR/image"
 mkdir -p "$IMAGE_DIR"
@@ -175,13 +175,12 @@ else
 fi
 echo "[DEBUG] final used MK file: $MK"
 
-# 核心修复：设备名全程统一为sl_3000-emmc（下划线），避免识别失败
+# 核心：设备名全程统一为sl_3000-emmc，彻底清理旧配置
 DEVICE_NAME="sl_3000-emmc"
-# sed兼容处理：无匹配时不报错，彻底清理旧配置
 sed -i '/Device\/'${DEVICE_NAME}'/,/endef/d' "$MK" 2>/dev/null || true
 sed -i '/TARGET_DEVICES += '${DEVICE_NAME}'/d' "$MK" 2>/dev/null || true
 
-# 追加SL3000 EMMC设备配置：补全TARGET_DEVICES/旗舰功能包/EMMC分区/官方编译规范
+# 追加SL3000 EMMC设备配置：符合ImmortalWrt24.10规范
 cat >> "$MK" << EOF
 
 define Device/${DEVICE_NAME}
@@ -205,7 +204,7 @@ EOF
 echo "[MK] updated: $MK"
 echo
 
-# 3. 生成.config：适配ImmortalWrt24.10 filogic+旗舰功能包+MT7981B EMMC
+# 3. 生成.config：适配ImmortalWrt24.10 filogic+旗舰功能包
 CFG="$ROOT/.config"
 
 cat > "$CFG" << 'EOF'
@@ -268,14 +267,14 @@ EOF
 echo "[CONFIG] written: $CFG"
 echo
 
-# 4. 强化全量校验：三件套强一致/核心配置无缺失（工程级校验）
+# 4. 强化全量校验：三件套强一致/核心配置无缺失
 echo "=== Start strict three-piece check ==="
 # 校验文件非空
 [ -s "$DTS" ] || { echo "FATAL: DTS missing or empty"; exit 1; }
 [ -s "$MK" ]  || { echo "FATAL: MK missing or empty"; exit 1; }
 [ -s "$CFG" ] || { echo "FATAL: CONFIG missing or empty"; exit 1; }
 
-# 校验MK核心配置（彻底解决TARGET_DEVICES缺失）
+# 校验MK核心配置
 grep -q "define Device/sl_3000-emmc" "$MK" || { echo "FATAL: MK device block missing"; exit 1; }
 grep -q "TARGET_DEVICES += sl_3000-emmc" "$MK" || { echo "FATAL: MK TARGET_DEVICES missing"; exit 1; }
 grep -q "DEVICE_DTS := mt7981b-sl-3000-emmc" "$MK" || { echo "FATAL: MK DEVICE_DTS mismatch DTS"; exit 1; }
@@ -284,8 +283,9 @@ grep -q "DEVICE_DTS := mt7981b-sl-3000-emmc" "$MK" || { echo "FATAL: MK DEVICE_D
 grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_sl_3000-emmc=y' "$CFG" || { echo "FATAL: CONFIG device enable missing"; exit 1; }
 grep -q '^CONFIG_LINUX_6_6=y' "$CFG" || { echo "FATAL: CONFIG Linux 6.6 not enabled"; exit 1; }
 
-# 校验DTS核心标识
-grep -q "compatible = \"sl,sl_3000-emmc\"" "$DTS" || { echo "FATAL: DTS compatible mismatch device name"; exit 1; }
+# 校验DTS核心compatible（解决本次FATAL错误）
+grep -q 'compatible = "sl,3000-emmc"' "$DTS" || { echo "FATAL: DTS missing compatible"; exit 1; }
+grep -q 'mediatek,mt7981' "$DTS" || { echo "FATAL: DTS missing mediatek mt7981 compatible"; exit 1; }
 echo "=== Strict check pass ==="
 echo
 
@@ -293,4 +293,4 @@ echo "=== SL3000 three-piece generation complete ==="
 echo "[OUT] DTS : $DTS"
 echo "[OUT] MK  : $MK"
 echo "[OUT] CFG : $CFG"
-echo "[SUCCESS] All fix done, TARGET_DEVICES error resolved!"
+echo "[SUCCESS] All fix done, DTS compatible & TARGET_DEVICES error resolved!"
