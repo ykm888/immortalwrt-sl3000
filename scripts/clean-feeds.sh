@@ -1,79 +1,55 @@
 #!/bin/bash
-# 全量 + 智能清理所有依赖不存在模块的包，确保构建日志 0 警告
+# 白名单模式：只保留必要包，其余全部删除
+# 目标：构建日志 0 WARNING，feeds 完全干净
 
-FEEDS_DIR="package/feeds/packages"
+ROOT="package/feeds"
 
-BAD_DEPS=(
-  "python3"
-  "python3-"
-  "libcrypt-compat"
-  "libxcrypt"
-  "sudo"
-  "samba4"
-  "uwsgi"
-  "unbound"
-  "libunbound"
-  "libsasl2"
-  "libpam"
-  "libcli"
-  "libdht"
-  "boost"
-  "boost-"
-  "apr"
-  "libapr"
-  "libmesa"
-  "libwayland"
-  "libgraphene"
-  "bmx7"
-  "bmx7-json"
-  "olsrd"
-  "olsrd-mod"
-  "babeld"
-  "kmod-team"
-  "kmod-team-mode"
-  "kmod-batman-adv"
-  "vectorscan"
-  "jq/host"
-  "unetmsg"
-)
+echo "=== 白名单模式：开始清理所有 feeds 包 ==="
 
-echo "=== 自动扫描并删除依赖不存在的包 ==="
+# -------------------------------
+# 1. 删除 packages feed 全部内容
+# -------------------------------
+rm -rf $ROOT/packages/*
 
-for mk in $(find $FEEDS_DIR -name Makefile); do
-    for dep in "${BAD_DEPS[@]}"; do
-        if grep -q "$dep" "$mk"; then
-            pkg_dir=$(dirname "$mk")
-            echo "删除包: $pkg_dir  （依赖不存在：$dep）"
-            rm -rf "$pkg_dir"
-            break
-        fi
-    done
-done
+# -------------------------------
+# 2. 删除 luci feed 全部内容
+# -------------------------------
+rm -rf $ROOT/luci/*
 
-echo "=== 删除 luci feed 中依赖不存在的包 ==="
+# -------------------------------
+# 3. 删除 small feed 全部内容
+# -------------------------------
+rm -rf $ROOT/small/*
 
-rm -rf package/feeds/luci/luci-app-bmx7
-rm -rf package/feeds/luci/luci-app-olsr*
-rm -rf package/feeds/luci/luci-proto-batman-adv
-rm -rf package/feeds/luci/luci-app-babeld
-rm -rf package/feeds/luci/luci-lib-nixio
+# -------------------------------
+# 4. 重新创建白名单目录
+# -------------------------------
 
-echo "=== 删除 small feed 中不需要的代理插件/内核 ==="
+mkdir -p $ROOT/luci
+mkdir -p $ROOT/packages
+mkdir -p $ROOT/small
 
-rm -rf package/feeds/small/luci-app-*clash*
-rm -rf package/feeds/small/luci-app-vssr*
-rm -rf package/feeds/small/luci-app-bypass*
-rm -rf package/feeds/small/luci-app-ikoolproxy*
-rm -rf package/feeds/small/luci-app-adguardhome*
-rm -rf package/feeds/small/luci-app-homeproxy*
-rm -rf package/feeds/small/homeproxy
-rm -rf package/feeds/small/sing-box*
-rm -rf package/feeds/small/trojan*
-rm -rf package/feeds/small/v2ray-core
-rm -rf package/feeds/small/brook
-rm -rf package/feeds/small/kcptun
-rm -rf package/feeds/small/redsocks2
-rm -rf package/feeds/small/ipt2socks
-rm -rf package/feeds/small/microsocks
+echo "=== 保留 luci 基础框架 ==="
+# luci 基础必须保留
+cp -r feeds/luci/modules/luci-base $ROOT/luci/
+cp -r feeds/luci/modules/luci-compat $ROOT/luci/
+cp -r feeds/luci/modules/luci-lua-runtime $ROOT/luci/
+cp -r feeds/luci/libs/luci-lib-ip $ROOT/luci/
+cp -r feeds/luci/libs/luci-lib-jsonc $ROOT/luci/
+cp -r feeds/luci/libs/luci-lib-nixio $ROOT/luci/ 2>/dev/null || true
+cp -r feeds/luci/themes/luci-theme-bootstrap $ROOT/luci/
 
-echo "=== 清理完成 ==="
+echo "=== 保留 Passwall2 / SSRPlus ==="
+# helloworld feed
+cp -r feeds/helloworld/luci-app-ssr-plus $ROOT/packages/
+cp -r feeds/helloworld/ssr-plus $ROOT/packages/
+cp -r feeds/helloworld/xray-core $ROOT/packages/
+cp -r feeds/helloworld/v2ray-geodata $ROOT/packages/
+
+# passwall2
+cp -r feeds/small/luci-app-passwall2 $ROOT/small/
+cp -r feeds/small/passwall2 $ROOT/small/
+cp -r feeds/small/xray-core $ROOT/small/ 2>/dev/null || true
+
+echo "=== 白名单保留完成 ==="
+echo "=== 所有非白名单包已删除 ==="
