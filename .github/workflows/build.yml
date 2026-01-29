@@ -63,6 +63,14 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      # 修复点：移除无效 feed 包，避免 defconfig 报错
+      - name: Remove broken feed packages
+        working-directory: /mnt/openwrt
+        run: |
+          rm -f package/feeds/packages/python-pika/Makefile
+          rm -f package/feeds/packages/python-zope-event/Makefile
+          rm -f package/feeds/packages/python-zope-interface/Makefile
+
       - name: Apply DTS from repo
         run: |
           mkdir -p /mnt/openwrt/target/linux/mediatek/dts
@@ -98,11 +106,10 @@ jobs:
         working-directory: /mnt/openwrt
         run: grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000_emmc=y" .config
 
-      # 修复点：defconfig 可能输出 WARNING，需要 || true
       - name: Validate CONFIG after defconfig
         working-directory: /mnt/openwrt
         run: |
-          make defconfig || true
+          make defconfig
           grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000_emmc=y" .config
 
       - name: Validate DTS compiled
