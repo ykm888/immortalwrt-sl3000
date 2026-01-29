@@ -35,7 +35,7 @@ jobs:
             libffi-dev libssl-dev
 
       # ---------------------------------------------------------
-      # 🔥 精简 feeds：只保留路由器 + Passwall2 + SSR-Plus+
+      # 🔥 精简 feeds：只保留路由器 + Passwall2 + SSRPlus
       # ---------------------------------------------------------
       - name: Clean feeds to router-only + Passwall2 + SSRPlus
         working-directory: /mnt/openwrt
@@ -54,13 +54,24 @@ jobs:
           ./scripts/feeds install -a
 
       # ---------------------------------------------------------
-      # 🔥 源头删除所有不相关/坏包（Passwall2 + SSRPlus 白名单）
+      # 🔥 源头删除所有不相关/坏包
       # ---------------------------------------------------------
       - name: Remove unrelated or broken packages
         working-directory: /mnt/openwrt
         run: |
-          # packages feed
-          rm -rf package/feeds/packages/xupnpd
+          # packages feed - 与路由器无关 + 依赖不存在
+          rm -rf package/feeds/packages/python3
+          rm -rf package/feeds/packages/rtty
+          rm -rf package/feeds/packages/samba4
+          rm -rf package/feeds/packages/screen
+          rm -rf package/feeds/packages/shadow
+          rm -rf package/feeds/packages/squid
+          rm -rf package/feeds/packages/stress-ng
+          rm -rf package/feeds/packages/sudo
+          rm -rf package/feeds/packages/tac_plus
+          rm -rf package/feeds/packages/tcsh
+          rm -rf package/feeds/packages/xinetd
+          rm -rf package/feeds/packages/ufp
 
           # small feed - 已知坏包
           rm -rf package/feeds/small/luci-app-fchomo
@@ -72,6 +83,7 @@ jobs:
           rm -rf package/feeds/small/sing-box-tiny
           rm -rf package/feeds/small/luci-app-momo
           rm -rf package/feeds/small/momo
+          rm -rf package/feeds/small/trojan-plus
 
           # small feed - 不需要的代理插件
           rm -rf package/feeds/small/luci-app-vssr*
@@ -95,7 +107,7 @@ jobs:
           rm -rf package/feeds/small/v2ray-core
 
       # ---------------------------------------------------------
-      # 🔥 禁止 menuconfig（必须）
+      # 🔥 禁止 menuconfig
       # ---------------------------------------------------------
       - name: Disable menuconfig globally
         run: |
@@ -159,7 +171,7 @@ jobs:
         working-directory: /mnt/openwrt
         run: make defconfig
 
-      # ---------------------------------------------------------
+      # ---------------------------# ---------------------------------------------------------
       # 🔥 kernel / packages / image 自愈
       # ---------------------------------------------------------
       - name: Build kernel (self-heal)
@@ -180,6 +192,9 @@ jobs:
           make target/image/compile -j$(nproc) V=s || \
           (make target/image/clean && make target/image/compile -j$(nproc) V=s)
 
+      # ---------------------------------------------------------
+      # 🔥 固件校验 + 上传
+      # ---------------------------------------------------------
       - name: Validate firmware output
         working-directory: /mnt/openwrt
         run: ls bin/targets/mediatek/filogic/*sl-3000-emmc*sysupgrade.bin
