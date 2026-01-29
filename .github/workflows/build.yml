@@ -61,11 +61,12 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Run clean-feeds.sh
+      - name: Run clean-feeds.sh (white list)
         working-directory: /mnt/openwrt
         run: |
           chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
           bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
+          make defconfig
 
       - name: Disable menuconfig globally
         run: |
@@ -74,13 +75,6 @@ jobs:
           echo "LC_ALL=C" >> $GITHUB_ENV
           echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
           echo "MAKEFLAGS=--no-builtin-rules" >> $GITHUB_ENV
-
-      - name: Pre-create minimal config
-        working-directory: /mnt/openwrt
-        run: |
-          touch .config
-          echo "# CONFIG_DEVEL is not set" >> .config
-          echo "# CONFIG_TOOLCHAINOPTS is not set" >> .config
 
       - name: Download sources (self-heal)
         working-directory: /mnt/openwrt
@@ -111,14 +105,6 @@ jobs:
           sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK"
           sed -i '/TARGET_DEVICES += sl_3000-emmc/d' "$MK"
           cat repo/sl3000/mk/filogic-sl3000.mk >> "$MK"
-
-      - name: Apply CONFIG
-        working-directory: /mnt/openwrt
-        run: cp $GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config .config
-
-      - name: Run defconfig
-        working-directory: /mnt/openwrt
-        run: make defconfig
 
       - name: Build kernel (self-heal)
         working-directory: /mnt/openwrt
