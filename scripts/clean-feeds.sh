@@ -1,7 +1,4 @@
 #!/bin/bash
-# 白名单模式 + SSRPlus 依赖目录补齐 + 底层库依赖补齐 + 禁用主线包扫描
-# 只改脚本，不动工作流，不动 package/*
-
 set -e
 
 FEEDS_ROOT="package/feeds"
@@ -35,7 +32,7 @@ cp -r feeds/small/luci-app-passwall2      $FEEDS_ROOT/small/
 cp -r feeds/small/passwall2               $FEEDS_ROOT/small/
 cp -r feeds/small/xray-core               $FEEDS_ROOT/small/ 2>/dev/null || true
 
-echo "=== 补齐 SSRPlus 依赖目录（不启用、不构建，只让它们存在） ==="
+echo "=== 补齐 SSRPlus 依赖目录 ==="
 SSR_DEPS=(
   dns2tcp microsocks tcping shadowsocksr-libev-ssr-check
   curl nping chinadns-ng dns2socks dns2socks-rust dnsproxy mosdns
@@ -54,10 +51,9 @@ for dep in "${SSR_DEPS[@]}"; do
   fi
 done
 
-echo "=== 补齐底层库依赖（libev / libsodium / libudns / boost / rust/host / golang/host） ==="
+echo "=== 补齐底层库依赖 ==="
 LIB_DEPS=(libev libsodium libudns boost boost-program_options boost-date_time)
 for dep in "${LIB_DEPS[@]}"; do
-  # 优先从 feeds/packages 拿
   if [ -d "feeds/packages/$dep" ]; then
     cp -r "feeds/packages/$dep" "$FEEDS_ROOT/packages/"
   elif [ -d "feeds/helloworld/$dep" ]; then
@@ -112,5 +108,9 @@ CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
 CONFIG_PACKAGE_luci-i18n-ssr-plus-zh-cn=y
 CONFIG_PACKAGE_luci-i18n-passwall2-zh-cn=y
 EOF
+
+echo "=== 禁用不兼容的包（Xray-core / simple-obfs） ==="
+sed -i 's/CONFIG_PACKAGE_xray-core=y/CONFIG_PACKAGE_xray-core=n/' .config || true
+sed -i 's/CONFIG_PACKAGE_simple-obfs=y/CONFIG_PACKAGE_simple-obfs=n/' .config || true
 
 echo "=== 白名单模式完成 ==="
