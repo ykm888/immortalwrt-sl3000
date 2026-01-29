@@ -8,64 +8,69 @@
 #include "mt7981.dtsi"
 
 / {
-	model = "SL-3000 eMMC bootstrap versions";
-	compatible = "sl,3000-emmc", "mediatek,mt7981";
+	model = "SL-3000 eMMC Router";
+	compatible = "sl,sl3000-emmc", "mediatek,mt7981";
 
 	aliases {
 		serial0 = &uart0;
-		led-boot = &status_red_led;
-		led-failsafe = &status_red_led;
-		led-running = &status_green_led;
-		led-upgrade = &status_blue_led;
+
+		led-boot     = &led_red;
+		led-failsafe = &led_red;
+		led-running  = &led_green;
+		led-upgrade  = &led_blue;
 	};
 
 	chosen {
-		bootargs = "root=PARTLABEL=rootfs rootwait";
 		stdout-path = "serial0:115200n8";
+		bootargs = "root=PARTLABEL=rootfs rootwait";
 	};
 
 	memory@40000000 {
-		/* 1G RAM: base 0x40000000, size 0x40000000 */
-		reg = <0 0x40000000 0 0x40000000>;
+		device_type = "memory";
+		reg = <0 0x40000000 0 0x40000000>; /* 1GB */
 	};
 
 	gpio-keys {
 		compatible = "gpio-keys";
 
-		button-mesh {
+		mesh {
 			label = "mesh";
 			linux,code = <BTN_9>;
 			linux,input-type = <EV_SW>;
 			gpios = <&pio 0 GPIO_ACTIVE_LOW>;
 		};
 
-		button-reset {
+		reset {
 			label = "reset";
 			linux,code = <KEY_RESTART>;
 			gpios = <&pio 1 GPIO_ACTIVE_LOW>;
 		};
 	};
 
-	gpio-leds {
+	leds {
 		compatible = "gpio-leds";
 
-		status_red_led: led-0 {
+		led_red: led-red {
 			label = "red:status";
+			color = <LED_COLOR_ID_RED>;
 			gpios = <&pio 10 GPIO_ACTIVE_LOW>;
 		};
 
-		status_green_led: led-1 {
+		led_green: led-green {
 			label = "green:status";
+			color = <LED_COLOR_ID_GREEN>;
 			gpios = <&pio 11 GPIO_ACTIVE_LOW>;
 		};
 
-		status_blue_led: led-2 {
+		led_blue: led-blue {
 			label = "blue:status";
+			color = <LED_COLOR_ID_BLUE>;
 			gpios = <&pio 12 GPIO_ACTIVE_LOW>;
 		};
 	};
 };
 
+/* Ethernet + Switch */
 &eth {
 	status = "okay";
 
@@ -100,7 +105,7 @@
 		switch@0 {
 			compatible = "mediatek,mt7531";
 			reg = <31>;
-			reset-gpios = <&pio 39 0>;
+			reset-gpios = <&pio 39 GPIO_ACTIVE_LOW>;
 
 			ports {
 				#address-cells = <1>;
@@ -128,6 +133,7 @@
 	};
 };
 
+/* eMMC */
 &mmc0 {
 	bus-width = <8>;
 	cap-mmc-highspeed;
@@ -135,9 +141,11 @@
 	no-sd;
 	no-sdio;
 	non-removable;
+
 	pinctrl-names = "default", "state_uhs";
 	pinctrl-0 = <&mmc0_pins_default>;
 	pinctrl-1 = <&mmc0_pins_uhs>;
+
 	vmmc-supply = <&reg_3p3v>;
 	status = "okay";
 
@@ -149,8 +157,9 @@
 			compatible = "block-device";
 
 			partitions {
-				block-partition-factory {
-					partname = "factory";
+				factory: partition@0 {
+					label = "factory";
+					reg = <0x0 0x1000>;
 
 					nvmem-layout {
 						compatible = "fixed-layout";
@@ -173,6 +182,7 @@
 	};
 };
 
+/* pinctrl */
 &pio {
 	mmc0_pins_default: mmc0-pins-default {
 		mux {
@@ -189,14 +199,17 @@
 	};
 };
 
+/* UART */
 &uart0 {
 	status = "okay";
 };
 
+/* Watchdog */
 &watchdog {
 	status = "okay";
 };
 
+/* WiFi */
 &wifi {
 	nvmem-cells = <&eeprom_factory_0>;
 	nvmem-cell-names = "eeprom";
@@ -209,6 +222,7 @@
 	};
 };
 
+/* USB */
 &usb_phy {
 	status = "okay";
 };
