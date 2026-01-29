@@ -104,6 +104,30 @@ jobs:
         working-directory: /mnt/openwrt
         run: grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000_emmc=y" .config
 
+      # 自动注册检测：defconfig 后确认设备仍被保留
+      - name: Validate CONFIG after defconfig
+        working-directory: /mnt/openwrt
+        run: |
+          make defconfig
+          grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000_emmc=y" .config
+
+      # 自动注册检测：编译内核，确认 DTS 被编译为 DTB
+      - name: Validate DTS compiled
+        working-directory: /mnt/openwrt
+        run: |
+          make target/linux/compile -j$(nproc) V=s
+          ls build_dir/target-*/linux-*/image-mt7981b-sl-3000-emmc.dtb
+
+      # 自动注册检测：生成 profiles.json 并确认设备已注册
+      - name: Validate device registered in profiles.json
+        working-directory: /mnt/openwrt
+        run: |
+          make json_overview_image_info
+          if ! grep -q '"id": "sl_3000-emmc"' bin/targets/mediatek/mt7981/profiles.json; then
+            echo "ERROR: Device sl_3000-emmc not registered in profiles.json"
+            exit 1
+          fi
+
       # 三件套 diff（仓库 vs 应用后）
       - name: Generate three-piece diff
         run: |
@@ -157,6 +181,12 @@ jobs:
            make target/image/clean && \
            make target/image/compile -j$(nproc) V=s)
 
+      # 构建后自动验证固件是否生成（最终注册结果）
+      - name: Validate firmware output
+        working-directory: /mnt/openwrt
+        run: |
+          ls bin/targets/mediatek/mt7981/*sl-3000-emmc*sysupgrade.bin
+
       # 上传固件
       - name: Upload firmware
         uses: actions/upload-artifact@v4
@@ -179,6 +209,7 @@ jobs:
             - ccache enabled
             - disk space optimized
             - three-piece diff attached
+            - auto registration checks (defconfig / DTB / profiles.json / firmware)
           files: |
             /mnt/openwrt/bin/targets/mediatek/mt7981/*
             repo/sl3000/dts/mt7981b-sl-3000-emmc.dts
