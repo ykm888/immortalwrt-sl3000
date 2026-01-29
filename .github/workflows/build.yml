@@ -26,16 +26,27 @@ jobs:
       - name: Clone ImmortalWrt 24.10
         run: git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
 
-      - name: Install build dependencies
+      - name: Install build dependencies + ccache
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
             python3 python3-pip python3-setuptools python3-wheel python3-dev python3-venv \
-            libffi-dev libssl-dev
+            libffi-dev libssl-dev ccache
+          echo "export CCACHE_DIR=/mnt/openwrt/.ccache" >> $GITHUB_ENV
+          echo "export CCACHE_COMPRESS=1" >> $GITHUB_ENV
+          echo "export CCACHE_MAXSIZE=2G" >> $GITHUB_ENV
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: /mnt/openwrt/.ccache
+          key: ${{ runner.os }}-openwrt-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-ccache-
 
       # ---------------------------------------------------------
-      # 🔥 精简 feeds：只保留路由器 + Passwall2 + SSRPlus
+      # 🔥 精简 feeds
       # ---------------------------------------------------------
       - name: Clean feeds to router-only + Passwall2 + SSRPlus
         working-directory: /mnt/openwrt
@@ -54,57 +65,14 @@ jobs:
           ./scripts/feeds install -a
 
       # ---------------------------------------------------------
-      # 🔥 源头删除所有不相关/坏包
+      # 🔥 调用源头删除脚本
       # ---------------------------------------------------------
-      - name: Remove unrelated or broken packages
+      - name: Add execute permission to clean-feeds.sh
+        run: chmod +x $GITHUB_WORKSPACE/scripts/clean-feeds.sh
+
+      - name: Clean feeds (source deletion script)
         working-directory: /mnt/openwrt
-        run: |
-          # packages feed - 与路由器无关 + 依赖不存在
-          rm -rf package/feeds/packages/python3
-          rm -rf package/feeds/packages/rtty
-          rm -rf package/feeds/packages/samba4
-          rm -rf package/feeds/packages/screen
-          rm -rf package/feeds/packages/shadow
-          rm -rf package/feeds/packages/squid
-          rm -rf package/feeds/packages/stress-ng
-          rm -rf package/feeds/packages/sudo
-          rm -rf package/feeds/packages/tac_plus
-          rm -rf package/feeds/packages/tcsh
-          rm -rf package/feeds/packages/xinetd
-          rm -rf package/feeds/packages/ufp
-
-          # small feed - 已知坏包
-          rm -rf package/feeds/small/luci-app-fchomo
-          rm -rf package/feeds/small/fchomo
-          rm -rf package/feeds/small/nikki
-          rm -rf package/feeds/small/luci-app-homeproxy
-          rm -rf package/feeds/small/homeproxy
-          rm -rf package/feeds/small/sing-box
-          rm -rf package/feeds/small/sing-box-tiny
-          rm -rf package/feeds/small/luci-app-momo
-          rm -rf package/feeds/small/momo
-          rm -rf package/feeds/small/trojan-plus
-
-          # small feed - 不需要的代理插件
-          rm -rf package/feeds/small/luci-app-vssr*
-          rm -rf package/feeds/small/luci-app-openclash*
-          rm -rf package/feeds/small/luci-app-clash*
-          rm -rf package/feeds/small/luci-app-clashr*
-          rm -rf package/feeds/small/luci-app-bypass*
-          rm -rf package/feeds/small/luci-app-advanced*
-          rm -rf package/feeds/small/luci-app-ikoolproxy*
-          rm -rf package/feeds/small/luci-app-adguardhome*
-
-          # small feed - 不需要的代理内核
-          rm -rf package/feeds/small/naiveproxy
-          rm -rf package/feeds/small/brook
-          rm -rf package/feeds/small/kcptun
-          rm -rf package/feeds/small/redsocks2
-          rm -rf package/feeds/small/ipt2socks
-          rm -rf package/feeds/small/microsocks
-          rm -rf package/feeds/small/trojan
-          rm -rf package/feeds/small/trojan-go
-          rm -rf package/feeds/small/v2ray-core
+        run: bash $GITHUB_WORKSPACE/scripts/clean-feeds.sh
 
       # ---------------------------------------------------------
       # 🔥 禁止 menuconfig
@@ -149,7 +117,7 @@ jobs:
           (make toolchain/clean && make toolchain/install -j$(nproc) V=s)
 
       # ---------------------------------------------------------
-      # 🔥 三件套应用（延续上一版）
+      # 🔥 三件套应用
       # ---------------------------------------------------------
       - name: Apply DTS from repo
         run: |
@@ -171,7 +139,7 @@ jobs:
         working-directory: /mnt/openwrt
         run: make defconfig
 
-      # ---------------------------# ---------------------------------------------------------
+      # ---------------------------------------------------------
       # 🔥 kernel / packages / image 自愈
       # ---------------------------------------------------------
       - name: Build kernel (self-heal)
@@ -197,10 +165,12 @@ jobs:
       # ---------------------------------------------------------
       - name: Validate firmware output
         working-directory: /mnt/openwrt
-        run: ls bin/targets/mediatek/filogic/*sl-3000-emmc*sysupgrade.bin
+        run: ls -lh bin/targets/mediatek/filogic/*sl-3000-emmc*sysupgrade.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: sl3000-2410-firmware
           path: /mnt/openwrt/bin/targets/mediatek/filogic/*
+
+      # ------------------------------------------------
