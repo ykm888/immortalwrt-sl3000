@@ -3,7 +3,6 @@
 
 FEEDS_DIR="package/feeds/packages"
 
-# 所有在 24.10 中已不存在的依赖关键字
 BAD_DEPS=(
   "python3"
   "python3-"
@@ -11,23 +10,31 @@ BAD_DEPS=(
   "libxcrypt"
   "sudo"
   "samba4"
-  "boost"
-  "boost-"
-  "vectorscan"
-  "bmx7"
   "uwsgi"
   "unbound"
   "libunbound"
   "libsasl2"
+  "libpam"
+  "libcli"
+  "libdht"
+  "boost"
+  "boost-"
   "apr"
   "libapr"
   "libmesa"
   "libwayland"
   "libgraphene"
-  "kmod-team"
-  "kmod-batman-adv"
+  "bmx7"
+  "bmx7-json"
   "olsrd"
+  "olsrd-mod"
+  "babeld"
+  "kmod-team"
+  "kmod-team-mode"
+  "kmod-batman-adv"
+  "vectorscan"
   "jq/host"
+  "unetmsg"
 )
 
 echo "=== 自动扫描并删除依赖不存在的包 ==="
@@ -42,6 +49,14 @@ for mk in $(find $FEEDS_DIR -name Makefile); do
         fi
     done
 done
+
+echo "=== 删除 luci feed 中依赖不存在的包 ==="
+
+rm -rf package/feeds/luci/luci-app-bmx7
+rm -rf package/feeds/luci/luci-app-olsr*
+rm -rf package/feeds/luci/luci-proto-batman-adv
+rm -rf package/feeds/luci/luci-app-babeld
+rm -rf package/feeds/luci/luci-lib-nixio
 
 echo "=== 删除 small feed 中不需要的代理插件/内核 ==="
 
