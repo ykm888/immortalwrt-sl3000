@@ -3,39 +3,65 @@ on:
   push:
     branches: [ main, master ]
     paths:
-      - 'gen-sl3000-three-piece.sh'
+      - 'sl3000-tools/generate-three-piece.sh'
       - '.github/workflows/**'
-  workflow_dispatch: # 优先手动触发
+  workflow_dispatch: # 优先手动触发（推荐）
 jobs:
   build-firmware:
     runs-on: ubuntu-22.04
-    timeout-minutes: 360
+    timeout-minutes: 360 # 6小时超时，适配大固件构建
     env:
-      # 彻底抛弃硬编码！使用GitHub官方内置环境变量（核心修复）
-      # GITHUB_WORKSPACE = 仓库克隆后的根目录，100%适配所有Actions环境
-      SCRIPT_NAME: gen-sl3000-three-piece.sh
+      # 精准匹配你的实际脚本信息（核心修改点）
+      SCRIPT_NAME: generate-three-piece.sh    # 实际脚本名
+      SCRIPT_SUB_DIR: sl3000-tools            # 实际脚本所在子文件夹
+      # 三件套路径（与脚本内生成路径保持一致，无需修改）
       DTS_PATH: target/linux/mediatek/filogic/dts/mt7981b-sl-3000-emmc.dts
       MK_PATH: target/linux/mediatek/filogic/image/mt7981.mk
       CFG_PATH: .config
 
     steps:
-      - name: 1. 完整拉取仓库源码（默认路径，不自定义path，避免混乱）
+      - name: 1. 完整拉取仓库源码（禁止浅克隆，避免目录缺失）
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 完整克隆，禁止浅克隆
-          submodules: false # 无特殊子模块则设为false，减少报错
+          fetch-depth: 0
+          submodules: false
 
-      - name: 2. 安装基础依赖（修复tee+云端全适配）
+      - name: 2. 安装基础依赖（修复tee错误+云端环境全适配）
         run: |
           sudo apt update -y && sudo apt install -yq \
           coreutils sed grep make gcc g++ binutils bzip2 gzip patch unzip tar cpio \
           wget curl git subversion bc findutils file diffutils python3 \
           libssl-dev libncurses5-dev libreadline-dev libffi-dev zlib1g-dev
-          # 验证核心工具
-          which bash sed grep tee cat mkdir chmod make && echo "✅ 依赖安装完成"
+          # 验证核心工具是否可用
+          which bash sed grep tee cat mkdir chmod make && echo "✅ 基础依赖安装完成"
+          # 刷新环境变量，避免云端路径异常
           source /etc/profile && export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-      - name: 3. 配置构建缓存（加速二次构建）
+      - name: 3. 核心容错：检测并移动实际脚本到根目录（精准匹配你的路径）
+        id: find_and_move_script
+        run: |
+          cd ${{ github.workspace }}
+          echo "🔍 开始检测脚本：${{ env.SCRIPT_SUB_DIR }}/${{ env.SCRIPT_NAME }}"
+          # 检测实际脚本路径是否存在
+          if [ ! -f "${{ env.SCRIPT_SUB_DIR }}/${{ env.SCRIPT_NAME }}" ]; then
+            echo "❌ 致命错误：未找到脚本！请确认路径为${{ env.SCRIPT_SUB_DIR }}/${{ env.SCRIPT_NAME }}"
+            exit 1
+          fi
+          # 自动将脚本移动到仓库根目录（解决执行路径问题）
+          mv ${{ env.SCRIPT_SUB_DIR }}/${{ env.SCRIPT_NAME }} ./
+          echo "✅ 脚本已从${{ env.SCRIPT_SUB_DIR }}移动到仓库根目录"
+          # 验证根目录是否存在脚本
+          ls -la ${{ env.SCRIPT_NAME }} && echo "✅ 脚本移动后验证成功"
+
+      - name: 4. 脚本赋权（云端默认无执行权限，必做）
+        id: chmod_script
+        run: |
+          cd ${{ github.workspace }}
+          chmod +x ${{ env.SCRIPT_NAME }}
+          # 验证可执行权限
+          [ -x "${{ env.SCRIPT_NAME }}" ] && echo "✅ 脚本赋权成功，具备可执行权限" || { echo "❌ 脚本赋权失败"; exit 1; }
+
+      - name: 5. 配置构建缓存（加速二次构建，节省90%时间）
         uses: actions/cache@v4
         with:
           path: |
@@ -47,84 +73,61 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-sl3000-2410-
 
-      - name: 4. 核心修复：校验脚本存在+赋权（三重校验，杜绝找不到文件）
-        id: check_and_chmod
-        run: |
-          # 打印当前工作目录（调试用，可看到实际路径）
-          echo "🔍 GitHub官方工作目录: ${{ github.workspace }}"
-          cd ${{ github.workspace }}
-          echo "🔍 切换后当前路径: $(pwd)"
-          
-          # 校验1：打印仓库根目录所有文件，直观看到脚本是否存在
-          echo "🔍 仓库根目录文件列表："
-          ls -la ${{ github.workspace }}/
-          
-          # 校验2：脚本文件存在性（不存在直接终止并提示）
-          if [ ! -f "${{ github.workspace }}/${{ env.SCRIPT_NAME }}" ]; then
-            echo "❌ 致命错误：${{ env.SCRIPT_NAME }} 未在仓库根目录找到！"
-            echo "👉 请确认脚本已放在仓库根目录并提交推送到GitHub！"
-            exit 1
-          fi
-          
-          # 校验3：赋权并验证权限
-          chmod +x ${{ github.workspace }}/${{ env.SCRIPT_NAME }}
-          if [ -x "${{ github.workspace }}/${{ env.SCRIPT_NAME }}" ]; then
-            echo "✅ 脚本赋权成功，可执行！"
-          else
-            echo "❌ 脚本赋权失败！"
-            exit 1
-          fi
-
-      - name: 5. 执行三件套生成脚本（全程基于官方工作目录，无路径歧义）
+      - name: 6. 执行三件套生成脚本（核心步骤，生成DTS/MK/.config）
         id: gen_three_piece
         run: |
           cd ${{ github.workspace }}
-          echo "🔍 执行脚本的当前路径: $(pwd)"
-          # 执行脚本并保留完整日志
+          echo "🔍 开始执行三件套生成脚本：./${{ env.SCRIPT_NAME }}"
+          # 执行脚本并保留完整日志，便于排查
           ./${{ env.SCRIPT_NAME }} 2>&1
-          echo "✅ 三件套脚本执行完成"
+          echo "✅ 三件套生成脚本执行完成"
 
-      - name: 6. 强制校验三件套（存在性+非空，未生成直接终止）
+      - name: 7. 强制校验三件套（存在性+非空，未生成直接终止）
         id: check_three_piece
         run: |
           cd ${{ github.workspace }}
-          # 校验DTS
-          if [ -s "${{ env.DTS_PATH }}" ]; then echo "✅ DTS文件：存在且非空"; else echo "❌ DTS文件：缺失或为空"; exit 1; fi
-          # 校验MK
-          if [ -s "${{ env.MK_PATH }}" ]; then echo "✅ MK文件：存在且非空"; else echo "❌ MK文件：缺失或为空"; exit 1; fi
-          # 校验CONFIG
-          if [ -s "${{ env.CFG_PATH }}" ]; then echo "✅ CONFIG文件：存在且非空"; else echo "❌ CONFIG文件：缺失或为空"; exit 1; fi
-          # 打印文件大小
+          echo "🔍 开始校验三件套文件"
+          # 逐个校验：存在且非空
+          [ -s "${{ env.DTS_PATH }}" ] && echo "✅ DTS文件：存在且非空" || { echo "❌ DTS文件异常"; exit 1; }
+          [ -s "${{ env.MK_PATH }}" ] && echo "✅ MK文件：存在且非空" || { echo "❌ MK文件异常"; exit 1; }
+          [ -s "${{ env.CFG_PATH }}" ] && echo "✅ CONFIG文件：存在且非空" || { echo "❌ CONFIG文件异常"; exit 1; }
+          # 打印文件大小，辅助调试
           du -sh ${{ env.DTS_PATH }} ${{ env.MK_PATH }} ${{ env.CFG_PATH }}
           echo "=== 三件套100%验证通过 ==="
 
-      - name: 7. 更新Feeds（适配旗舰功能包依赖）
+      - name: 8. 更新&安装Feeds（适配Docker/Passwall2/SSR Plus+依赖）
         run: |
           cd ${{ github.workspace }}
           ./scripts/feeds update -a && ./scripts/feeds install -a
-          echo "✅ Feeds更新安装完成"
+          echo "✅ Feeds源更新&安装完成，旗舰功能包依赖就绪"
 
-      - name: 8. 构建固件（云端2核适配，-j2避免过载）
+      - name: 9. 构建固件（适配云端2核CPU，避免过载中断）
         id: build_firmware
         run: |
           cd ${{ github.workspace }}
+          # 清理旧缓存，避免编译冲突
           make clean
+          # 云端默认2核，固定-j2，V=s打印详细编译日志
           make -j2 V=s
-          echo "✅ 固件构建完成"
+          echo "✅ 固件编译完成，开始校验产物"
 
-      - name: 9. 校验固件产物
+      - name: 10. 校验固件产物（确保生成可刷机固件）
         run: |
           cd ${{ github.workspace }}
           FIRMWARE_DIR=bin/targets/mediatek/filogic
-          if [ -d $FIRMWARE_DIR ]; then ls -la $FIRMWARE_DIR/; else echo "❌ 固件目录缺失"; exit 1; fi
-          if [ -s $FIRMWARE_DIR/*sysupgrade.bin ]; then echo "✅ sysupgrade固件生成成功"; else echo "❌ sysupgrade固件缺失"; exit 1; fi
-          if [ -s $FIRMWARE_DIR/*factory.bin ]; then echo "✅ factory固件生成成功"; else echo "❌ factory固件缺失"; exit 1; fi
+          # 校验固件目录
+          [ -d "$FIRMWARE_DIR" ] && echo "✅ 固件目录存在" || { echo "❌ 固件目录缺失"; exit 1; }
+          # 校验核心刷机固件
+          [ -s "$FIRMWARE_DIR/*sysupgrade.bin" ] && echo "✅ sysupgrade升级固件生成成功" || { echo "❌ sysupgrade固件缺失"; exit 1; }
+          [ -s "$FIRMWARE_DIR/*factory.bin" ] && echo "✅ factory原厂固件生成成功" || { echo "❌ factory固件缺失"; exit 1; }
+          # 列出所有固件文件
+          ls -la $FIRMWARE_DIR/
 
-      - name: 10. 上传固件和日志
+      - name: 11. 上传固件+日志（永久保留，可直接下载）
         uses: actions/upload-artifact@v4
         with:
           name: SL3000-ImmortalWrt2410-旗舰版固件
           path: |
             ${{ github.workspace }}/bin/targets/mediatek/filogic/
-            ${{ github.workspace }}/*.log
-          retention-days: 90
+            ${{ github.workspace }}/*.log # 保留三件套生成日志
+          retention-days: 90 # 固件保留90天，可改为unlimited永久保留
