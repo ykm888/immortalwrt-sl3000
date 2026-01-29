@@ -13,7 +13,6 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      # 防止保存 workflow 时自动触发
       - name: Skip auto-run when workflow file is modified
         if: github.event_name == 'push' && contains(join(github.event.commits.*.modified), '.github/workflows/')
         run: echo "Skip auto-run"
@@ -23,7 +22,6 @@ jobs:
         with:
           path: repo
 
-      # 磁盘空间优化
       - name: Optimize disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
@@ -32,7 +30,6 @@ jobs:
           sudo apt-get clean
           sudo rm -rf /usr/share/man /usr/share/doc /usr/share/doc-base
 
-      # ccache 缓存（修复 /mnt/ccache 权限为 755）
       - name: Setup ccache
         run: |
           sudo apt-get update
@@ -52,7 +49,6 @@ jobs:
           restore-keys: |
             ccache-
 
-      # 准备源码目录
       - name: Prepare /mnt/openwrt
         run: |
           sudo mkdir -p /mnt/openwrt
@@ -67,7 +63,6 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 仓库三件套应用
       - name: Apply DTS from repo
         run: |
           mkdir -p /mnt/openwrt/target/linux/mediatek/dts
@@ -85,9 +80,8 @@ jobs:
       - name: Apply CONFIG from repo
         working-directory: /mnt/openwrt
         run: |
-          cp ../repo/sl3000/config/sl3000.config .config
+          cp $GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config .config
 
-      # 校验三件套
       - name: Validate DTS
         working-directory: /mnt/openwrt
         run: test -s target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
@@ -104,31 +98,27 @@ jobs:
         working-directory: /mnt/openwrt
         run: grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000_emmc=y" .config
 
-      # 自动注册检测：defconfig 后确认设备仍被保留
+      # 自动注册：defconfig 后设备是否保留
       - name: Validate CONFIG after defconfig
         working-directory: /mnt/openwrt
         run: |
           make defconfig
           grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000_emmc=y" .config
 
-      # 自动注册检测：编译内核，确认 DTS 被编译为 DTB
+      # 自动注册：DTS 是否编译成 DTB
       - name: Validate DTS compiled
         working-directory: /mnt/openwrt
         run: |
           make target/linux/compile -j$(nproc) V=s
           ls build_dir/target-*/linux-*/image-mt7981b-sl-3000-emmc.dtb
 
-      # 自动注册检测：生成 profiles.json 并确认设备已注册
+      # 自动注册：profiles.json 是否注册设备
       - name: Validate device registered in profiles.json
         working-directory: /mnt/openwrt
         run: |
           make json_overview_image_info
-          if ! grep -q '"id": "sl_3000-emmc"' bin/targets/mediatek/mt7981/profiles.json; then
-            echo "ERROR: Device sl_3000-emmc not registered in profiles.json"
-            exit 1
-          fi
+          grep -q '"id": "sl_3000-emmc"' bin/targets/mediatek/mt7981/profiles.json
 
-      # 三件套 diff（仓库 vs 应用后）
       - name: Generate three-piece diff
         run: |
           mkdir -p /mnt/diff
@@ -142,7 +132,6 @@ jobs:
           name: sl3000-three-piece-diff
           path: /mnt/diff/*
 
-      # 全链路自愈构建
       - name: Download sources (self-heal)
         working-directory: /mnt/openwrt
         run: |
@@ -181,20 +170,18 @@ jobs:
            make target/image/clean && \
            make target/image/compile -j$(nproc) V=s)
 
-      # 构建后自动验证固件是否生成（最终注册结果）
+      # 自动注册：最终固件是否生成
       - name: Validate firmware output
         working-directory: /mnt/openwrt
         run: |
           ls bin/targets/mediatek/mt7981/*sl-3000-emmc*sysupgrade.bin
 
-      # 上传固件
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: sl3000-2410-firmware
           path: /mnt/openwrt/bin/targets/mediatek/mt7981/*
 
-      # 自动生成 Release（带 tag + changelog + 固件 + 三件套 diff）
       - name: Auto Release firmware
         uses: softprops/action-gh-release@v2
         if: success()
