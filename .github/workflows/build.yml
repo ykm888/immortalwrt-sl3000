@@ -41,7 +41,7 @@ jobs:
           ./scripts/feeds install -a
 
       # ---------------------------------------------------------
-      # 🔥 源头自愈：删除所有无效包 + 二级依赖包（彻底切断 menuconfig 触发链）
+      # 🔥 源头自愈：删除所有无效包 + 二级/三级依赖链
       # ---------------------------------------------------------
       - name: Remove problematic unused packages
         working-directory: /mnt/openwrt
@@ -56,6 +56,7 @@ jobs:
           rm -rf package/feeds/packages/python-gevent
           rm -rf package/feeds/packages/python-twisted
           rm -rf package/feeds/packages/radicale3
+          rm -rf package/feeds/luci/luci-app-radicale
 
       # ---------------------------------------------------------
       # 🔥 禁止 menuconfig fallback（无 TTY 环境必须）
