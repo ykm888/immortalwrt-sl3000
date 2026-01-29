@@ -68,11 +68,11 @@ jobs:
       # 🔥 调用源头删除脚本
       # ---------------------------------------------------------
       - name: Add execute permission to clean-feeds.sh
-        run: chmod +x $GITHUB_WORKSPACE/scripts/clean-feeds.sh
+        run: chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
 
       - name: Clean feeds (source deletion script)
         working-directory: /mnt/openwrt
-        run: bash $GITHUB_WORKSPACE/scripts/clean-feeds.sh
+        run: bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
 
       # ---------------------------------------------------------
       # 🔥 禁止 menuconfig
@@ -164,4 +164,23 @@ jobs:
       # 🔥 固件校验 + 上传
       # ---------------------------------------------------------
       - name: Validate firmware output
-        working
+        working-directory: /mnt/openwrt
+        run: ls -lh bin/targets/mediatek/filogic/*sl-3000-emmc*sysupgrade.bin
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: sl3000-2410-firmware
+          path: /mnt/openwrt/bin/targets/mediatek/filogic/*
+
+      # ---------------------------------------------------------
+      # 🔥 磁盘空间优化
+      # ---------------------------------------------------------
+      - name: Optimize disk space
+        working-directory: /mnt/openwrt
+        run: |
+          echo "Cleaning build_dir, staging_dir, tmp to free disk space..."
+          find dl -type f -size +100M -delete || true
+          rm -rf build_dir/* staging_dir/* tmp/*
+          echo "Remaining firmware size:"
+          du -sh bin/targets
