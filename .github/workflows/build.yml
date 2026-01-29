@@ -70,7 +70,7 @@ jobs:
           ./scripts/feeds install -a
 
       # ============================================================
-      # 🔥 生成三件套（无 EOF、纯 echo）
+      # 🔥 生成 DTS（无 EOF）
       # ============================================================
 
       - name: Generate SL3000 DTS
@@ -112,6 +112,10 @@ jobs:
           echo "  };" >> "$DTS"
           echo "};" >> "$DTS"
 
+      # ============================================================
+      # 🔥 生成 MK（无 EOF）
+      # ============================================================
+
       - name: Generate SL3000 MK
         working-directory: /mnt/openwrt
         run: |
@@ -134,28 +138,42 @@ jobs:
           echo "" >> "$MK"
           echo "TARGET_DEVICES += sl3000-emmc" >> "$MK"
 
-      - name: Generate SL3000 CONFIG
-        working-directory: /mnt/openwrt
-        run: |
-          CFG=.config
-          : > "$CFG"
-          echo "CONFIG_TARGET_mediatek=y" >> "$CFG"
-          echo "CONFIG_TARGET_mediatek_mt7981=y" >> "$CFG"
-          echo "CONFIG_TARGET_MULTI_PROFILE=y" >> "$CFG"
-          echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" >> "$CFG"
-          echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> "$CFG"
-          echo "CONFIG_TARGET_IMAGES_GZIP=y" >> "$CFG"
-          echo "CONFIG_PACKAGE_kmod-mt7915e=y" >> "$CFG"
-          echo "CONFIG_PACKAGE_kmod-mt7981-firmware=y" >> "$CFG"
-          echo "CONFIG_PACKAGE_mt7981-wo-firmware=y" >> "$CFG"
-          echo "CONFIG_PACKAGE_kmod-mmc=y" >> "$CFG"
-          echo "CONFIG_PACKAGE_luci=y" >> "$CFG"
-          echo "CONFIG_PACKAGE_luci-base=y" >> "$CFG"
-          echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> "$CFG"
+      # ============================================================
+      # 🔥 defconfig 必须在 CONFIG 之前
+      # ============================================================
 
       - name: Base defconfig
         working-directory: /mnt/openwrt
         run: make defconfig
+
+      # ============================================================
+      # 🔥 生成 CONFIG（必须在 defconfig 之后）
+      # ============================================================
+
+      - name: Generate SL3000 CONFIG
+        working-directory: /mnt/openwrt
+        run: |
+          CFG=.config
+
+          # 删除旧项
+          sed -i '/CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc/d' "$CFG"
+
+          # 写入设备项
+          echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" >> "$CFG"
+
+          # 写入必要包
+          for k in \
+            CONFIG_PACKAGE_kmod-mt7915e \
+            CONFIG_PACKAGE_kmod-mt7981-firmware \
+            CONFIG_PACKAGE_mt7981-wo-firmware \
+            CONFIG_PACKAGE_kmod-mmc \
+            CONFIG_PACKAGE_luci \
+            CONFIG_PACKAGE_luci-base \
+            CONFIG_PACKAGE_luci-i18n-base-zh-cn \
+          ; do
+            sed -i "/$k/d" "$CFG"
+            echo "$k=y" >> "$CFG"
+          done
 
       # ============================================================
       # 🔥 校验三件套
