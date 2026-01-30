@@ -4,12 +4,20 @@ set -e
 FEEDS_ROOT="package/feeds"
 
 echo "=== 清空 feeds 包 ==="
-rm -rf package/utils/policycoreutils     # ← 关键修复：删除真正被扫描的脏包
+# 一次性彻底干掉整条系统级脏链路
+rm -rf package/system/refpolicy
+rm -rf package/system/selinux-policy
+rm -rf package/system/policycoreutils
+rm -rf package/utils/pcat-manager
+rm -rf package/network/services/lldpd
+
+# 保留上一版的最小修复
+rm -rf package/utils/policycoreutils
 rm -rf $FEEDS_ROOT/packages/*
 rm -rf $FEEDS_ROOT/luci/*
 rm -rf $FEEDS_ROOT/small/*
 rm -rf $FEEDS_ROOT/helloworld/*
-rm -rf feeds/packages/utils/policycoreutils  # 保留你之前加的（无害）
+rm -rf feeds/packages/utils/policycoreutils
 
 mkdir -p $FEEDS_ROOT/packages
 mkdir -p $FEEDS_ROOT/packages/libs
@@ -101,13 +109,18 @@ CONFIG_ALL_NONSHARED=n
 EOF
 
 # -------------------------------
-# 7. 写入白名单 config（无科学上网包）
+# 7. 写入白名单 config（无科学上网包 + 禁用 SELinux 链路）
 # -------------------------------
-echo "=== 写入白名单 config（无科学上网包） ==="
+echo "=== 写入白名单 config（无科学上网包 + 禁用 SELinux 链路） ==="
 cat >> .config << "EOF"
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
 CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y
+
+# 禁用 SELinux / policycoreutils 整链
+CONFIG_PACKAGE_selinux-policy=n
+CONFIG_PACKAGE_policycoreutils=n
+CONFIG_PACKAGE_refpolicy=n
 
 # LuCI 基础
 CONFIG_PACKAGE_luci=y
@@ -130,4 +143,4 @@ CONFIG_PACKAGE_luci-proto-ipv6=y
 CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
 EOF
 
-echo "=== 白名单模式完成（无科学上网版） ==="
+echo "=== 白名单模式完成（无科学上网版 + 禁用 SELinux/pcat-manager/lldpd 链路） ==="
