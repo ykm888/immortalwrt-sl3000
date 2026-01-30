@@ -3,46 +3,41 @@ set -e
 
 FEEDS_ROOT="/mnt/openwrt/package/feeds"
 
-echo "=== 裁剪 feeds：基于 symlink 做白名单过滤 ==="
-
+# === 白名单（你要保留的 luci 基础包） ===
 WHITELIST="
-luci
 luci-base
 luci-compat
-luci-lua-runtime
+luci-lib-base
 luci-lib-ip
 luci-lib-jsonc
-luci-theme-bootstrap
-
+luci-lib-nixio
 luci-mod-admin-full
 luci-mod-network
 luci-mod-status
 luci-mod-system
-luci-proto-ppp
-luci-proto-ipv6
+luci-theme-bootstrap
 "
 
-is_in_whitelist() {
-    local name="$1"
-    for w in $WHITELIST; do
-        [ "$w" = "$name" ] && return 0
-    done
-    return 1
-}
+echo "=== 清理 feeds（白名单模式） ==="
 
-# 只保留白名单里的 luci 包
-for dir in "$FEEDS_ROOT/luci"/*; do
-    [ -d "$dir" ] || continue
-    base="$(basename "$dir")"
-    if is_in_whitelist "$base"; then
-        echo "KEEP: luci/$base"
-    else
-        echo "DROP: luci/$base"
-        rm -rf "$dir"
+# 删除非白名单的一级目录
+for dir in $FEEDS_ROOT/*; do
+    pkg=$(basename "$dir")
+
+    if echo "$WHITELIST" | grep -q "^$pkg$"; then
+        echo "KEEP: $pkg"
+        continue
     fi
+
+    echo "DEL:  $pkg"
+    rm -rf "$dir"
 done
 
-# 删除 utils 整个目录（你不需要）
-rm -rf "$FEEDS_ROOT/packages/utils"
+echo "=== 删除死锁链目录（一次性彻底修复） ==="
 
-echo "=== feeds 裁剪完成 ==="
+# download 阶段卡死的根因目录
+rm -rf /mnt/openwrt/package/feeds/packages/net
+rm -rf /mnt/openwrt/package/feeds/packages/misc
+rm -rf /mnt/openwrt/package/feeds/luci/liblucihttp-ucode
+
+echo "=== clean-feeds 完成 ==="
