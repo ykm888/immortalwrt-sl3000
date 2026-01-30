@@ -4,11 +4,12 @@ set -e
 FEEDS_ROOT="package/feeds"
 
 echo "=== 清空 feeds 包 ==="
+rm -rf package/utils/policycoreutils     # ← 关键修复：删除真正被扫描的脏包
 rm -rf $FEEDS_ROOT/packages/*
 rm -rf $FEEDS_ROOT/luci/*
 rm -rf $FEEDS_ROOT/small/*
 rm -rf $FEEDS_ROOT/helloworld/*
-rm -rf feeds/packages/utils/policycoreutils  # ← 关键修复：彻底移除 libpam 脏包
+rm -rf feeds/packages/utils/policycoreutils  # 保留你之前加的（无害）
 
 mkdir -p $FEEDS_ROOT/packages
 mkdir -p $FEEDS_ROOT/packages/libs
