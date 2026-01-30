@@ -74,22 +74,21 @@ jobs:
           echo 'src-git packages https://github.com/openwrt/packages.git' > feeds.conf.default
           echo 'src-git luci https://github.com/openwrt/luci.git' >> feeds.conf.default
 
-      # 🟩 修复点 1：先 update，再 clean-feeds（关键）
+      # === 修复点 1：update → install → clean-feeds（必须这样） ===
       - name: Update feeds
         working-directory: /mnt/openwrt
         run: ./scripts/feeds update -a
 
-      # 🟩 修复点 2：clean-feeds.sh 必须在 /mnt/openwrt 下执行
+      - name: Install feeds
+        working-directory: /mnt/openwrt
+        run: ./scripts/feeds install -a
+
+      # === 修复点 2：clean-feeds 裁剪 symlink（不复制源码） ===
       - name: Run clean-feeds.sh (white list)
         working-directory: /mnt/openwrt
         run: |
           chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
           bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
-
-      # 🟩 修复点 3：clean 后再 install（企业版不会恢复死包）
-      - name: Install feeds
-        working-directory: /mnt/openwrt
-        run: ./scripts/feeds install -a
 
       - name: Disable menuconfig globally
         run: |
