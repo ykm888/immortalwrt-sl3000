@@ -3,15 +3,7 @@ set -e
 
 FEEDS_ROOT="/mnt/openwrt/package/feeds"
 
-echo "=== 清空所有 feeds 包（真正被构建链扫描的目录） ==="
-rm -rf $FEEDS_ROOT/packages/*
-rm -rf $FEEDS_ROOT/luci/*
-rm -rf $FEEDS_ROOT/small/*
-rm -rf $FEEDS_ROOT/helloworld/*
-
-mkdir -p $FEEDS_ROOT/packages $FEEDS_ROOT/luci
-
-echo "=== 白名单模式：只保留 LuCI 和基础包 ==="
+echo "=== 裁剪 feeds：基于 symlink 做白名单过滤 ==="
 
 WHITELIST="
 luci
@@ -30,24 +22,27 @@ luci-proto-ppp
 luci-proto-ipv6
 "
 
-copy_if_exists() {
-    local pkg="$1"
-    for src in /mnt/openwrt/feeds/luci /mnt/openwrt/feeds/packages; do
-        if [ -d "$src/$pkg" ]; then
-            local target="$FEEDS_ROOT/$(basename "$src")"
-            echo "KEEP: $pkg ← $src"
-            cp -r "$src/$pkg" "$target/"
-            return
-        fi
+is_in_whitelist() {
+    local name="$1"
+    for w in $WHITELIST; do
+        [ "$w" = "$name" ] && return 0
     done
-    echo "SKIP: $pkg (not found)"
+    return 1
 }
 
-for pkg in $WHITELIST; do
-    copy_if_exists "$pkg"
+# 只保留白名单里的 luci 包
+for dir in "$FEEDS_ROOT/luci"/*; do
+    [ -d "$dir" ] || continue
+    base="$(basename "$dir")"
+    if is_in_whitelist "$base"; then
+        echo "KEEP: luci/$base"
+    else
+        echo "DROP: luci/$base"
+        rm -rf "$dir"
+    fi
 done
 
-echo "=== 强制删除 utils 整个目录（彻底解决 glib2/libpam/gpiod 死锁） ==="
-rm -rf /mnt/openwrt/package/feeds/packages/utils
+# 删除 utils 整个目录（你不需要）
+rm -rf "$FEEDS_ROOT/packages/utils"
 
-echo "=== 完成：最小化 feeds，无任何死锁包 ==="
+echo "=== feeds 裁剪完成 ==="
