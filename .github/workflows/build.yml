@@ -97,26 +97,26 @@ jobs:
           echo "MAKEFLAGS=--no-builtin-rules" >> $GITHUB_ENV
 
       ######################################################################
-      # ⭐ 企业级 Download sources (Fail‑Fast + Auto‑Recover)
+      # ⭐ 企业级 Download sources（make download + 自愈）
       ######################################################################
       - name: Download sources (enterprise self-heal)
         working-directory: /mnt/openwrt
         run: |
-          echo "=== Download: 第 1 次尝试（带超时） ==="
-          timeout 600 make package/download -j1 V=s && exit 0
+          echo "=== Download: 第 1 次尝试（并行） ==="
+          make download -j$(nproc) && exit 0
 
-          echo "=== Download: 第 1 次失败 → 清理 package 残留 ==="
-          make package/clean
-
-          echo "=== Download: 第 2 次尝试（带超时） ==="
-          timeout 600 make package/download -j1 V=s && exit 0
-
-          echo "=== Download: 第 2 次失败 → 清理 dl 损坏文件 ==="
+          echo "=== Download: 第 1 次失败 → 清理损坏文件 ==="
           find dl -type f -size 0 -delete || true
           find dl -type f -name "*.tmp" -delete || true
 
-          echo "=== Download: 第 3 次尝试（最终自愈） ==="
-          timeout 600 make package/download -j1 V=s
+          echo "=== Download: 第 2 次尝试（并行） ==="
+          make download -j$(nproc) && exit 0
+
+          echo "=== Download: 第 2 次失败 → 清空 dl（最终自愈） ==="
+          rm -rf dl/*
+
+          echo "=== Download: 第 3 次尝试（最终） ==="
+          make download -j$(nproc)
 
       ######################################################################
 
