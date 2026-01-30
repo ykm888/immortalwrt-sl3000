@@ -48,12 +48,10 @@ jobs:
       - name: Clean feeds config
         working-directory: /mnt/openwrt
         run: |
-          cat > feeds.conf.default << "EOF"
-          src-git packages https://github.com/openwrt/packages.git
-          src-git luci https://github.com/openwrt/luci.git
-          src-git helloworld https://github.com/fw876/helloworld.git
-          src-git small https://github.com/kenzok8/small.git
-          EOF
+          echo 'src-git packages https://github.com/openwrt/packages.git' > feeds.conf.default
+          echo 'src-git luci https://github.com/openwrt/luci.git' >> feeds.conf.default
+          echo 'src-git helloworld https://github.com/fw876/helloworld.git' >> feeds.conf.default
+          echo 'src-git small https://github.com/kenzok8/small.git' >> feeds.conf.default
 
       - name: Update feeds
         working-directory: /mnt/openwrt
@@ -103,15 +101,25 @@ jobs:
           test -f repo/sl3000/config/sl3000.config || (echo "❌ CONFIG missing" && exit 1)
 
           grep -q "mediatek,mt7981" repo/sl3000/dts/mt7981b-sl-3000-emmc.dts || (echo "❌ SoC mismatch" && exit 1)
+
           grep -q "sl3000-emmc" repo/sl3000/mk/filogic-sl3000.mk || (echo "❌ MK device name mismatch" && exit 1)
           grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" repo/sl3000/config/sl3000.config || (echo "❌ CONFIG device missing" && exit 1)
 
-      # 三件套自动修复
+      # 三件套自动修复（自动对应官方设备名）
       - name: Auto fix three-piece naming
         run: |
           echo "🛠 Auto fixing naming issues..."
-          sed -i 's/sl_3000-emmc/sl3000-emmc/g' repo/sl3000/config/sl3000.config || true
-          sed -i 's/sl_3000-emmc/sl3000-emmc/g' repo/sl3000/mk/filogic-sl3000.mk || true
+
+          DTS_FILE="repo/sl3000/dts/mt7981b-sl-3000-emmc.dts"
+          DEVICE_NAME=$(basename "$DTS_FILE" .dts | sed 's/^mt7981b-//' | sed 's/-//')
+
+          echo "📌 Official device name: $DEVICE_NAME"
+
+          sed -i "s/sl_3000-emmc/$DEVICE_NAME/g" repo/sl3000/mk/filogic-sl3000.mk || true
+          sed -i "s/sl3000-emmc/$DEVICE_NAME/g" repo/sl3000/mk/filogic-sl3000.mk || true
+
+          sed -i "s/DEVICE_sl_3000-emmc/DEVICE_${DEVICE_NAME}/g" repo/sl3000/config/sl3000.config || true
+          sed -i "s/DEVICE_sl3000-emmc/DEVICE_${DEVICE_NAME}/g" repo/sl3000/config/sl3000.config || true
 
       # 三件套自动注册
       - name: Apply DTS
@@ -146,13 +154,29 @@ jobs:
 
       - name: Validate firmware output
         working-directory: /mnt/openwrt
-        run: ls -lh bin/targets/mediatek/filogic/*sl-3000-emmc*sysupgrade.bin
+        run: ls -lh bin/targets/mediatek/filogic/*sl3000-emmc*sysupgrade.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: sl3000-2410-firmware
           path: /mnt/openwrt/bin/targets/mediatek/filogic/*
+
+      # 自动发布固件（不用 EOF）
+      - name: Auto Release firmware
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: sl3000-openwrt-2410-${{ github.run_number }}
+          name: SL3000 OpenWrt 24.10 Build #${{ github.run_number }}
+          body: |
+            OpenWrt 24.10 / kernel 6.6  
+            Target: SL3000 (MT7981B eMMC)  
+            Auto three-piece (DTS/MK/CONFIG)  
+            Build: ${{ github.run_number }}  
+            Commit: ${{ github.sha }}
+          files: /mnt/openwrt/bin/targets/mediatek/filogic/*
+          prerelease: true
 
       - name: Optimize disk space
         working-directory: /mnt/openwrt
