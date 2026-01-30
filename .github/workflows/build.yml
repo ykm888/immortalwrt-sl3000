@@ -64,7 +64,7 @@ jobs:
         run: |
           chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
           bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
-          make defconfig
+          # ❌ 删除 make defconfig（这是导致失败的根因）
 
       - name: Disable menuconfig globally
         run: |
@@ -105,7 +105,7 @@ jobs:
           grep -q "sl3000-emmc" repo/sl3000/mk/filogic-sl3000.mk || (echo "❌ MK device name mismatch" && exit 1)
           grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" repo/sl3000/config/sl3000.config || (echo "❌ CONFIG device missing" && exit 1)
 
-      # 三件套自动修复（自动对应官方设备名）
+      # 三件套自动修复
       - name: Auto fix three-piece naming
         run: |
           echo "🛠 Auto fixing naming issues..."
@@ -133,6 +133,14 @@ jobs:
           sed -i '/Device\/sl3000-emmc/,/endef/d' "$MK"
           sed -i '/TARGET_DEVICES += sl3000-emmc/d' "$MK"
           cat repo/sl3000/mk/filogic-sl3000.mk >> "$MK"
+
+      # 🟩 关键修复：应用设备 config（这是整个错误的根因）
+      - name: Apply device config (.config)
+        working-directory: /mnt/openwrt
+        run: |
+          rm -f .config
+          cp $GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config .config
+          make defconfig
 
       - name: Build kernel (self-heal)
         working-directory: /mnt/openwrt
@@ -162,7 +170,6 @@ jobs:
           name: sl3000-2410-firmware
           path: /mnt/openwrt/bin/targets/mediatek/filogic/*
 
-      # 自动发布固件（不用 EOF）
       - name: Auto Release firmware
         uses: softprops/action-gh-release@v2
         if: success()
