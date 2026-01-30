@@ -32,7 +32,21 @@ jobs:
         run: git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
 
       ######################################################################
-      # PRE‑CLEAN：构建前磁盘优化（加存在性判断，避免噪音）
+      # ★★★ 关键修复：从源码树硬删除 24.10 的系统级脏链路 ★★★
+      ######################################################################
+      - name: Strip SELinux / pcat / lldpd from source tree
+        working-directory: /mnt/openwrt
+        run: |
+          echo "=== Strip system-level SELinux & misc packages (24.10 专用硬砍) ==="
+          rm -rf package/system/refpolicy
+          rm -rf package/system/selinux-policy
+          rm -rf package/system/policycoreutils
+          rm -rf package/utils/pcat-manager
+          rm -rf package/network/services/lldpd
+          echo "=== Strip 完成：整条 SELinux / pcat / lldpd 链路已从源码树移除 ==="
+
+      ######################################################################
+      # PRE‑CLEAN：构建前磁盘优化
       ######################################################################
       - name: Pre-clean disk space (before build)
         working-directory: /mnt/openwrt
@@ -51,8 +65,6 @@ jobs:
           fi
 
           echo "=== PRE-CLEAN 完成 ==="
-
-      ######################################################################
 
       - name: Install build dependencies + ccache
         run: |
@@ -144,6 +156,8 @@ jobs:
           make download -j$(nproc)
 
       ######################################################################
+      # 后续步骤保持原样（完全延续你的上一版）
+      ######################################################################
 
       - name: Build host tools (self-heal)
         working-directory: /mnt/openwrt
@@ -226,9 +240,6 @@ jobs:
           make target/image/compile -j$(nproc) V=s || \
           (make target/image/clean && make target/image/compile -j$(nproc) V=s)
 
-      ######################################################################
-      # 固件输出路径放宽（自动匹配 filogic / mt7981）
-      ######################################################################
       - name: Validate firmware output
         working-directory: /mnt/openwrt
         run: |
@@ -247,4 +258,4 @@ jobs:
           tag_name: sl3000-openwrt-2410-${{ github.run_number }}
           name: SL3000 OpenWrt 24.10 Build #${{ github.run_number }}
           body: |
-            OpenWrt 24.10 / Kernel 
+            OpenWrt 24.10 / Kernel
