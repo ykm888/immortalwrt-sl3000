@@ -1,184 +1,69 @@
-name: build-sl3000-openwrt-2410
+name: Build SL3000-EMMC Firmware
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
-  packages: write
-
 jobs:
-  build-sl3000-2410:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 360
-
-    env:
-      DEVICE_ID: sl3000-emmc
-      TARGET_PROFILE: mediatek_filogic
-      DTS_NAME: mt7981b-sl-3000-emmc
+  build:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          path: repo
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Prepare /mnt/openwrt
-        run: |
-          sudo mkdir -p /mnt/openwrt
-          sudo chown -R $USER:$USER /mnt
+    - name: Prepare build environment
+      run: |
+        sudo apt update
+        sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib \
+          gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev
 
-      - name: Clone ImmortalWrt 24.10
-        run: git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
+    - name: Clone ImmortalWrt
+      run: |
+        git clone https://github.com/immortalwrt/immortalwrt.git openwrt
+        cd openwrt
+        git checkout openwrt-24.10
 
-      - name: Install build dependencies + ccache
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            python3 python3-pip python3-setuptools python3-wheel python3-dev python3-venv \
-            libffi-dev libssl-dev ccache
-          echo "export CCACHE_DIR=/mnt/openwrt/.ccache" >> $GITHUB_ENV
-          echo "export CCACHE_COMPRESS=1" >> $GITHUB_ENV
-          echo "export CCACHE_MAXSIZE=2G" >> $GITHUB_ENV
+    - name: Force clean feeds (一次性彻底重置)
+      working-directory: openwrt
+      run: |
+        rm -rf feeds
+        rm -rf package/feeds
 
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: /mnt/openwrt/.ccache
-          key: ${{ runner.os }}-openwrt-ccache-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-ccache-
+    - name: Update feeds
+      working-directory: openwrt
+      run: ./scripts/feeds update -a
 
-      - name: Cache dl
-        uses: actions/cache@v4
-        with:
-          path: /mnt/openwrt/dl
-          key: ${{ runner.os }}-openwrt-24.10-dl-${{ hashFiles('repo/sl3000/config/sl3000.config') }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-24.10-dl-
+    - name: Install feeds
+      working-directory: openwrt
+      run: ./scripts/feeds install -a
 
-      - name: Cache toolchain & host
-        uses: actions/cache@v4
-        with:
-          path: |
-            /mnt/openwrt/staging_dir/toolchain
-            /mnt/openwrt/staging_dir/host
-          key: ${{ runner.os }}-openwrt-24.10-toolchain-${{ hashFiles('repo/sl3000/config/sl3000.config') }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-24.10-toolchain-
+    - name: Apply three-piece (DTS / MK / CONFIG)
+      working-directory: openwrt
+      run: |
+        cp $GITHUB_WORKSPACE/repo/sl3000/dts/mt7981b-sl3000-emmc.dts target/linux/mediatek/dts/
+        cat $GITHUB_WORKSPACE/repo/sl3000/mk/filogic-sl3000.mk >> target/linux/mediatek/image/filogic.mk
+        rm -f .config
+        cp $GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config .config
+        make defconfig
 
-      - name: Clean feeds config
-        working-directory: /mnt/openwrt
-        run: |
-          echo 'src-git packages https://github.com/openwrt/packages.git' > feeds.conf.default
-          echo 'src-git luci https://github.com/openwrt/luci.git' >> feeds.conf.default
+    - name: Clean feeds (最终版)
+      working-directory: openwrt
+      run: |
+        chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
+        bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
 
-      # === 正确顺序：update → install → clean-feeds ===
-      - name: Update feeds
-        working-directory: /mnt/openwrt
-        run: ./scripts/feeds update -a
+    - name: Build toolchain
+      working-directory: openwrt
+      run: |
+        make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
 
-      - name: Install feeds
-        working-directory: /mnt/openwrt
-        run: ./scripts/feeds install -a
+    - name: Build firmware
+      working-directory: openwrt
+      run: |
+        make -j$(nproc) || make -j1 V=s
 
-      - name: Run clean-feeds.sh (white list)
-        working-directory: /mnt/openwrt
-        run: |
-          chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
-          bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
-
-      - name: Disable menuconfig globally
-        run: |
-          echo "KCONFIG_NONINTERACTIVE=1" >> $GITHUB_ENV
-          echo "TERM=dumb" >> $GITHUB_ENV
-          echo "LC_ALL=C" >> $GITHUB_ENV
-          echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
-          echo "MAKEFLAGS=--no-builtin-rules" >> $GITHUB_ENV
-
-      - name: Download sources (fail-fast)
-        working-directory: /mnt/openwrt
-        run: |
-          make package/download -j1 V=s || \
-          (make package/clean && make package/download -j1 V=s)
-
-      - name: Build host tools (self-heal)
-        working-directory: /mnt/openwrt
-        run: |
-          make tools/install -j$(nproc) V=s || \
-          (make tools/clean && make tools/install -j$(nproc) V=s)
-
-      - name: Build toolchain (self-heal)
-        working-directory: /mnt/openwrt
-        run: |
-          make toolchain/install -j$(nproc) V=s || \
-          (make toolchain/clean && make toolchain/install -j$(nproc) V=s)
-
-      - name: Apply DTS
-        run: |
-          mkdir -p /mnt/openwrt/target/linux/mediatek/dts
-          cp repo/sl3000/dts/${DTS_NAME}.dts /mnt/openwrt/target/linux/mediatek/dts/
-
-      - name: Apply MK
-        run: |
-          MK=/mnt/openwrt/target/linux/mediatek/image/filogic.mk
-          sed -i "/Device\/${DEVICE_ID}/,/endef/d" "$MK"
-          sed -i "/TARGET_DEVICES += ${DEVICE_ID}/d" "$MK"
-          cat repo/sl3000/mk/filogic-sl3000.mk >> "$MK"
-
-      - name: Apply device config (.config)
-        working-directory: /mnt/openwrt
-        run: |
-          rm -f .config
-          cp $GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config .config
-          make defconfig
-
-      - name: Build kernel (self-heal)
-        working-directory: /mnt/openwrt
-        run: |
-          make target/linux/compile -j$(nproc) V=s || \
-          (make target/linux/clean && make target/linux/compile -j$(nproc) V=s)
-
-      - name: Build packages (self-heal)
-        working-directory: /mnt/openwrt
-        run: |
-          make package/compile -j$(nproc) V=s || \
-          (make package/clean && make package/compile -j$(nproc) V=s)
-
-      - name: Build image (self-heal)
-        working-directory: /mnt/openwrt
-        run: |
-          make target/image/compile -j$(nproc) V=s || \
-          (make target/image/clean && make target/image/compile -j$(nproc) V=s)
-
-      - name: Validate firmware output
-        working-directory: /mnt/openwrt
-        run: |
-          ls -lh bin/targets/mediatek/filogic/*${DEVICE_ID}*sysupgrade.bin
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: sl3000-2410-firmware
-          path: /mnt/openwrt/bin/targets/mediatek/filogic/*
-
-      - name: Auto Release firmware
-        uses: softprops/action-gh-release@v2
-        if: success()
-        with:
-          tag_name: sl3000-openwrt-2410-${{ github.run_number }}
-          name: SL3000 OpenWrt 24.10 Build #${{ github.run_number }}
-          body: |
-            OpenWrt 24.10 / Kernel 6.6
-            Target: SL3000 (MT7981B eMMC)
-            DEVICE_ID: sl3000-emmc
-            Build: ${{ github.run_number }}
-            Commit: ${{ github.sha }}
-          files: /mnt/openwrt/bin/targets/mediatek/filogic/*
-
-      - name: Cleanup workspace
-        working-directory: /mnt/openwrt
-        run: |
-          rm -rf build_dir/* tmp/* || true
-          find dl -type f -size +200M -delete || true
+    - name: Upload firmware
+      uses: actions/upload-artifact@v4
+      with:
+        name: sl3000-emmc-firmware
+        path: openwrt/bin/targets/mediatek/filogic/
