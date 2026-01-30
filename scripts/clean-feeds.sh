@@ -1,12 +1,10 @@
 #!/bin/bash
-# 白名单模式 + SSRPlus 依赖目录补齐 + 底层库依赖补齐 + 禁用主线包扫描 + 禁用不兼容包
-# 只改脚本，不动工作流，不动 package/*
-
 set -e
+
+echo "=== 白名单模式：清空所有 feeds 包 ==="
 
 FEEDS_ROOT="package/feeds"
 
-echo "=== 清空 feeds 包 ==="
 rm -rf $FEEDS_ROOT/packages/*
 rm -rf $FEEDS_ROOT/luci/*
 rm -rf $FEEDS_ROOT/small/*
@@ -17,114 +15,59 @@ mkdir -p $FEEDS_ROOT/luci
 mkdir -p $FEEDS_ROOT/small
 mkdir -p $FEEDS_ROOT/helloworld
 
-echo "=== 保留 luci 基础 ==="
-cp -r feeds/luci/modules/luci-base        $FEEDS_ROOT/luci/
-cp -r feeds/luci/modules/luci-compat      $FEEDS_ROOT/luci/
-cp -r feeds/luci/modules/luci-lua-runtime $FEEDS_ROOT/luci/
-cp -r feeds/luci/libs/luci-lib-ip         $FEEDS_ROOT/luci/
-cp -r feeds/luci/libs/luci-lib-jsonc      $FEEDS_ROOT/luci/
-cp -r feeds/luci/themes/luci-theme-bootstrap $FEEDS_ROOT/luci/
+echo "=== 白名单：只保留明确需要的包 ==="
 
-echo "=== 保留 Passwall2 / SSRPlus / Xray ==="
-# 多路径兜底，避免缺失报错
-for dep in luci-app-ssr-plus ssr-plus; do
-  if [ -d "feeds/helloworld/$dep" ]; then
-    cp -r "feeds/helloworld/$dep" "$FEEDS_ROOT/helloworld/"
-  elif [ -d "feeds/small/$dep" ]; then
-    cp -r "feeds/small/$dep" "$FEEDS_ROOT/small/"
-  elif [ -d "feeds/packages/$dep" ]; then
-    cp -r "feeds/packages/$dep" "$FEEDS_ROOT/packages/"
-  fi
+# 白名单列表（你真正需要的包）
+WHITELIST="
+luci
+luci-base
+luci-compat
+luci-lua-runtime
+luci-lib-ip
+luci-lib-jsonc
+luci-theme-bootstrap
+
+luci-mod-admin-full
+luci-mod-network
+luci-mod-status
+luci-mod-system
+luci-proto-ppp
+luci-proto-ipv6
+
+luci-app-passwall2
+passwall2
+
+luci-app-ssr-plus
+ssr-plus
+
+xray-core
+v2ray-geodata
+
+luci-i18n-base-zh-cn
+luci-i18n-ssr-plus-zh-cn
+luci-i18n-passwall2-zh-cn
+"
+
+is_whitelisted() {
+    echo "$WHITELIST" | grep -qx "$1"
+}
+
+copy_if_exists() {
+    local pkg="$1"
+    for src in feeds/luci feeds/packages feeds/small feeds/helloworld; do
+        if [ -d "$src/$pkg" ]; then
+            local target="$FEEDS_ROOT/$(basename "$src")"
+            echo "KEEP: $pkg  ←  $src"
+            cp -r "$src/$pkg" "$target/"
+            return
+        fi
+    done
+    echo "SKIP: $pkg (not found in feeds)"
+}
+
+# 遍历白名单并复制
+for pkg in $WHITELIST; do
+    copy_if_exists "$pkg"
 done
 
-for dep in xray-core v2ray-geodata; do
-  if [ -d "feeds/helloworld/$dep" ]; then
-    cp -r "feeds/helloworld/$dep" "$FEEDS_ROOT/helloworld/"
-  elif [ -d "feeds/small/$dep" ]; then
-    cp -r "feeds/small/$dep" "$FEEDS_ROOT/small/"
-  fi
-done
-
-cp -r feeds/small/luci-app-passwall2      $FEEDS_ROOT/small/ || true
-cp -r feeds/small/passwall2               $FEEDS_ROOT/small/ || true
-
-echo "=== 补齐 SSRPlus 依赖目录（不启用、不构建，只让它们存在） ==="
-SSR_DEPS=(
-  dns2tcp microsocks tcping shadowsocksr-libev-ssr-check
-  curl nping chinadns-ng dns2socks dns2socks-rust dnsproxy mosdns
-  hysteria tuic-client shadow-tls ipt2socks kcptun-client naiveproxy
-  redsocks2 shadowsocks-libev shadowsocksr-libev simple-obfs
-  v2ray-plugin trojan lua-neturl coreutils coreutils-base64
-)
-
-for dep in "${SSR_DEPS[@]}"; do
-  for path in feeds/helloworld feeds/packages feeds/small; do
-    if [ -d "$path/$dep" ]; then
-      cp -r "$path/$dep" "$FEEDS_ROOT/${path##*/}/"
-    fi
-  done
-done
-
-echo "=== 补齐底层库依赖（libev / libsodium / libudns / boost / rust/host / golang/host） ==="
-LIB_DEPS=(libev libsodium libudns boost boost-program_options boost-date_time)
-for dep in "${LIB_DEPS[@]}"; do
-  for path in feeds/packages feeds/helloworld; do
-    if [ -d "$path/$dep" ]; then
-      cp -r "$path/$dep" "$FEEDS_ROOT/${path##*/}/"
-    fi
-  done
-done
-
-HOST_DEPS=(rust golang)
-for dep in "${HOST_DEPS[@]}"; do
-  if [ -d "feeds/packages/lang/$dep" ]; then
-    mkdir -p "$FEEDS_ROOT/packages/lang"
-    cp -r "feeds/packages/lang/$dep" "$FEEDS_ROOT/packages/lang/"
-  fi
-done
-
-echo "=== 禁用主线包扫描 ==="
-cat > .config << "EOF"
-CONFIG_ALL=n
-CONFIG_ALL_KMODS=n
-CONFIG_ALL_NONSHARED=n
-EOF
-
-echo "=== 写入白名单 config ==="
-cat >> .config << "EOF"
-CONFIG_TARGET_mediatek=y
-CONFIG_TARGET_mediatek_filogic=y
-CONFIG_TARGET_mediatek_filogic_DEVICE_sl_3000-emmc=y
-
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-base=y
-CONFIG_PACKAGE_luci-compat=y
-CONFIG_PACKAGE_luci-lua-runtime=y
-CONFIG_PACKAGE_luci-lib-ip=y
-CONFIG_PACKAGE_luci-lib-jsonc=y
-CONFIG_PACKAGE_luci-theme-bootstrap=y
-
-CONFIG_PACKAGE_luci-mod-admin-full=y
-CONFIG_PACKAGE_luci-mod-network=y
-CONFIG_PACKAGE_luci-mod-status=y
-CONFIG_PACKAGE_luci-mod-system=y
-
-CONFIG_PACKAGE_luci-app-passwall2=y
-CONFIG_PACKAGE_passwall2=y
-
-CONFIG_PACKAGE_luci-app-ssr-plus=y
-CONFIG_PACKAGE_ssr-plus=y
-
-CONFIG_PACKAGE_xray-core=y
-CONFIG_PACKAGE_v2ray-geodata=y
-
-CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
-CONFIG_PACKAGE_luci-i18n-ssr-plus-zh-cn=y
-CONFIG_PACKAGE_luci-i18n-passwall2-zh-cn=y
-EOF
-
-echo "=== 禁用不兼容的包（Xray-core / simple-obfs） ==="
-sed -i 's/CONFIG_PACKAGE_xray-core=y/CONFIG_PACKAGE_xray-core=n/' .config || true
-sed -i 's/CONFIG_PACKAGE_simple-obfs=y/CONFIG_PACKAGE_simple-obfs=n/' .config || true
-
-echo "=== 白名单模式完成 ==="
+echo "=== 白名单模式完成（无依赖补齐，无兜底，无多余包）==="
