@@ -82,7 +82,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Run clean-feeds.sh (white list)
+      - name: Run clean-feeds.sh (white list + 强制删除)
         working-directory: /mnt/openwrt
         run: |
           chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
@@ -99,8 +99,8 @@ jobs:
       - name: Download sources (self-heal)
         working-directory: /mnt/openwrt
         run: |
-          make package/download -j1 V=s || \
-          (make package/clean && make package/download -j1 V=s)
+          timeout 600 make package/download -j1 V=s || \
+          (make package/clean && timeout 600 make package/download -j1 V=s)
 
       - name: Build host tools (self-heal)
         working-directory: /mnt/openwrt
@@ -132,88 +132,44 @@ jobs:
           make package/compile -j$(nproc) V=s || \
           (make package/clean && make package/compile -j$(nproc) V=s)
 
-      ############################################################
-      # 三件套校验增强
-      ############################################################
       - name: Detect three-piece consistency
         run: |
           echo "=== 三件套校验开始 ==="
-
-          # 基础存在性检查
           test -f repo/sl3000/dts/${DTS_NAME}.dts || (echo "❌ DTS missing" && exit 1)
           test -f repo/sl3000/mk/filogic-sl3000.mk || (echo "❌ MK missing" && exit 1)
           test -f repo/sl3000/config/sl3000.config || (echo "❌ CONFIG missing" && exit 1)
-
-          # DTS 校验增强
           grep -q "compatible" repo/sl3000/dts/${DTS_NAME}.dts || (echo "❌ DTS missing compatible" && exit 1)
           grep -q "mediatek" repo/sl3000/dts/${DTS_NAME}.dts || (echo "❌ DTS missing mediatek SoC" && exit 1)
-          grep -q "model" repo/sl3000/dts/${DTS_NAME}.dts || echo "⚠ DTS missing model (建议补充)"
-
-          # MK 校验增强
+          grep -q "model" repo/sl3000/dts/${DTS_NAME}.dts || echo "⚠ DTS missing model"
           grep -q "Device\/${DEVICE_ID}" repo/sl3000/mk/filogic-sl3000.mk || (echo "❌ MK device mismatch" && exit 1)
           grep -q "TARGET_DEVICES += ${DEVICE_ID}" repo/sl3000/mk/filogic-sl3000.mk || (echo "❌ MK target missing" && exit 1)
-          grep -q "DEVICE_DTS" repo/sl3000/mk/filogic-sl3000.mk || echo "⚠ MK missing DEVICE_DTS"
-          grep -q "IMAGE_SIZE" repo/sl3000/mk/filogic-sl3000.mk || echo "⚠ MK missing IMAGE_SIZE（建议补充）"
-
-          # CONFIG 校验增强
-          grep -q "CONFIG_TARGET_${TARGET_PROFILE}=y" repo/sl3000/config/sl3000.config || (echo "❌ CONFIG target mismatch" && exit 1)
           grep -q "CONFIG_TARGET_${TARGET_PROFILE}_DEVICE_${DEVICE_ID}=y" repo/sl3000/config/sl3000.config || (echo "❌ CONFIG device missing" && exit 1)
-
           echo "✔ 三件套校验通过"
 
-      ############################################################
-      # 三件套修复增强
-      ############################################################
       - name: Auto fix three-piece naming
         run: |
-          echo "=== 三件套自动修复开始 ==="
-
-          # MK 修复增强
           sed -i "s/Device\/sl3000-emmc/Device\/${DEVICE_ID}/g" repo/sl3000/mk/filogic-sl3000.mk || true
           sed -i "s/TARGET_DEVICES += sl3000-emmc/TARGET_DEVICES += ${DEVICE_ID}/g" repo/sl3000/mk/filogic-sl3000.mk || true
           sed -i "s/DEVICE_sl3000-emmc/DEVICE_${DEVICE_ID}/g" repo/sl3000/mk/filogic-sl3000.mk || true
-
-          # CONFIG 修复增强
           sed -i "s/CONFIG_TARGET_${TARGET_PROFILE}_DEVICE_sl3000-emmc/CONFIG_TARGET_${TARGET_PROFILE}_DEVICE_${DEVICE_ID}/g" repo/sl3000/config/sl3000.config || true
-
-          # DTS 修复增强（model 字段）
           if ! grep -q "model" repo/sl3000/dts/${DTS_NAME}.dts; then
             sed -i "1a model = \"SL3000 eMMC\";" repo/sl3000/dts/${DTS_NAME}.dts
           fi
 
-          echo "✔ 三件套修复完成"
-
-      ############################################################
-      # Apply DTS
-      ############################################################
       - name: Apply DTS
         run: |
           mkdir -p /mnt/openwrt/target/linux/mediatek/dts
           cp repo/sl3000/dts/${DTS_NAME}.dts /mnt/openwrt/target/linux/mediatek/dts/
 
-      ############################################################
-      # 三件套自动注册增强
-      ############################################################
       - name: Apply MK (auto-register)
         run: |
           MK=/mnt/openwrt/target/linux/mediatek/image/filogic.mk
-
-          echo "=== Auto Register: 清理旧定义 ==="
           sed -i "/Device\/${DEVICE_ID}/,/endef/d" "$MK"
           sed -i "/TARGET_DEVICES += ${DEVICE_ID}/d" "$MK"
-
-          echo "=== Auto Register: 追加新定义 ==="
           cat repo/sl3000/mk/filogic-sl3000.mk >> "$MK"
+          grep -q "Device\/${DEVICE_ID}" "$MK" || (echo '❌ 注册失败' && exit 1)
+          grep -q "TARGET_DEVICES += ${DEVICE_ID}" "$MK" || (echo '❌ 注册失败' && exit 1)
 
-          echo "=== Auto Register: 闭环校验 ==="
-          grep -q "Device\/${DEVICE_ID}" "$MK" || (echo '❌ 注册失败：MK 中未找到设备定义' && exit 1)
-          grep -q "TARGET_DEVICES += ${DEVICE_ID}" "$MK" || (echo '❌ 注册失败：TARGET_DEVICES 未写入' && exit 1)
-
-          echo "✔ Auto Register 完成"
-
-      ############################################################
-      # Apply config
-      ############################################################
       - name: Apply device config (.config)
         working-directory: /mnt/openwrt
         run: |
@@ -221,35 +177,23 @@ jobs:
           cp $GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config .config
           make defconfig
 
-      ############################################################
-      # Build image（自愈）
-      ############################################################
       - name: Build image (self-heal)
         working-directory: /mnt/openwrt
         run: |
           make target/image/compile -j$(nproc) V=s || \
           (make target/image/clean && make target/image/compile -j$(nproc) V=s)
 
-      ############################################################
-      # Validate firmware
-      ############################################################
       - name: Validate firmware output
         working-directory: /mnt/openwrt
         run: |
           ls -lh bin/targets/mediatek/filogic/*${DEVICE_ID}*sysupgrade.bin
 
-      ############################################################
-      # Upload firmware
-      ############################################################
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: sl3000-2410-firmware
           path: /mnt/openwrt/bin/targets/mediatek/filogic/*
 
-      ############################################################
-      # 自动发布固件
-      ############################################################
       - name: Auto Release firmware
         uses: softprops/action-gh-release@v2
         if: success()
@@ -268,13 +212,8 @@ jobs:
             Commit: ${{ github.sha }}
           files: /mnt/openwrt/bin/targets/mediatek/filogic/*sysupgrade.bin
 
-      ############################################################
-      # Cleanup
-      ############################################################
       - name: Cleanup workspace
         working-directory: /mnt/openwrt
         run: |
-          echo "Cleaning temporary build directories..."
           rm -rf build_dir/* tmp/* || true
           find dl -type f -size +200M -delete || true
-          echo "Cleanup complete."
