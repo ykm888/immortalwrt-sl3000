@@ -11,7 +11,7 @@ rm -rf $FEEDS_ROOT/helloworld/*
 
 mkdir -p $FEEDS_ROOT/packages $FEEDS_ROOT/luci $FEEDS_ROOT/small $FEEDS_ROOT/helloworld
 
-echo "=== 白名单模式：只保留明确需要的包（不补齐依赖） ==="
+echo "=== 白名单模式：只保留明确需要的包（无依赖补齐） ==="
 
 WHITELIST="
 luci
@@ -59,4 +59,11 @@ for pkg in $WHITELIST; do
     copy_if_exists "$pkg"
 done
 
-echo "=== 完成：仅保留白名单包，无任何自动补齐 ==="
+echo "=== 强制删除 utils 中的死锁包 ==="
+rm -rf package/feeds/packages/utils/pcat-manager
+rm -rf package/feeds/packages/utils/policycoreutils
+rm -rf package/feeds/packages/utils/*glib*
+rm -rf package/feeds/packages/utils/*pam*
+rm -rf package/feeds/packages/utils/*gpiod*
+
+echo "=== 完成：白名单 + 死锁清理 ==="
