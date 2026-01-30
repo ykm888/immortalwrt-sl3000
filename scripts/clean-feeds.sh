@@ -35,7 +35,6 @@ passwall2
 luci-app-ssr-plus
 ssr-plus
 
-xray-core
 v2ray-geodata
 
 luci-i18n-base-zh-cn
@@ -67,14 +66,16 @@ SSR_DEPS=(
   curl nping chinadns-ng dns2socks dns2socks-rust dnsproxy mosdns
   hysteria tuic-client shadow-tls ipt2socks kcptun-client naiveproxy
   redsocks2 shadowsocks-libev shadowsocksr-libev simple-obfs
-  v2ray-plugin trojan lua-neturl coreutils coreutils-base64
+  lua-neturl coreutils coreutils-base64
   shadowsocks-libev-ss-local shadowsocks-libev-ss-redir shadowsocks-libev-ss-server
   shadowsocks-rust-sslocal shadowsocks-rust-ssserver
   shadowsocksr-libev-ssr-local shadowsocksr-libev-ssr-redir shadowsocksr-libev-ssr-server
 )
 
-LIB_DEPS=(libev libsodium libudns glib2 libgpiod libpam libtirpc liblzma libnetsnmp)
+# ❌ 移除 trojan / v2ray-plugin / xray-core，避免 boost/golang/host 依赖
+# ✅ 如果你确实需要它们，请手动启用 boost/golang/host 工具链
 
+LIB_DEPS=(libev libsodium libudns glib2 libgpiod libpam libtirpc liblzma libnetsnmp)
 HOST_DEPS=(golang rust csstidy luasrcdiet)
 
 for dep in "${SSR_DEPS[@]}" "${LIB_DEPS[@]}"; do
