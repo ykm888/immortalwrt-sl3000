@@ -96,11 +96,29 @@ jobs:
           echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
           echo "MAKEFLAGS=--no-builtin-rules" >> $GITHUB_ENV
 
-      - name: Download sources (self-heal)
+      ######################################################################
+      # ⭐ 企业级 Download sources (Fail‑Fast + Auto‑Recover)
+      ######################################################################
+      - name: Download sources (enterprise self-heal)
         working-directory: /mnt/openwrt
         run: |
-          timeout 600 make package/download -j1 V=s || \
-          (make package/clean && timeout 600 make package/download -j1 V=s)
+          echo "=== Download: 第 1 次尝试（带超时） ==="
+          timeout 600 make package/download -j1 V=s && exit 0
+
+          echo "=== Download: 第 1 次失败 → 清理 package 残留 ==="
+          make package/clean
+
+          echo "=== Download: 第 2 次尝试（带超时） ==="
+          timeout 600 make package/download -j1 V=s && exit 0
+
+          echo "=== Download: 第 2 次失败 → 清理 dl 损坏文件 ==="
+          find dl -type f -size 0 -delete || true
+          find dl -type f -name "*.tmp" -delete || true
+
+          echo "=== Download: 第 3 次尝试（最终自愈） ==="
+          timeout 600 make package/download -j1 V=s
+
+      ######################################################################
 
       - name: Build host tools (self-heal)
         working-directory: /mnt/openwrt
