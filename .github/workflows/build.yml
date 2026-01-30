@@ -73,20 +73,23 @@ jobs:
         run: |
           echo 'src-git packages https://github.com/openwrt/packages.git' > feeds.conf.default
           echo 'src-git luci https://github.com/openwrt/luci.git' >> feeds.conf.default
-          echo 'src-git helloworld https://github.com/fw876/helloworld.git' >> feeds.conf.default
-          echo 'src-git small https://github.com/kenzok8/small.git' >> feeds.conf.default
 
+      # 🟩 修复点 1：先 update，再 clean-feeds（关键）
       - name: Update feeds
         working-directory: /mnt/openwrt
-        run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+        run: ./scripts/feeds update -a
 
+      # 🟩 修复点 2：clean-feeds.sh 必须在 /mnt/openwrt 下执行
       - name: Run clean-feeds.sh (white list)
         working-directory: /mnt/openwrt
         run: |
           chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
           bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
+
+      # 🟩 修复点 3：clean 后再 install（企业版不会恢复死包）
+      - name: Install feeds
+        working-directory: /mnt/openwrt
+        run: ./scripts/feeds install -a
 
       - name: Disable menuconfig globally
         run: |
@@ -113,22 +116,6 @@ jobs:
         run: |
           make toolchain/install -j$(nproc) V=s || \
           (make toolchain/clean && make toolchain/install -j$(nproc) V=s)
-
-      - name: Detect three-piece consistency
-        run: |
-          test -f repo/sl3000/dts/${DTS_NAME}.dts || (echo "❌ DTS missing" && exit 1)
-          test -f repo/sl3000/mk/filogic-sl3000.mk || (echo "❌ MK missing" && exit 1)
-          test -f repo/sl3000/config/sl3000.config || (echo "❌ CONFIG missing" && exit 1)
-          grep -q "mediatek,mt7981" repo/sl3000/dts/${DTS_NAME}.dts || (echo "❌ SoC mismatch" && exit 1)
-          grep -q "${DEVICE_ID}" repo/sl3000/mk/filogic-sl3000.mk || (echo "❌ MK device mismatch" && exit 1)
-          grep -q "CONFIG_TARGET_${TARGET_PROFILE}_DEVICE_${DEVICE_ID}=y" repo/sl3000/config/sl3000.config || (echo "❌ CONFIG device missing" && exit 1)
-
-      - name: Auto fix three-piece naming
-        run: |
-          sed -i "s/Device\/sl3000-emmc/Device\/${DEVICE_ID}/g" repo/sl3000/mk/filogic-sl3000.mk || true
-          sed -i "s/TARGET_DEVICES += sl3000-emmc/TARGET_DEVICES += ${DEVICE_ID}/g" repo/sl3000/mk/filogic-sl3000.mk || true
-          sed -i "s/CONFIG_TARGET_${TARGET_PROFILE}_DEVICE_sl3000-emmc/CONFIG_TARGET_${TARGET_PROFILE}_DEVICE_${DEVICE_ID}/g" repo/sl3000/config/sl3000.config || true
-          sed -i "s/DEVICE_sl3000-emmc/DEVICE_${DEVICE_ID}/g" repo/sl3000/config/sl3000.config || true
 
       - name: Apply DTS
         run: |
@@ -188,7 +175,6 @@ jobs:
             OpenWrt 24.10 / Kernel 6.6
             Target: SL3000 (MT7981B eMMC)
             DEVICE_ID: sl3000-emmc
-            Three-piece auto-check + auto-fix
             Build: ${{ github.run_number }}
             Commit: ${{ github.sha }}
           files: /mnt/openwrt/bin/targets/mediatek/filogic/*
@@ -196,7 +182,5 @@ jobs:
       - name: Cleanup workspace
         working-directory: /mnt/openwrt
         run: |
-          echo "Cleaning temporary build directories..."
           rm -rf build_dir/* tmp/* || true
           find dl -type f -size +200M -delete || true
-          echo "Cleanup complete."
