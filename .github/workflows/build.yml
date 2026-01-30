@@ -12,6 +12,11 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
+    env:
+      DEVICE_ID: sl3000-emmc
+      TARGET_PROFILE: mediatek_filogic
+      DTS_NAME: mt7981b-sl-3000-emmc
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -45,6 +50,24 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-openwrt-ccache-
 
+      - name: Cache dl
+        uses: actions/cache@v4
+        with:
+          path: /mnt/openwrt/dl
+          key: ${{ runner.os }}-openwrt-24.10-dl-${{ hashFiles('repo/feeds.conf*', 'repo/sl3000/config/sl3000.config') }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-24.10-dl-
+
+      - name: Cache toolchain & host
+        uses: actions/cache@v4
+        with:
+          path: |
+            /mnt/openwrt/staging_dir/toolchain
+            /mnt/openwrt/staging_dir/host
+          key: ${{ runner.os }}-openwrt-24.10-toolchain-${{ hashFiles('repo/sl3000/config/sl3000.config') }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-24.10-toolchain-
+
       - name: Clean feeds config
         working-directory: /mnt/openwrt
         run: |
@@ -64,7 +87,7 @@ jobs:
         run: |
           chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
           bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
-          # ❌ 删除 make defconfig（这是导致失败的根因）
+          # 不在这里 defconfig，避免空配置固化
 
       - name: Disable menuconfig globally
         run: |
@@ -92,49 +115,46 @@ jobs:
           make toolchain/install -j$(nproc) V=s || \
           (make toolchain/clean && make toolchain/install -j$(nproc) V=s)
 
-      # 三件套检测
+      # 三件套检测（统一用 DEVICE_ID / DTS_NAME）
       - name: Detect three-piece consistency
         run: |
           echo "🔍 Checking DTS/MK/CONFIG consistency..."
-          test -f repo/sl3000/dts/mt7981b-sl-3000-emmc.dts || (echo "❌ DTS missing" && exit 1)
+          test -f repo/sl3000/dts/${DTS_NAME}.dts || (echo "❌ DTS missing" && exit 1)
           test -f repo/sl3000/mk/filogic-sl3000.mk || (echo "❌ MK missing" && exit 1)
           test -f repo/sl3000/config/sl3000.config || (echo "❌ CONFIG missing" && exit 1)
 
-          grep -q "mediatek,mt7981" repo/sl3000/dts/mt7981b-sl-3000-emmc.dts || (echo "❌ SoC mismatch" && exit 1)
+          grep -q "mediatek,mt7981" repo/sl3000/dts/${DTS_NAME}.dts || (echo "❌ SoC mismatch" && exit 1)
 
-          grep -q "sl3000-emmc" repo/sl3000/mk/filogic-sl3000.mk || (echo "❌ MK device name mismatch" && exit 1)
-          grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" repo/sl3000/config/sl3000.config || (echo "❌ CONFIG device missing" && exit 1)
+          grep -q "${DEVICE_ID}" repo/sl3000/mk/filogic-sl3000.mk || (echo "❌ MK device name mismatch" && exit 1)
+          grep -q "CONFIG_TARGET_${TARGET_PROFILE}_DEVICE_${DEVICE_ID}=y" repo/sl3000/config/sl3000.config || (echo "❌ CONFIG device missing" && exit 1)
 
-      # 三件套自动修复
+      # 三件套自动修复（只做“对齐 DEVICE_ID”，不再乱算名字）
       - name: Auto fix three-piece naming
         run: |
-          echo "🛠 Auto fixing naming issues..."
+          echo "🛠 Ensuring naming consistency with DEVICE_ID=${DEVICE_ID}"
 
-          DTS_FILE="repo/sl3000/dts/mt7981b-sl-3000-emmc.dts"
-          DEVICE_NAME=$(basename "$DTS_FILE" .dts | sed 's/^mt7981b-//' | sed 's/-//')
+          # MK 中设备名对齐
+          sed -i "s/Device\/sl3000-emmc/Device\/${DEVICE_ID}/g" repo/sl3000/mk/filogic-sl3000.mk || true
+          sed -i "s/TARGET_DEVICES += sl3000-emmc/TARGET_DEVICES += ${DEVICE_ID}/g" repo/sl3000/mk/filogic-sl3000.mk || true
 
-          echo "📌 Official device name: $DEVICE_NAME"
-
-          sed -i "s/sl_3000-emmc/$DEVICE_NAME/g" repo/sl3000/mk/filogic-sl3000.mk || true
-          sed -i "s/sl3000-emmc/$DEVICE_NAME/g" repo/sl3000/mk/filogic-sl3000.mk || true
-
-          sed -i "s/DEVICE_sl_3000-emmc/DEVICE_${DEVICE_NAME}/g" repo/sl3000/config/sl3000.config || true
-          sed -i "s/DEVICE_sl3000-emmc/DEVICE_${DEVICE_NAME}/g" repo/sl3000/config/sl3000.config || true
+          # CONFIG 中设备名对齐
+          sed -i "s/CONFIG_TARGET_${TARGET_PROFILE}_DEVICE_sl3000-emmc/CONFIG_TARGET_${TARGET_PROFILE}_DEVICE_${DEVICE_ID}/g" repo/sl3000/config/sl3000.config || true
+          sed -i "s/DEVICE_sl3000-emmc/DEVICE_${DEVICE_ID}/g" repo/sl3000/config/sl3000.config || true
 
       # 三件套自动注册
       - name: Apply DTS
         run: |
           mkdir -p /mnt/openwrt/target/linux/mediatek/dts
-          cp repo/sl3000/dts/mt7981b-sl-3000-emmc.dts /mnt/openwrt/target/linux/mediatek/dts/
+          cp repo/sl3000/dts/${DTS_NAME}.dts /mnt/openwrt/target/linux/mediatek/dts/
 
       - name: Apply MK
         run: |
           MK=/mnt/openwrt/target/linux/mediatek/image/filogic.mk
-          sed -i '/Device\/sl3000-emmc/,/endef/d' "$MK"
-          sed -i '/TARGET_DEVICES += sl3000-emmc/d' "$MK"
+          sed -i "/Device\/${DEVICE_ID}/,/endef/d" "$MK"
+          sed -i "/TARGET_DEVICES += ${DEVICE_ID}/d" "$MK"
           cat repo/sl3000/mk/filogic-sl3000.mk >> "$MK"
 
-      # 🟩 关键修复：应用设备 config（这是整个错误的根因）
+      # 应用设备 config（关键：生成 image 规则）
       - name: Apply device config (.config)
         working-directory: /mnt/openwrt
         run: |
@@ -162,7 +182,8 @@ jobs:
 
       - name: Validate firmware output
         working-directory: /mnt/openwrt
-        run: ls -lh bin/targets/mediatek/filogic/*sl3000-emmc*sysupgrade.bin
+        run: |
+          ls -lh bin/targets/mediatek/filogic/*${DEVICE_ID}*sysupgrade.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
@@ -179,6 +200,7 @@ jobs:
           body: |
             OpenWrt 24.10 / kernel 6.6  
             Target: SL3000 (MT7981B eMMC)  
+            DEVICE_ID: sl3000-emmc  
             Auto three-piece (DTS/MK/CONFIG)  
             Build: ${{ github.run_number }}  
             Commit: ${{ github.sha }}
