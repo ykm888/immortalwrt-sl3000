@@ -1,69 +1,95 @@
 #!/bin/bash
-#
-# clean-feeds.sh
-# 白名单 + 强制删除所有非路由器相关包
-#
-
 set -e
 
-echo "=== Clean Feeds: 白名单清理开始 ==="
+FEEDS_ROOT="package/feeds"
 
-# 你原来的白名单逻辑（保持不变）
-# ……
+echo "=== 清空 feeds 包（白名单模式） ==="
+rm -rf $FEEDS_ROOT/packages/*
+rm -rf $FEEDS_ROOT/luci/*
+rm -rf $FEEDS_ROOT/small/*
+rm -rf $FEEDS_ROOT/helloworld/*
 
-echo "=== Clean Feeds: 白名单清理完成 ==="
+mkdir -p $FEEDS_ROOT/packages
+mkdir -p $FEEDS_ROOT/packages/libs
+mkdir -p $FEEDS_ROOT/packages/lang
+mkdir -p $FEEDS_ROOT/luci
+mkdir -p $FEEDS_ROOT/small
+mkdir -p $FEEDS_ROOT/helloworld
 
+copy_pkg() {
+  local pkg="$1"
+  for path in \
+    feeds/helloworld/$pkg \
+    feeds/small/$pkg \
+    feeds/packages/$pkg \
+    feeds/packages/libs/$pkg \
+    feeds/packages/net/$pkg \
+    feeds/packages/utils/$pkg \
+    feeds/packages/lang/$pkg
+  do
+    if [ -d "$path" ]; then
+      case "$path" in
+        feeds/packages/libs/*)
+          cp -r "$path" "$FEEDS_ROOT/packages/libs/"
+          ;;
+        feeds/packages/lang/*)
+          cp -r "$path" "$FEEDS_ROOT/packages/lang/"
+          ;;
+        feeds/packages/*)
+          cp -r "$path" "$FEEDS_ROOT/packages/"
+          ;;
+        feeds/small/*)
+          cp -r "$path" "$FEEDS_ROOT/small/"
+          ;;
+        feeds/helloworld/*)
+          cp -r "$path" "$FEEDS_ROOT/helloworld/"
+          ;;
+      esac
+      return
+    fi
+  done
+}
 
-echo "=== Force Clean: 删除所有非路由器相关包 ==="
+echo "=== 保留 LuCI 基础 ==="
+for p in \
+  luci-base luci-compat luci-lua-runtime \
+  luci-lib-ip luci-lib-jsonc luci-theme-bootstrap \
+  luci-mod-admin-full luci-mod-network luci-mod-status luci-mod-system \
+  luci-proto-ppp luci-proto-ipv6 \
+  luci-i18n-base-zh-cn
+do
+  cp -r feeds/luci/**/$p $FEEDS_ROOT/luci/ 2>/dev/null || true
+done
 
-# 1. emortal / small
-rm -rf package/emortal || true
-rm -rf feeds/emortal || true
-rm -rf package/small || true
-rm -rf feeds/small || true
+echo "=== 禁用主线扫描 ==="
+cat > .config << "EOF"
+CONFIG_ALL=n
+CONFIG_ALL_KMODS=n
+CONFIG_ALL_NONSHARED=n
+EOF
 
-# 2. luci-app-*（保留 luci-base）
-find package -type d -name "luci-app-*" -exec rm -rf {} + || true
-find feeds -type d -name "luci-app-*" -exec rm -rf {} + || true
+echo "=== 写入白名单 config（SL3000） ==="
+cat >> .config << "EOF"
+CONFIG_TARGET_mediatek=y
+CONFIG_TARGET_mediatek_filogic=y
+CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_sl3000-emmc=y
 
-# 3. 桌面/图形/声音/蓝牙/打印
-rm -rf package/xorg || true
-rm -rf package/sound || true
-rm -rf feeds/packages/pulseaudio* || true
-rm -rf feeds/packages/pipewire* || true
-rm -rf feeds/packages/bluez* || true
-rm -rf feeds/packages/alsa* || true
-rm -rf feeds/packages/cups* || true
-rm -rf package/libs/*gtk* || true
-rm -rf package/libs/qt* || true
-rm -rf package/libs/cairo package/libs/pango package/libs/harfbuzz || true
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-base=y
+CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_luci-lua-runtime=y
+CONFIG_PACKAGE_luci-lib-ip=y
+CONFIG_PACKAGE_luci-lib-jsonc=y
+CONFIG_PACKAGE_luci-theme-bootstrap=y
 
-# 4. 已知污染包
-rm -rf package/utils/audit || true
-rm -rf package/utils/policycoreutils || true
-rm -rf package/utils/pcat-manager || true
-rm -rf package/network/services/lldpd || true
-rm -rf package/boot/kexec-tools || true
+CONFIG_PACKAGE_luci-mod-admin-full=y
+CONFIG_PACKAGE_luci-mod-network=y
+CONFIG_PACKAGE_luci-mod-status=y
+CONFIG_PACKAGE_luci-mod-system=y
+CONFIG_PACKAGE_luci-proto-ppp=y
+CONFIG_PACKAGE_luci-proto-ipv6=y
 
-# 5. 已知污染库
-rm -rf package/libs/libpam || true
-rm -rf package/libs/libtirpc || true
-rm -rf package/libs/glib2 || true
-rm -rf package/libs/libgpiod || true
-rm -rf package/libs/libnetsnmp || true
-rm -rf package/libs/lm-sensors || true
+CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+EOF
 
-rm -rf feeds/packages/libs/libpam* || true
-rm -rf feeds/packages/libs/libtirpc* || true
-rm -rf feeds/packages/libs/glib2* || true
-rm -rf feeds/packages/libs/libgpiod* || true
-rm -rf feeds/packages/libs/net-snmp* || true
-rm -rf feeds/packages/libs/lm-sensors* || true
-
-# 6. emortal 残留
-rm -rf package/feeds/*/autosamba* || true
-rm -rf package/feeds/*/autocore* || true
-rm -rf package/feeds/*/default-settings* || true
-rm -rf package/feeds/*/wsdd2* || true
-
-echo "✔ Clean Feeds: 所有非路由器相关包已彻底删除"
+echo "=== 白名单模式完成（24.10 版本） ==="
