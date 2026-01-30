@@ -8,6 +8,7 @@ rm -rf $FEEDS_ROOT/packages/*
 rm -rf $FEEDS_ROOT/luci/*
 rm -rf $FEEDS_ROOT/small/*
 rm -rf $FEEDS_ROOT/helloworld/*
+rm -rf feeds/packages/utils/policycoreutils  # ← 关键修复：彻底移除 libpam 脏包
 
 mkdir -p $FEEDS_ROOT/packages
 mkdir -p $FEEDS_ROOT/packages/libs
