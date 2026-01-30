@@ -32,19 +32,24 @@ jobs:
         run: git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
 
       ######################################################################
-      # ⭐ PRE‑CLEAN：构建前磁盘优化（关键）
+      # PRE‑CLEAN：构建前磁盘优化（加存在性判断，避免噪音）
       ######################################################################
       - name: Pre-clean disk space (before build)
         working-directory: /mnt/openwrt
         run: |
           echo "=== PRE-CLEAN: 清理构建前磁盘空间 ==="
-          rm -rf build_dir/* || true
-          rm -rf tmp/* || true
-          rm -rf staging_dir/host/* || true
-          rm -rf staging_dir/toolchain/* || true
-          find dl -type f -size 0 -delete || true
-          find dl -type f -name "*.tmp" -delete || true
-          find dl -type f -size +200M -delete || true
+
+          [ -d build_dir ] && rm -rf build_dir/* || true
+          [ -d tmp ] && rm -rf tmp/* || true
+          [ -d staging_dir/host ] && rm -rf staging_dir/host/* || true
+          [ -d staging_dir/toolchain ] && rm -rf staging_dir/toolchain/* || true
+
+          if [ -d dl ]; then
+            find dl -type f -size 0 -delete || true
+            find dl -type f -name "*.tmp" -delete || true
+            find dl -type f -size +200M -delete || true
+          fi
+
           echo "=== PRE-CLEAN 完成 ==="
 
       ######################################################################
@@ -115,7 +120,7 @@ jobs:
           echo "MAKEFLAGS=--no-builtin-rules" >> $GITHUB_ENV
 
       ######################################################################
-      # ⭐ 企业级 Download sources（make download + 自愈）
+      # Download sources（make download + 自愈）
       ######################################################################
       - name: Download sources (enterprise self-heal)
         working-directory: /mnt/openwrt
@@ -124,14 +129,16 @@ jobs:
           make download -j$(nproc) && exit 0
 
           echo "=== Download: 第 1 次失败 → 清理损坏文件 ==="
-          find dl -type f -size 0 -delete || true
-          find dl -type f -name "*.tmp" -delete || true
+          if [ -d dl ]; then
+            find dl -type f -size 0 -delete || true
+            find dl -type f -name "*.tmp" -delete || true
+          fi
 
           echo "=== Download: 第 2 次尝试（并行） ==="
           make download -j$(nproc) && exit 0
 
           echo "=== Download: 第 2 次失败 → 清空 dl（最终自愈） ==="
-          rm -rf dl/*
+          [ -d dl ] && rm -rf dl/* || true
 
           echo "=== Download: 第 3 次尝试（最终） ==="
           make download -j$(nproc)
@@ -219,16 +226,19 @@ jobs:
           make target/image/compile -j$(nproc) V=s || \
           (make target/image/clean && make target/image/compile -j$(nproc) V=s)
 
+      ######################################################################
+      # 固件输出路径放宽（自动匹配 filogic / mt7981）
+      ######################################################################
       - name: Validate firmware output
         working-directory: /mnt/openwrt
         run: |
-          ls -lh bin/targets/mediatek/mt7981/*${DEVICE_ID}*sysupgrade.bin
+          ls -lh bin/targets/mediatek/*/*${DEVICE_ID}*sysupgrade.bin
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: sl3000-2410-firmware
-          path: /mnt/openwrt/bin/targets/mediatek/mt7981/*
+          path: /mnt/openwrt/bin/targets/mediatek/*/*
 
       - name: Auto Release firmware
         uses: softprops/action-gh-release@v2
@@ -237,19 +247,4 @@ jobs:
           tag_name: sl3000-openwrt-2410-${{ github.run_number }}
           name: SL3000 OpenWrt 24.10 Build #${{ github.run_number }}
           body: |
-            OpenWrt 24.10 / Kernel 6.6
-            Target: SL3000 (MT7981B eMMC)
-            DEVICE_ID: sl_3000-emmc
-            Auto Register: Enhanced
-            Auto Fix: Enhanced
-            Auto Check: Enhanced
-            Full Self-Heal: Enabled
-            Build: ${{ github.run_number }}
-            Commit: ${{ github.sha }}
-          files: /mnt/openwrt/bin/targets/mediatek/mt7981/*sysupgrade.bin
-
-      - name: Cleanup workspace
-        working-directory: /mnt/openwrt
-        run: |
-          rm -rf build_dir/* tmp/* || true
-          find dl -type f -size +200M -delete || true
+            OpenWrt 24.10 / Kernel 
