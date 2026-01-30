@@ -74,7 +74,7 @@ jobs:
           echo 'src-git packages https://github.com/openwrt/packages.git' > feeds.conf.default
           echo 'src-git luci https://github.com/openwrt/luci.git' >> feeds.conf.default
 
-      # === 修复点 1：update → install → clean-feeds（必须这样） ===
+      # === 正确顺序：update → install → clean-feeds ===
       - name: Update feeds
         working-directory: /mnt/openwrt
         run: ./scripts/feeds update -a
@@ -83,7 +83,6 @@ jobs:
         working-directory: /mnt/openwrt
         run: ./scripts/feeds install -a
 
-      # === 修复点 2：clean-feeds 裁剪 symlink（不复制源码） ===
       - name: Run clean-feeds.sh (white list)
         working-directory: /mnt/openwrt
         run: |
