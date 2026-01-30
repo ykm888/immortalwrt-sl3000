@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-FEEDS_ROOT="package/feeds"
+FEEDS_ROOT="/mnt/openwrt/package/feeds"
 
-echo "=== 清空所有 feeds 包 ==="
+echo "=== 清空所有 feeds 包（真正被构建链扫描的目录） ==="
 rm -rf $FEEDS_ROOT/packages/*
 rm -rf $FEEDS_ROOT/luci/*
 rm -rf $FEEDS_ROOT/small/*
@@ -32,7 +32,7 @@ luci-proto-ipv6
 
 copy_if_exists() {
     local pkg="$1"
-    for src in feeds/luci feeds/packages; do
+    for src in /mnt/openwrt/feeds/luci /mnt/openwrt/feeds/packages; do
         if [ -d "$src/$pkg" ]; then
             local target="$FEEDS_ROOT/$(basename "$src")"
             echo "KEEP: $pkg ← $src"
@@ -48,6 +48,6 @@ for pkg in $WHITELIST; do
 done
 
 echo "=== 强制删除 utils 整个目录（彻底解决 glib2/libpam/gpiod 死锁） ==="
-rm -rf package/feeds/packages/utils
+rm -rf /mnt/openwrt/package/feeds/packages/utils
 
 echo "=== 完成：最小化 feeds，无任何死锁包 ==="
