@@ -41,7 +41,6 @@ jobs:
           if [ -d dl ]; then
             find dl -type f -size 0 -delete || true
             find dl -type f -name "*.tmp" -delete || true
-            find dl -type f -size +200M -delete || true
           fi
 
       - name: Install dependencies
@@ -65,13 +64,23 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-dl-
 
+      - name: Cache toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            /mnt/openwrt/staging_dir/toolchain
+            /mnt/openwrt/staging_dir/host
+          key: ${{ runner.os }}-toolchain-${{ hashFiles('repo/sl3000/config/sl3000.config') }}
+          restore-keys: |
+            ${{ runner.os }}-toolchain-
+
       - name: Update feeds
         working-directory: /mnt/openwrt
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Run clean-feeds.sh（唯一脚本）
+      - name: Run clean-feeds.sh
         working-directory: /mnt/openwrt
         run: |
           bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
@@ -83,17 +92,19 @@ jobs:
       - name: Download sources
         working-directory: /mnt/openwrt
         run: |
+          make download -j$(nproc) || true
+          find dl -type f -size 0 -delete || true
           make download -j$(nproc)
 
       - name: Build tools
         working-directory: /mnt/openwrt
         run: |
-          make tools/install -j$(nproc) V=s
+          make tools/install -j$(nproc) V=s || (make tools/clean && make tools/install -j$(nproc) V=s)
 
       - name: Build toolchain
         working-directory: /mnt/openwrt
         run: |
-          make toolchain/install -j$(nproc) V=s
+          make toolchain/install -j$(nproc) V=s || (make toolchain/clean && make toolchain/install -j$(nproc) V=s)
 
       - name: Apply DTS
         run: |
@@ -116,7 +127,7 @@ jobs:
       - name: Build image
         working-directory: /mnt/openwrt
         run: |
-          make -j$(nproc) V=s
+          make -j$(nproc) V=s || (make target/image/clean && make -j$(nproc) V=s)
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
