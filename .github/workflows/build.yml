@@ -1,4 +1,4 @@
-name: Enterprise_SL3000_Decoupled_v4
+name: Enterprise_SL3000_Decoupled_v7
 
 on:
   workflow_dispatch:
@@ -14,11 +14,12 @@ jobs:
   Build_Tools:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repo
+        uses: actions/checkout@v4
         with:
           path: repo
 
-      - name: Cleanup
+      - name: Cleanup & Init
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/node_modules
           mkdir -p ${{ env.WORK_DIR }}
@@ -27,7 +28,10 @@ jobs:
         id: tools-cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.WORK_DIR }}/staging_dir/host
+          path: |
+            ${{ env.WORK_DIR }}/staging_dir/host
+            ${{ env.WORK_DIR }}/feeds
+            ${{ env.WORK_DIR }}/feeds.lock
           key: ${{ runner.os }}-tools-${{ env.SOURCE_BRANCH }}-${{ hashFiles('repo/feeds.conf.default') }}
 
       - name: Build Tools
@@ -35,17 +39,19 @@ jobs:
         working-directory: ${{ env.WORK_DIR }}
         run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} .
-          [ -f $GITHUB_WORKSPACE/repo/feeds.conf.default ] && cp $GITHUB_WORKSPACE/repo/feeds.conf.default .
+          cp $GITHUB_WORKSPACE/repo/feeds.conf.default feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          make tools/install -j$(nproc)
+          cp -v feeds.conf.default feeds.lock
+          make tools/install -j$(nproc) || make tools/install -j1 V=s
 
   # --- 阶段二：Toolchain ---
   Build_Toolchain:
     needs: Build_Tools
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repo
+        uses: actions/checkout@v4
         with:
           path: repo
 
@@ -53,18 +59,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ${{ env.WORK_DIR }}/staging_dir/host
-            ${{ env.WORK_DIR }}/staging_dir/toolchain-*
-          key: ${{ runner.os }}-toolchain-${{ hashFiles('repo/sl3000/sl3000.config', 'repo/feeds.conf.default') }}
+            ${{ env.WORK_DIR }}/staging_dir
+            ${{ env.WORK_DIR }}/feeds
+            ${{ env.WORK_DIR }}/feeds.lock
+          key: ${{ runner.os }}-toolchain-${{ hashFiles('repo/sl3000/sl3000.config', 'repo/feeds.conf.default', 'repo/sl3000/mt7981b-sl3000-emmc.dts', 'repo/sl3000/filogic-sl3000.mk') }}
 
       - name: Build Toolchain
         working-directory: ${{ env.WORK_DIR }}
         run: |
+          mkdir -p ${{ env.WORK_DIR }}
           [ -d .git ] || git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} .
-          [ -f $GITHUB_WORKSPACE/repo/feeds.conf.default ] && cp $GITHUB_WORKSPACE/repo/feeds.conf.default .
+          cp $GITHUB_WORKSPACE/repo/feeds.conf.default feeds.conf.default
           bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
-          cp $GITHUB_WORKSPACE/repo/sl3000.config .config
-          make defconfig
           make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
 
   # --- 阶段三：Target ---
@@ -72,7 +78,8 @@ jobs:
     needs: Build_Toolchain
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repo
+        uses: actions/checkout@v4
         with:
           path: repo
 
@@ -83,20 +90,22 @@ jobs:
             ${{ env.WORK_DIR }}/staging_dir
             ${{ env.WORK_DIR }}/dl
             ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-target-${{ hashFiles('repo/sl3000/sl3000.config', 'repo/feeds.conf.default') }}
+            ${{ env.WORK_DIR }}/feeds
+            ${{ env.WORK_DIR }}/feeds.lock
+          key: ${{ runner.os }}-target-${{ hashFiles('repo/sl3000/sl3000.config', 'repo/feeds.conf.default', 'repo/sl3000/mt7981b-sl3000-emmc.dts', 'repo/sl3000/filogic-sl3000.mk') }}
 
       - name: Build Target
         working-directory: ${{ env.WORK_DIR }}
         run: |
+          mkdir -p ${{ env.WORK_DIR }}
           [ -d .git ] || git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} .
-          [ -f $GITHUB_WORKSPACE/repo/feeds.conf.default ] && cp $GITHUB_WORKSPACE/repo/feeds.conf.default .
+          cp $GITHUB_WORKSPACE/repo/feeds.conf.default feeds.conf.default
+
           export CCACHE_DIR=${{ env.CCACHE_DIR }}
           export CC="ccache gcc"
           export CXX="ccache g++"
 
           bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
-          cp $GITHUB_WORKSPACE/repo/sl3000.config .config
-          make defconfig
 
           make download -j$(nproc) || make download -j1 V=s
           find dl -type f -size 0 -delete
@@ -114,7 +123,8 @@ jobs:
           cp ${{ env.WORK_DIR }}/feeds.lock logs/ || true
           cp ${{ env.WORK_DIR }}/.config logs/config.buildinfo || true
 
-      - uses: softprops/action-gh-release@v2
+      - name: Release Firmware
+        uses: softprops/action-gh-release@v2
         if: success()
         with:
           tag_name: SL3000_Decoupled_v${{ github.run_number }}
