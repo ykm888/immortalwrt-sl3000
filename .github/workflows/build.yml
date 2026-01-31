@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          path: repo  # 这里定义了你的三件套所在的根目录
+          path: repo
 
       - name: 磁盘环境初始化
         run: |
@@ -52,37 +52,40 @@ jobs:
           echo 'src-git small https://github.com/kenzok8/small.git' >> feeds.conf.default
           ./scripts/feeds update -a
 
-      - name: 运行脚本逻辑 (修复依赖链)
+      - name: 执行强力清理与补全依赖
         working-directory: /mnt/openwrt
         run: |
-          # 动态寻找脚本路径，防止 hardcode 报错
-          CLEAN_SCRIPT=$(find $GITHUB_WORKSPACE/repo -name "clean-feeds.sh" | head -n 1)
-          chmod +x "$CLEAN_SCRIPT"
-          bash "$CLEAN_SCRIPT"
+          # 1. 剔除主树冲突包
+          CONFLICTS="package/system/refpolicy package/system/selinux-policy package/utils/policycoreutils package/utils/pcat-manager package/network/services/lldpd package/boot/kexec-tools package/emortal/default-settings package/libs/libpam package/libs/libtirpc package/libs/libnsl package/libs/xz"
+          for p in $CONFLICTS; do rm -rf $p; done
+          
+          # 2. 重置 feeds 目录
+          rm -rf package/feeds && mkdir -p package/feeds
+          
+          # 3. 补全核心依赖（解决卡死关键）
+          ./scripts/feeds install -p packages libpam libtirpc libev libnsl xz lm-sensors wsdd2 attr
+          ./scripts/feeds install -p luci luci-base luci-compat luci-lua-runtime luci-lib-ip luci-lib-jsonc luci-theme-bootstrap
 
-      - name: 应用三件套 (DTS/MK/Config) - 动态修复版
+      - name: 应用三件套 (DTS/MK/Config)
         working-directory: /mnt/openwrt
         run: |
-          # 1. 查找并应用 DTS
-          DTS_FILE=$(find $GITHUB_WORKSPACE/repo -name "mt7981b-sl3000-emmc.dts" | head -n 1)
+          # 查找并应用 DTS
+          DTS_PATH=$(find $GITHUB_WORKSPACE/repo -name "mt7981b-sl3000-emmc.dts" | head -n 1)
           mkdir -p target/linux/mediatek/dts
-          cp "$DTS_FILE" target/linux/mediatek/dts/
-          echo "Applied DTS: $DTS_FILE"
-
-          # 2. 查找并应用 MK (自愈追加)
-          MK_PATCH=$(find $GITHUB_WORKSPACE/repo -name "filogic-sl3000.mk" | head -n 1)
+          [ -n "$DTS_PATH" ] && cp "$DTS_PATH" target/linux/mediatek/dts/
+          
+          # 查找并应用 MK (自愈追加)
+          MK_PATH=$(find $GITHUB_WORKSPACE/repo -name "filogic-sl3000.mk" | head -n 1)
           MK_TARGET="target/linux/mediatek/image/filogic.mk"
-          if ! grep -q "sl_3000-emmc" "$MK_TARGET"; then
-            cat "$MK_PATCH" >> "$MK_TARGET"
+          if [ -n "$MK_PATH" ]; then
+            grep -q "sl_3000-emmc" "$MK_TARGET" || cat "$MK_PATH" >> "$MK_TARGET"
           fi
-          echo "Applied MK: $MK_PATCH"
-
-          # 3. 查找并应用 Config
-          CONF_FILE=$(find $GITHUB_WORKSPACE/repo -name "sl3000.config" | head -n 1)
-          cp "$CONF_FILE" .config
-          echo "Applied Config: $CONF_FILE"
-
-          # 4. 刷新配置
+          
+          # 查找并应用 Config
+          CONF_PATH=$(find $GITHUB_WORKSPACE/repo -name "sl3000.config" | head -n 1)
+          [ -n "$CONF_PATH" ] && cp "$CONF_PATH" .config
+          
+          # 刷新配置
           make defconfig
 
       - name: 下载源码 (自愈)
@@ -94,7 +97,7 @@ jobs:
       - name: 完整构建 (自愈体系)
         working-directory: /mnt/openwrt
         run: |
-          # 核心编译指令，失败自动降级单线程
+          # 自动处理依赖链构建
           make -j$(nproc) || make -j1 V=s
 
       - name: 上传固件
