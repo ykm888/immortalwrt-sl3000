@@ -58,7 +58,7 @@ jobs:
             ${{ runner.os }}-openwrt-2410-ccache-
 
       # ============================================================
-      # 三件套闭环（保持原样）
+      # 三件套闭环
       # ============================================================
 
       - name: Run clean-feeds.sh（三件套闭环）
@@ -74,7 +74,7 @@ jobs:
           cp -v "$GITHUB_WORKSPACE/repo/sl3000/dts/mt7981b-sl3000-emmc.dts" target/linux/mediatek/dts/
           cp -v "$GITHUB_WORKSPACE/repo/sl3000/mk/filogic-sl3000.mk" target/linux/mediatek/image/
           cp -v "$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config" .config
-          make defconfig
+          make defconfig   # ✅ 保留一次即可
 
       - name: Verify CONFIG loaded
         working-directory: ${{ env.WORK_DIR }}
@@ -85,7 +85,7 @@ jobs:
             || (echo "CONFIG 未加载"; exit 1)
 
       # ============================================================
-      # 自定义 files（扩容脚本）
+      # 自定义 files
       # ============================================================
 
       - name: Copy custom files (拉起 99-expand-rootfs)
@@ -101,7 +101,7 @@ jobs:
           echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
 
       # ============================================================
-      # 构建链（恢复完整 6 段，自愈）
+      # 构建链（6 段）
       # ============================================================
 
       - name: Build host tools (self-heal)
@@ -145,19 +145,26 @@ jobs:
       # 校验 + 收集产物
       # ============================================================
 
+      - name: Debug firmware directory
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          echo ">>> Listing firmware outputs..."
+          ls -lh bin/targets/mediatek/filogic/ || true
+
       - name: Validate firmware output
         working-directory: ${{ env.WORK_DIR }}
         run: |
           echo ">>> Checking final firmware..."
-          ls -lh bin/targets/mediatek/filogic/*sysupgrade*.bin \
-            || (echo "未生成 sysupgrade 固件"; exit 1)
+          ls -lh bin/targets/mediatek/filogic/*sysupgrade*.bin bin/targets/mediatek/filogic/*factory*.bin || \
+          (echo "未生成 sysupgrade/factory 固件"; exit 1)
 
       - name: Collect logs and metadata
         working-directory: ${{ env.WORK_DIR }}
         run: |
           mkdir -p "$GITHUB_WORKSPACE/output" "$GITHUB_WORKSPACE/logs"
           cp bin/targets/mediatek/filogic/*sysupgrade* "$GITHUB_WORKSPACE/output/" || true
-          cp bin/targets/mediatek/filogic/*.manifest "$GITHUB_WORKSPACE/output/" || true
+          cp bin/targets/mediatek/filogic/*factory* "$GITHUB_WORKSPACE/output/" || true
+          cp bin/targets/mediatek/filogic/*.manifest "$GITHUB_WORKSPACE/output/" || true   # 修复 fillogic → filogic
           cp bin/targets/mediatek/filogic/sha256sums "$GITHUB_WORKSPACE/logs/" || true
           [ -f feeds.lock ] && cp feeds.lock "$GITHUB_WORKSPACE/logs/" || true
           [ -f .config ] && cp .config "$GITHUB_WORKSPACE/logs/config.buildinfo" || true
