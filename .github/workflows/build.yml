@@ -57,18 +57,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-openwrt-2410-ccache-
 
-      - name: Clean feeds config (from repo/feeds.conf.default)
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          cp -f "$GITHUB_WORKSPACE/repo/feeds.conf.default" feeds.conf.default
-
-      - name: Update feeds
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-      - name: Run clean-feeds.sh（自愈 + feeds.lock）
+      - name: Run clean-feeds.sh（v12 三件套自动闭环）
         working-directory: ${{ env.WORK_DIR }}
         run: |
           chmod +x "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
@@ -81,42 +70,7 @@ jobs:
           echo "LC_ALL=C" >> $GITHUB_ENV
           echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
 
-      - name: Detect three-piece consistency (DTS/MK/CONFIG)
-        run: |
-          echo "🔍 Checking DTS/MK/CONFIG consistency..."
-          DTS=repo/sl3000/dts/mt7981b-sl-3000-emmc.dts
-          MKF=repo/sl3000/mk/filogic-sl3000.mk
-          CFG=repo/sl3000/config/sl3000.config
-
-          [ -f "$DTS" ] || (echo "❌ DTS missing" && exit 1)
-          [ -f "$MKF" ] || (echo "❌ MK missing" && exit 1)
-          [ -f "$CFG" ] || (echo "❌ CONFIG missing" && exit 1)
-
-          grep -q "mediatek,mt7981" "$DTS" || (echo "❌ DTS SoC mismatch" && exit 1)
-          grep -q "sl_3000-emmc" "$MKF" || (echo "❌ MK device name mismatch" && exit 1)
-          grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CFG" || (echo "❌ CONFIG device missing" && exit 1)
-
-      - name: Apply DTS (atomic replace)
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          mkdir -p target/linux/mediatek/dts
-          rm -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts || true
-          cp "$GITHUB_WORKSPACE/repo/sl3000/dts/mt7981b-sl-3000-emmc.dts" target/linux/mediatek/dts/
-
-      - name: Apply MK (structured insert)
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          MK=target/linux/mediatek/image/filogic.mk
-          sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK"
-          sed -i '/TARGET_DEVICES += sl_3000-emmc/d' "$MK"
-          cat "$GITHUB_WORKSPACE/repo/sl3000/mk/filogic-sl3000.mk" >> "$MK"
-
-      - name: Apply device config (.config)
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          rm -f .config
-          cp "$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config" .config
-          make defconfig
+      # ===== 构建链（延续 v10 工程体系，自愈分段） =====
 
       - name: Build host tools (self-heal)
         working-directory: ${{ env.WORK_DIR }}
@@ -180,8 +134,8 @@ jobs:
           body: |
             OpenWrt 24.10 / kernel 6.6
             Target: SL3000 (MT7981B eMMC)
-            Three-piece closed-loop build
-            feeds.lock reproducible
+            三件套自动闭环（clean-feeds.sh v12）
+            feeds.lock 可复现构建
             Build: ${{ github.run_number }}
             Commit: ${{ github.sha }}
           files: |
