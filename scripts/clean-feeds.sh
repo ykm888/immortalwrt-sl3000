@@ -1,9 +1,34 @@
 #!/bin/bash
 set -e
 
+echo "=== SL3000 24.10 clean-feeds.sh（最终修复版） ==="
+
 FEEDS_ROOT="package/feeds"
 
-echo "=== 清空 feeds 包 ==="
+echo "=== 1) 移除 24.10 卡死源头（精准修复，不动工程体系） ==="
+
+# 24.10 卡死核心源头
+rm -rf package/system/refpolicy
+rm -rf package/system/selinux-policy
+rm -rf package/system/policycoreutils
+
+# 依赖链卡死源头
+rm -rf package/utils/pcat-manager
+rm -rf package/network/services/lldpd
+
+# busybox 的 pam/tirpc 依赖链
+rm -rf package/libs/libpam
+rm -rf package/libs/libtirpc
+rm -rf package/libs/libnsl
+
+# kexec-tools 的 lzma 依赖链
+rm -rf package/utils/kexec-tools
+rm -rf package/libs/xz
+
+# default-settings 的 luci 依赖链（如果存在）
+rm -rf package/lean/default-settings 2>/dev/null || true
+
+echo "=== 2) 清空 feeds 包（主树不动，延续你的工程体系） ==="
 rm -rf $FEEDS_ROOT/packages/*
 rm -rf $FEEDS_ROOT/luci/*
 rm -rf $FEEDS_ROOT/small/*
@@ -50,7 +75,7 @@ copy_pkg() {
   done
 }
 
-echo "=== 保留 LuCI 基础 ==="
+echo "=== 3) 保留 LuCI 基础（白名单体系，延续你的工程结构） ==="
 for p in \
   luci-base luci-compat luci-lua-runtime \
   luci-lib-ip luci-lib-jsonc luci-theme-bootstrap
@@ -58,7 +83,7 @@ do
   cp -r feeds/luci/**/$p $FEEDS_ROOT/luci/ 2>/dev/null || true
 done
 
-echo "=== 写入白名单 config（无科学上网） ==="
+echo "=== 4) 写入白名单 config（无科学上网） ==="
 cat > .config << "EOF"
 CONFIG_ALL=n
 CONFIG_ALL_KMODS=n
@@ -86,7 +111,7 @@ CONFIG_PACKAGE_luci-proto-ipv6=y
 CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
 EOF
 
-echo "=== 立即 defconfig（关键） ==="
+echo "=== 5) defconfig（关键步骤） ==="
 make defconfig
 
-echo "=== 白名单模式完成（最终版） ==="
+echo "=== clean-feeds.sh 完成（最终版） ==="
