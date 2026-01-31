@@ -173,3 +173,16 @@ jobs:
         with:
           name: sl3000-2410
           path: /mnt/openwrt/bin/targets/mediatek/*/*
+
+      - name: 自动发布固件（Auto Release）
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: sl3000-emmc-openwrt-24.10-${{ github.run_number }}-${{ github.run_id }}
+          name: SL3000 eMMC OpenWrt 24.10 #${{ github.run_number }}
+          body: |
+            OpenWrt 24.10 / kernel 6.6
+            Target: SL3000 (MT7981B eMMC)
+            Auto three-piece (DTS/MK/CONFIG)
+          files: /mnt/openwrt/bin/targets/mediatek/filogic/*
+          prerelease: true
