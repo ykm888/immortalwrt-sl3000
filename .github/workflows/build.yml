@@ -31,39 +31,19 @@ jobs:
       - name: Clone ImmortalWrt 24.10
         run: git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
 
-      ######################################################################
-      # ★★★ 关键修复：从源码树硬删除 24.10 的系统级脏链路 ★★★
-      ######################################################################
-      - name: Strip SELinux / pcat / lldpd from source tree
-        working-directory: /mnt/openwrt
-        run: |
-          echo "=== Strip system-level SELinux & misc packages (24.10 专用硬砍) ==="
-          rm -rf package/system/refpolicy
-          rm -rf package/system/selinux-policy
-          rm -rf package/system/policycoreutils
-          rm -rf package/utils/pcat-manager
-          rm -rf package/network/services/lldpd
-          echo "=== Strip 完成：整条 SELinux / pcat / lldpd 链路已从源码树移除 ==="
-
-      ######################################################################
-      # PRE‑CLEAN：构建前磁盘优化
-      ######################################################################
       - name: Pre-clean disk space (before build)
         working-directory: /mnt/openwrt
         run: |
           echo "=== PRE-CLEAN: 清理构建前磁盘空间 ==="
-
           [ -d build_dir ] && rm -rf build_dir/* || true
           [ -d tmp ] && rm -rf tmp/* || true
           [ -d staging_dir/host ] && rm -rf staging_dir/host/* || true
           [ -d staging_dir/toolchain ] && rm -rf staging_dir/toolchain/* || true
-
           if [ -d dl ]; then
             find dl -type f -size 0 -delete || true
             find dl -type f -name "*.tmp" -delete || true
             find dl -type f -size +200M -delete || true
           fi
-
           echo "=== PRE-CLEAN 完成 ==="
 
       - name: Install build dependencies + ccache
@@ -117,6 +97,20 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      ######################################################################
+      # ★★★ 关键修复：必须在 feeds install 之后删除系统级包 ★★★
+      ######################################################################
+      - name: Strip system-level packages (24.10 专用)
+        working-directory: /mnt/openwrt
+        run: |
+          echo "=== Strip system-level SELinux / pcat / lldpd / policycoreutils ==="
+          rm -rf package/system/refpolicy
+          rm -rf package/system/selinux-policy
+          rm -rf package/system/policycoreutils
+          rm -rf package/utils/pcat-manager
+          rm -rf package/network/services/lldpd
+          echo "=== Strip 完成 ==="
+
       - name: Run clean-feeds.sh (白名单模式)
         working-directory: /mnt/openwrt
         run: |
@@ -156,7 +150,7 @@ jobs:
           make download -j$(nproc)
 
       ######################################################################
-      # 后续步骤保持原样（完全延续你的上一版）
+      # 后续步骤保持原样（完全延续上一版）
       ######################################################################
 
       - name: Build host tools (self-heal)
