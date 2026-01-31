@@ -70,7 +70,7 @@ jobs:
           echo "LC_ALL=C" >> $GITHUB_ENV
           echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
 
-      # ===== 构建链（延续 v10 工程体系，自愈分段） =====
+      # ===== 构建链（延续 v10 工程体系） =====
 
       - name: Build host tools (self-heal)
         working-directory: ${{ env.WORK_DIR }}
@@ -105,13 +105,13 @@ jobs:
       - name: Validate firmware output
         working-directory: ${{ env.WORK_DIR }}
         run: |
-          ls -lh bin/targets/mediatek/filogic/*sl_3000-emmc*sysupgrade.bin
+          ls -lh bin/targets/mediatek/filogic/*sl3000-emmc*sysupgrade.bin
 
       - name: Collect logs and metadata
         working-directory: ${{ env.WORK_DIR }}
         run: |
           mkdir -p "$GITHUB_WORKSPACE/output" "$GITHUB_WORKSPACE/logs"
-          cp bin/targets/mediatek/filogic/*sl_3000-emmc* "$GITHUB_WORKSPACE/output/" || true
+          cp bin/targets/mediatek/filogic/*sl3000-emmc* "$GITHUB_WORKSPACE/output/" || true
           cp bin/targets/mediatek/filogic/*.manifest "$GITHUB_WORKSPACE/output/" || true
           cp bin/targets/mediatek/filogic/sha256sums "$GITHUB_WORKSPACE/logs/" || true
           [ -f feeds.lock ] && cp feeds.lock "$GITHUB_WORKSPACE/logs/" || true
@@ -145,7 +145,6 @@ jobs:
       - name: Optimize disk space
         working-directory: ${{ env.WORK_DIR }}
         run: |
-          echo "Cleaning build_dir, staging_dir, tmp to free disk space..."
           find dl -type f -size +100M -delete || true
           rm -rf build_dir/* staging_dir/* tmp/*
           du -sh bin/targets || true
