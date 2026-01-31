@@ -1,8 +1,10 @@
 define Device/sl3000-emmc
   DEVICE_VENDOR := SL
-  DEVICE_MODEL := 3000 eMMC
-  DEVICE_DTS := mt7981b-sl-3000-emmc
-  DEVICE_DTS_DIR := ../dts
+  DEVICE_MODEL := SL3000
+  DEVICE_VARIANT := eMMC
+
+  DEVICE_DTS := mt7981b-sl3000-emmc
+  DEVICE_DTS_DIR := target/linux/mediatek/dts
 
   DEVICE_PACKAGES := \
 	kmod-mt7915e \
