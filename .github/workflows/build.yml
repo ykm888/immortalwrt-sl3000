@@ -84,7 +84,7 @@ jobs:
       - name: Detect three-piece consistency (DTS/MK/CONFIG)
         run: |
           echo "🔍 Checking DTS/MK/CONFIG consistency..."
-          DTS=repo/sl3000/dts/mt7981b-sl3000-emmc.dts
+          DTS=repo/sl3000/dts/mt7981b-sl-3000-emmc.dts
           MKF=repo/sl3000/mk/filogic-sl3000.mk
           CFG=repo/sl3000/config/sl3000.config
 
@@ -100,8 +100,8 @@ jobs:
         working-directory: ${{ env.WORK_DIR }}
         run: |
           mkdir -p target/linux/mediatek/dts
-          rm -f target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts || true
-          cp "$GITHUB_WORKSPACE/repo/sl3000/dts/mt7981b-sl3000-emmc.dts" target/linux/mediatek/dts/
+          rm -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts || true
+          cp "$GITHUB_WORKSPACE/repo/sl3000/dts/mt7981b-sl-3000-emmc.dts" target/linux/mediatek/dts/
 
       - name: Apply MK (structured insert)
         working-directory: ${{ env.WORK_DIR }}
@@ -180,3 +180,18 @@ jobs:
           body: |
             OpenWrt 24.10 / kernel 6.6
             Target: SL3000 (MT7981B eMMC)
+            Three-piece closed-loop build
+            feeds.lock reproducible
+            Build: ${{ github.run_number }}
+            Commit: ${{ github.sha }}
+          files: |
+            output/*
+            logs/*
+
+      - name: Optimize disk space
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          echo "Cleaning build_dir, staging_dir, tmp to free disk space..."
+          find dl -type f -size +100M -delete || true
+          rm -rf build_dir/* staging_dir/* tmp/*
+          du -sh bin/targets || true
