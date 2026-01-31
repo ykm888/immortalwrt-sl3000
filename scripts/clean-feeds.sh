@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo ">>> [自愈体系] clean-feeds.sh v12 启动"
+echo ">>> [自愈体系] clean-feeds.sh v12-final 启动"
 
 # --- 0. 路径校验 ---
 if [ ! -f "scripts/feeds" ]; then
@@ -36,7 +36,7 @@ else
     cp -v feeds.conf.default feeds.lock
 fi
 
-# --- 3. 依赖链补齐 ---
+# --- 3. 依赖链补齐（24.10 关键包，缺失不报错） ---
 ./scripts/feeds install \
   libcrypt-compat \
   libpam \
@@ -62,12 +62,18 @@ if [ ! -f "$DTS_FILE" ] || [ ! -f "$MK_PATCH" ] || [ ! -f "$CONF_FILE" ]; then
 fi
 
 echo ">>> 三件套一致性检查..."
-grep -q "mediatek,mt7981" "$DTS_FILE" || { echo "[ERROR] DTS SoC 不匹配"; exit 1; }
-grep -q "sl3000-emmc" "$MK_PATCH" || { echo "[ERROR] MK 设备名不匹配"; exit 1; }
-grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CONF_FILE" || {
-    echo "[ERROR] CONFIG 设备项缺失"
-    exit 1
-}
+
+# --- DTS 检查 ---
+grep -q "mediatek,mt7981" "$DTS_FILE" \
+  || { echo "[ERROR] DTS SoC 不匹配"; exit 1; }
+
+# --- MK 检查（修复：sl3000-emmc） ---
+grep -q "sl3000-emmc" "$MK_PATCH" \
+  || { echo "[ERROR] MK 设备名不匹配"; exit 1; }
+
+# --- CONFIG 检查（修复：meditek_filogic + sl3000-emmc） ---
+grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" "$CONF_FILE" \
+  || { echo "[ERROR] CONFIG 设备项缺失"; exit 1; }
 
 echo ">>> 三件套 Hash："
 sha256sum "$DTS_FILE" "$MK_PATCH" "$CONF_FILE"
@@ -80,9 +86,11 @@ cp -v "$DTS_FILE" target/linux/mediatek/dts/
 # --- 4.2 MK 安全插入 ---
 MK_TARGET="target/linux/mediatek/image/filogic.mk"
 
+# 删除旧定义
 sed -i '/Device\/sl3000-emmc/,/endef/d' "$MK_TARGET"
 sed -i '/TARGET_DEVICES += sl3000-emmc/d' "$MK_TARGET"
 
+# 结构化插入
 awk -v patch="$MK_PATCH" '
   BEGIN { inserted=0 }
   /^define Device/ { last=NR }
@@ -103,4 +111,4 @@ mv "$MK_TARGET.tmp" "$MK_TARGET"
 cp -v "$CONF_FILE" .config
 make defconfig
 
-echo "=== clean-feeds.sh v12 完成（可复现 + 三件套闭环 + MK 安全插入 + DTS 固定路径） ==="
+echo "=== clean-feeds.sh v12-final 完成（可复现 + 三件套闭环 + MK 安全插入 + DTS 固定路径） ==="
