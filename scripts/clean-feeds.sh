@@ -23,7 +23,7 @@ rm -rf package/libs/xz
 
 rm -rf package/lean/default-settings 2>/dev/null || true
 
-echo "[2] 清空 feeds 包（不动主树）"
+echo "[2] 清空 feeds 包（只动 package/feeds）"
 
 rm -rf "$FEEDS_ROOT"/packages/*
 rm -rf "$FEEDS_ROOT"/luci/*
