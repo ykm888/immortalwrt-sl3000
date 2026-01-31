@@ -24,7 +24,7 @@ jobs:
           sudo chown -R $USER:$USER /mnt
           rm -rf /mnt/openwrt/* || true
 
-      - name: 安装依赖与 ccache
+      - name: 安装构建依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential ccache python3 libncurses5-dev gawk gettext libssl-dev
@@ -52,63 +52,70 @@ jobs:
           echo 'src-git small https://github.com/kenzok8/small.git' >> feeds.conf.default
           ./scripts/feeds update -a
 
-      - name: 执行强力清理与补全依赖
+      - name: 工程体系自愈逻辑 (清理与核心依赖补全)
         working-directory: /mnt/openwrt
         run: |
-          # 1. 剔除主树冲突包
+          # 1. 剔除导致冲突的旧包
           CONFLICTS="package/system/refpolicy package/system/selinux-policy package/utils/policycoreutils package/utils/pcat-manager package/network/services/lldpd package/boot/kexec-tools package/emortal/default-settings package/libs/libpam package/libs/libtirpc package/libs/libnsl package/libs/xz"
           for p in $CONFLICTS; do rm -rf $p; done
           
-          # 2. 重置 feeds 目录
-          rm -rf package/feeds && mkdir -p package/feeds
-          
-          # 3. 补全核心依赖（解决卡死关键）
-          ./scripts/feeds install -p packages libpam libtirpc libev libnsl xz lm-sensors wsdd2 attr
-          ./scripts/feeds install -p luci luci-base luci-compat luci-lua-runtime luci-lib-ip luci-lib-jsonc luci-theme-bootstrap
+          # 2. 补齐 24.10 缺失的关键底层库 (修复 libcrypt-compat 等 WARNING)
+          ./scripts/feeds install -p packages libcrypt-compat libpam libtirpc libev libnsl xz lm-sensors wsdd2 attr libsasl2 libusb-compat libcurl libexpat
+          ./scripts/feeds install -p luci luci-base luci-compat luci-lua-runtime luci-lib-ip luci-lib-jsonc luci-theme-bootstrap luci-app-samba4
 
-      - name: 应用三件套 (DTS/MK/Config)
+      - name: 应用 SL3000 三件套 (自动检测修复注册)
         working-directory: /mnt/openwrt
         run: |
-          # 查找并应用 DTS
-          DTS_PATH=$(find $GITHUB_WORKSPACE/repo -name "mt7981b-sl3000-emmc.dts" | head -n 1)
-          mkdir -p target/linux/mediatek/dts
-          [ -n "$DTS_PATH" ] && cp "$DTS_PATH" target/linux/mediatek/dts/
-          
-          # 查找并应用 MK (自愈追加)
-          MK_PATH=$(find $GITHUB_WORKSPACE/repo -name "filogic-sl3000.mk" | head -n 1)
-          MK_TARGET="target/linux/mediatek/image/filogic.mk"
-          if [ -n "$MK_PATH" ]; then
-            grep -q "sl_3000-emmc" "$MK_TARGET" || cat "$MK_PATH" >> "$MK_TARGET"
+          # [1] 动态查找文件路径
+          DTS_FILE=$(find $GITHUB_WORKSPACE/repo -name "mt7981b-sl3000-emmc.dts" | head -n 1)
+          MK_PATCH=$(find $GITHUB_WORKSPACE/repo -name "filogic-sl3000.mk" | head -n 1)
+          CONF_FILE=$(find $GITHUB_WORKSPACE/repo -name "sl3000.config" | head -n 1)
+
+          # [2] 注册 DTS (硬件定义)
+          if [ -f "$DTS_FILE" ]; then
+            mkdir -p target/linux/mediatek/dts
+            cp -v "$DTS_FILE" target/linux/mediatek/dts/
           fi
-          
-          # 查找并应用 Config
-          CONF_PATH=$(find $GITHUB_WORKSPACE/repo -name "sl3000.config" | head -n 1)
-          [ -n "$CONF_PATH" ] && cp "$CONF_PATH" .config
-          
-          # 刷新配置
+
+          # [3] 注册 MK (编译脚本自愈)
+          MK_TARGET="target/linux/mediatek/image/filogic.mk"
+          if [ -f "$MK_PATCH" ]; then
+            grep -q "sl_3000-emmc" "$MK_TARGET" || cat "$MK_PATCH" >> "$MK_TARGET"
+          fi
+
+          # [4] 注册 Config (配置环境同步)
+          if [ -f "$CONF_FILE" ]; then
+            cp -v "$CONF_FILE" .config
+            # 强行补充缺失的 24.10 兼容项
+            echo "CONFIG_PACKAGE_libcrypt-compat=y" >> .config
+          fi
+
+          # [5] 执行注册生效
           make defconfig
 
-      - name: 下载源码 (自愈)
+      - name: 下载源代码 (自愈体系)
         working-directory: /mnt/openwrt
         run: |
           make download -j$(nproc) || make download -j1 V=s
           find dl -type f -size 0 -delete
 
-      - name: 完整构建 (自愈体系)
+      - name: 完整编译 (自愈体系)
         working-directory: /mnt/openwrt
         run: |
-          # 自动处理依赖链构建
           make -j$(nproc) || make -j1 V=s
 
-      - name: 上传固件
-        uses: actions/upload-artifact@v4
-        with:
-          name: sl3000-firmware
-          path: /mnt/openwrt/bin/targets/mediatek/filogic/*.bin
+      - name: 收集固件
+        run: |
+          mkdir -p firmware_export
+          find /mnt/openwrt/bin/targets/mediatek/filogic/ -name "*.bin" -exec cp {} firmware_export/ \;
 
-      - name: 自动发布
+      - name: 自动发布 (Auto Release)
         uses: softprops/action-gh-release@v2
         if: success()
         with:
           tag_name: sl3000-v24.10-${{ github.run_number }}
-          files: /mnt/openwrt/bin/targets/mediatek/filogic/*.bin
+          files: firmware_export/*.bin
+          body: |
+            SL3000 eMMC OpenWrt 24.10
+            - 自动修复 libcrypt-compat 依赖断链
+            - 自动注册三件套 (DTS/MK/Config)
