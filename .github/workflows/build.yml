@@ -18,7 +18,7 @@ jobs:
       DTS_NAME: mt7981b-sl3000-emmc
 
     steps:
-      - name: Checkout repo（恢复你之前的工程体系）
+      - name: Checkout repo（关键修复）
         uses: actions/checkout@v4
         with:
           path: repo
@@ -94,11 +94,12 @@ jobs:
           rm -rf package/libs/libnsl
           rm -rf package/utils/kexec-tools
           rm -rf package/libs/xz
-          rm -rf package/lean/default-settings 2>/dev/null || true
+          rm -rf package/emortal/default-settings 2>/dev/null || true
 
       - name: 运行 clean-feeds.sh（白名单模式）
         working-directory: /mnt/openwrt
         run: |
+          chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
           bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
 
       - name: 全局禁用 menuconfig
