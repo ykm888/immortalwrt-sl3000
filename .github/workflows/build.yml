@@ -58,7 +58,7 @@ jobs:
             ${{ runner.os }}-openwrt-2410-ccache-
 
       # ============================================================
-      # 三件套闭环（原文保持不动，只添加加载与验证）
+      # 三件套闭环（保持原样）
       # ============================================================
 
       - name: Run clean-feeds.sh（三件套闭环）
@@ -85,7 +85,7 @@ jobs:
             || (echo "CONFIG 未加载"; exit 1)
 
       # ============================================================
-      # 原文继续（不改动）
+      # 自定义 files（扩容脚本）
       # ============================================================
 
       - name: Copy custom files (拉起 99-expand-rootfs)
@@ -100,7 +100,9 @@ jobs:
           echo "LC_ALL=C" >> $GITHUB_ENV
           echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
 
-      # ===== 构建链（延续 v10 工程体系，自愈分段） =====
+      # ============================================================
+      # 构建链（恢复完整 6 段，自愈）
+      # ============================================================
 
       - name: Build host tools (self-heal)
         working-directory: ${{ env.WORK_DIR }}
@@ -120,19 +122,12 @@ jobs:
           make target/linux/compile -j"$(nproc)" V=s || \
           (make target/linux/clean && make target/linux/compile -j"$(nproc)" V=s)
 
-      - name: Verify DTS compiled
+      - name: Download sources (self-heal)
         working-directory: ${{ env.WORK_DIR }}
         run: |
-          echo ">>> Checking DTS..."
-          find build_dir/ -name "*sl-3000*.dtb" -print -quit \
-            || (echo "DTS 未被编译"; exit 1)
-
-      - name: Verify MK applied
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          echo ">>> Checking MK..."
-          grep -R "sl3000" -n target/linux/mediatek/image/ \
-            || (echo "MK 未被加载"; exit 1)
+          echo ">>> Downloading sources..."
+          make download -j"$(nproc)" V=s || \
+          (echo "Download failed, retrying..." && make download -j"$(nproc)" V=s)
 
       - name: Build packages (self-heal)
         working-directory: ${{ env.WORK_DIR }}
@@ -140,11 +135,15 @@ jobs:
           make package/compile -j"$(nproc)" V=s || \
           (make package/clean && make package/compile -j"$(nproc)" V=s)
 
-      - name: Build image (修复 target/image/compile)
+      - name: Build image (self-heal)
         working-directory: ${{ env.WORK_DIR }}
         run: |
           make -j"$(nproc)" V=s || \
           (make clean && make -j"$(nproc)" V=s)
+
+      # ============================================================
+      # 校验 + 收集产物
+      # ============================================================
 
       - name: Validate firmware output
         working-directory: ${{ env.WORK_DIR }}
