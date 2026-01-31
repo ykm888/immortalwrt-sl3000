@@ -1,29 +1,26 @@
 #!/bin/bash
 set -e
 
-echo "=== clean-feeds.sh (SL3000 / 24.10 精准修复版) ==="
+# 关键修复：强制进入 OpenWrt 根目录
+cd /mnt/openwrt
+
+echo "=== clean-feeds.sh (SL3000 / 24.10 终极修复版) ==="
 
 echo "[1] 删除 24.10 所有卡死源头（主树 package/）"
 
-# SELinux / policy
 rm -rf package/system/refpolicy
 rm -rf package/system/selinux-policy
-
-# 关键修复：policycoreutils 真正路径在 utils 目录
 rm -rf package/utils/policycoreutils
 
-# 缺失依赖链（libpam / libtirpc / libnsl / xz）
 rm -rf package/libs/libpam
 rm -rf package/libs/libtirpc
 rm -rf package/libs/libnsl
 rm -rf package/libs/xz
 
-# 依赖这些库的包
 rm -rf package/utils/pcat-manager
 rm -rf package/network/services/lldpd
 rm -rf package/boot/kexec-tools
 
-# 默认设置（依赖 luci-i18n-base-zh-cn）
 rm -rf package/emortal/default-settings
 
 echo "[2] 清空 feeds 包（只动 package/feeds）"
@@ -52,6 +49,11 @@ do
 done
 
 echo "[4] 再次检查是否还有卡死包"
-find package -maxdepth 3 -type d -name "policycoreutils" -o -name "libpam" -o -name "libtirpc" -o -name "libnsl" -o -name "kexec-tools"
+find package -maxdepth 3 -type d \
+  -name "policycoreutils" -o \
+  -name "libpam" -o \
+  -name "libtirpc" -o \
+  -name "libnsl" -o \
+  -name "kexec-tools"
 
 echo "=== clean-feeds.sh 完成（24.10 卡死链已彻底清除）==="
