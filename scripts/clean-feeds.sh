@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo ">>> [自愈体系] clean-feeds.sh v7 启动"
+echo ">>> [自愈体系] clean-feeds.sh v12 启动"
 
 # --- 0. 路径校验 ---
 if [ ! -f "scripts/feeds" ]; then
@@ -53,11 +53,13 @@ fi
   || true
 
 # --- 4. 三件套注册（DTS / MK / Config） ---
-DTS_FILE=$(find "$GITHUB_WORKSPACE/repo" -name "mt7981b-sl3000-emmc.dts" | head -n 1)
-MK_PATCH=$(find "$GITHUB_WORKSPACE/repo" -name "filogic-sl3000.mk" | head -n 1)
-CONF_FILE=$(find "$GITHUB_WORKSPACE/repo" -name "sl3000.config" | head -n 1)
+REPO_DIR="$GITHUB_WORKSPACE/repo"
 
-if [ -z "$DTS_FILE" ] || [ -z "$MK_PATCH" ] || [ -z "$CONF_FILE" ]; then
+DTS_FILE="$REPO_DIR/sl3000/dts/mt7981b-sl-3000-emmc.dts"
+MK_PATCH="$REPO_DIR/sl3000/mk/filogic-sl3000.mk"
+CONF_FILE="$REPO_DIR/sl3000/config/sl3000.config"
+
+if [ ! -f "$DTS_FILE" ] || [ ! -f "$MK_PATCH" ] || [ ! -f "$CONF_FILE" ]; then
     echo "[ERROR] 三件套缺失："
     echo "  DTS_FILE=$DTS_FILE"
     echo "  MK_PATCH=$MK_PATCH"
@@ -65,40 +67,51 @@ if [ -z "$DTS_FILE" ] || [ -z "$MK_PATCH" ] || [ -z "$CONF_FILE" ]; then
     exit 1
 fi
 
+echo ">>> 三件套一致性检查..."
+grep -q "mediatek,mt7981" "$DTS_FILE" || { echo "[ERROR] DTS SoC 不匹配"; exit 1; }
+grep -q "sl_3000-emmc" "$MK_PATCH" || { echo "[ERROR] MK 设备名不匹配"; exit 1; }
+grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CONF_FILE" || {
+    echo "[ERROR] CONFIG 设备项缺失"
+    exit 1
+}
+
 echo ">>> 三件套 Hash："
 sha256sum "$DTS_FILE" "$MK_PATCH" "$CONF_FILE"
 
 # --- 4.1 DTS 注入 ---
+echo ">>> 注入 DTS..."
 mkdir -p target/linux/mediatek/dts
-rm -f target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts
+rm -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
 cp -v "$DTS_FILE" target/linux/mediatek/dts/
 
-# --- 4.2 MK 安全插入（插入到最后一个 Device 段之后） ---
+# --- 4.2 MK 安全插入 ---
+echo ">>> 处理 MK（安全插入）..."
 MK_TARGET="target/linux/mediatek/image/filogic.mk"
 
-if ! grep -q "Device/sl_3000-emmc" "$MK_TARGET"; then
-    echo ">>> 注入 SL3000 设备段（结构化插入）"
-    awk -v patch="$MK_PATCH" '
-      BEGIN { inserted=0 }
-      /^define Device/ { last=NR }
-      { lines[NR]=$0 }
-      END {
-        for (i=1;i<=NR;i++) {
-          print lines[i]
-          if (i==last && !inserted) {
-            while ((getline line < patch) > 0) print line
-            inserted=1
-          }
-        }
+# 删除旧定义避免重复
+sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK_TARGET"
+sed -i '/TARGET_DEVICES += sl_3000-emmc/d' "$MK_TARGET"
+
+# 结构化插入
+awk -v patch="$MK_PATCH" '
+  BEGIN { inserted=0 }
+  /^define Device/ { last=NR }
+  { lines[NR]=$0 }
+  END {
+    for (i=1;i<=NR;i++) {
+      print lines[i]
+      if (i==last && !inserted) {
+        while ((getline line < patch) > 0) print line
+        inserted=1
       }
-    ' "$MK_TARGET" > "$MK_TARGET.tmp"
-    mv "$MK_TARGET.tmp" "$MK_TARGET"
-else
-    echo ">>> SL3000 已存在，跳过 MK 注入"
-fi
+    }
+  }
+' "$MK_TARGET" > "$MK_TARGET.tmp"
+mv "$MK_TARGET.tmp" "$MK_TARGET"
 
 # --- 4.3 Config 注册 ---
+echo ">>> 注册 Config..."
 cp -v "$CONF_FILE" .config
 make defconfig
 
-echo "=== clean-feeds.sh v7 完成（可复现 + 三件套闭环 + MK 安全插入） ==="
+echo "=== clean-feeds.sh v12 完成（可复现 + 三件套闭环 + MK 安全插入 + DTS 固定路径） ==="
