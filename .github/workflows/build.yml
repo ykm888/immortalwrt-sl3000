@@ -1,4 +1,4 @@
-name: Enterprise_SL3000_Decoupled_v7
+name: Enterprise_SL3000_Decoupled_v10
 
 on:
   workflow_dispatch:
@@ -10,7 +10,9 @@ env:
   SOURCE_BRANCH: openwrt-24.10
 
 jobs:
-  # --- 阶段一：Tools ---
+  # ============================
+  #  阶段一：Tools
+  # ============================
   Build_Tools:
     runs-on: ubuntu-22.04
     steps:
@@ -19,9 +21,11 @@ jobs:
         with:
           path: repo
 
-      - name: Cleanup & Init
+      - name: Pre-clean Disk
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/node_modules
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/node_modules /opt/hostedtoolcache
+          sudo docker system prune -af || true
+          sudo rm -rf /var/lib/apt/lists/*
           mkdir -p ${{ env.WORK_DIR }}
 
       - name: Tools Cache
@@ -43,9 +47,23 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           cp -v feeds.conf.default feeds.lock
+
+          # 防止 menuconfig
+          touch .config
+          make defconfig
+
           make tools/install -j$(nproc) || make tools/install -j1 V=s
 
-  # --- 阶段二：Toolchain ---
+      - name: Mid-clean Disk
+        if: always()
+        run: |
+          find ${{ env.WORK_DIR }} -maxdepth 1 -mindepth 1 \
+            ! -name 'staging_dir' ! -name 'feeds' ! -name 'feeds.lock' \
+            -exec rm -rf {} +
+
+  # ============================
+  #  阶段二：Toolchain
+  # ============================
   Build_Toolchain:
     needs: Build_Tools
     runs-on: ubuntu-22.04
@@ -73,7 +91,16 @@ jobs:
           bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
           make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
 
-  # --- 阶段三：Target ---
+      - name: Mid-clean Disk
+        if: always()
+        run: |
+          find ${{ env.WORK_DIR }} -maxdepth 1 -mindepth 1 \
+            ! -name 'staging_dir' ! -name 'feeds' ! -name 'feeds.lock' \
+            -exec rm -rf {} +
+
+  # ============================
+  #  阶段三：Target
+  # ============================
   Build_Target:
     needs: Build_Toolchain
     runs-on: ubuntu-22.04
@@ -123,11 +150,34 @@ jobs:
           cp ${{ env.WORK_DIR }}/feeds.lock logs/ || true
           cp ${{ env.WORK_DIR }}/.config logs/config.buildinfo || true
 
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sl3000-firmware-${{ github.run_number }}
+          path: |
+            output/*
+            logs/*
+
       - name: Release Firmware
         uses: softprops/action-gh-release@v2
         if: success()
         with:
           tag_name: SL3000_Decoupled_v${{ github.run_number }}
+          name: SL3000 Firmware Build #${{ github.run_number }}
+          body: |
+            自动构建固件（Decoupled_v10）
+            - 分层构建：Tools / Toolchain / Target
+            - feeds.lock 可复现
+            - 三件套闭环（DTS/MK/Config）
+            - 全链路自愈
+            - 构建链缓存命中率优化
           files: |
             output/*
             logs/*
+
+      - name: Final Cleanup
+        if: always()
+        run: |
+          sudo rm -rf ${{ env.WORK_DIR }} || true
+          sudo rm -rf ${{ env.CCACHE_DIR }} || true
+          sudo rm -rf /tmp/* || true
