@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo ">>> [自愈体系] clean-feeds.sh 启动"
+echo ">>> [自愈体系] clean-feeds.sh v7 启动"
 
 # --- 0. 路径校验 ---
 if [ ! -f "scripts/feeds" ]; then
@@ -9,7 +9,7 @@ if [ ! -f "scripts/feeds" ]; then
     exit 1
 fi
 
-# --- 1. 冲突包清理（仅清理源码树，不动 feeds） ---
+# --- 1. 冲突包清理（源码树内） ---
 CONFLICTS="
 package/system/refpolicy
 package/system/selinux-policy
@@ -20,27 +20,26 @@ package/boot/kexec-tools
 package/emortal/default-settings
 "
 for p in $CONFLICTS; do
-    [ -d "$p" ] && echo "Cleaning conflict: $p" && rm -rf "$p"
+    if [ -d "$p" ]; then
+        echo "Cleaning conflict: $p"
+        rm -rf "$p"
+    fi
 done
 
-# --- 2. Feeds 可复现机制：优先使用 feeds.lock ---
+# --- 2. Feeds 可复现机制（feeds.conf.default == feeds.lock） ---
 if [ -f "feeds.lock" ]; then
     echo ">>> 检测到 feeds.lock，按锁定版本重放 feeds"
-    # 注意：这里假设 feeds.lock 内容是 `name url` 形式
-    > feeds.conf.default
-    while read -r feed; do
-        name=$(echo "$feed" | awk '{print $1}')
-        src=$(echo "$feed" | awk '{print $2}')
-        [ -n "$name" ] && [ -n "$src" ] && echo "src-git $name $src" >> feeds.conf.default
-    done < feeds.lock
+    cp -v feeds.lock feeds.conf.default
+    ./scripts/feeds update -a
+    ./scripts/feeds install -a
 else
     echo ">>> 未检测到 feeds.lock，首次初始化 feeds"
     ./scripts/feeds update -a
     ./scripts/feeds install -a
-    ./scripts/feeds list -s > feeds.lock
+    cp -v feeds.conf.default feeds.lock
 fi
 
-# --- 3. 依赖链补齐（24.10 全链路） ---
+# --- 3. 依赖链补齐（24.10 关键包） ---
 ./scripts/feeds install \
   libcrypt-compat \
   libpam \
@@ -59,7 +58,7 @@ MK_PATCH=$(find "$GITHUB_WORKSPACE/repo" -name "filogic-sl3000.mk" | head -n 1)
 CONF_FILE=$(find "$GITHUB_WORKSPACE/repo" -name "sl3000.config" | head -n 1)
 
 if [ -z "$DTS_FILE" ] || [ -z "$MK_PATCH" ] || [ -z "$CONF_FILE" ]; then
-    echo "[ERROR] 三件套缺失"
+    echo "[ERROR] 三件套缺失："
     echo "  DTS_FILE=$DTS_FILE"
     echo "  MK_PATCH=$MK_PATCH"
     echo "  CONF_FILE=$CONF_FILE"
@@ -74,7 +73,7 @@ mkdir -p target/linux/mediatek/dts
 rm -f target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts
 cp -v "$DTS_FILE" target/linux/mediatek/dts/
 
-# --- 4.2 MK 安全插入（插入到 filogic 设备段末尾） ---
+# --- 4.2 MK 安全插入（插入到最后一个 Device 段之后） ---
 MK_TARGET="target/linux/mediatek/image/filogic.mk"
 
 if ! grep -q "Device/sl_3000-emmc" "$MK_TARGET"; then
@@ -102,4 +101,4 @@ fi
 cp -v "$CONF_FILE" .config
 make defconfig
 
-echo "=== clean-feeds.sh 完成（可复现 + 三件套闭环 + MK 安全插入） ==="
+echo "=== clean-feeds.sh v7 完成（可复现 + 三件套闭环 + MK 安全插入） ==="
