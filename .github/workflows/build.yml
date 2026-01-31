@@ -94,7 +94,7 @@ jobs:
       - name: 运行 clean-feeds.sh（白名单模式）
         working-directory: /mnt/openwrt
         run: |
-          bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
+          bash $GITHUB_WORKSPACE/scripts/clean-feeds.sh
 
       - name: 全局禁用 menuconfig
         run: |
