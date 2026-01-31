@@ -1,7 +1,11 @@
-name: Enterprise_SL3000_Decoupled_v10
+name: build-sl3000-openwrt-2410
 
 on:
   workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
 
 env:
   WORK_DIR: ${{ github.workspace }}/openwrt_src
@@ -10,174 +14,186 @@ env:
   SOURCE_BRANCH: openwrt-24.10
 
 jobs:
-  # ============================
-  #  阶段一：Tools
-  # ============================
-  Build_Tools:
+  build-sl3000-2410:
     runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
     steps:
-      - name: Checkout Repo
+      - name: Checkout repo
         uses: actions/checkout@v4
         with:
           path: repo
 
-      - name: Pre-clean Disk
+      - name: Pre-clean disk
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/node_modules /opt/hostedtoolcache
           sudo docker system prune -af || true
           sudo rm -rf /var/lib/apt/lists/*
-          mkdir -p ${{ env.WORK_DIR }}
+          mkdir -p "${{ env.WORK_DIR }}"
 
-      - name: Tools Cache
-        id: tools-cache
+      - name: Clone ImmortalWrt 24.10
+        run: |
+          if [ ! -d "${{ env.WORK_DIR }}/.git" ]; then
+            git clone --depth=1 -b "${{ env.SOURCE_BRANCH }}" "${{ env.SOURCE_REPO }}" "${{ env.WORK_DIR }}"
+          fi
+
+      - name: Install build dependencies + ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            python3 python3-pip python3-setuptools python3-wheel python3-dev python3-venv \
+            libffi-dev libssl-dev ccache \
+            perl libperl-dev libtext-template-perl
+          echo "CCACHE_DIR=${{ env.CCACHE_DIR }}" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=2G" >> $GITHUB_ENV
+
+      - name: Cache ccache
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ env.WORK_DIR }}/staging_dir/host
-            ${{ env.WORK_DIR }}/feeds
-            ${{ env.WORK_DIR }}/feeds.lock
-          key: ${{ runner.os }}-tools-${{ env.SOURCE_BRANCH }}-${{ hashFiles('repo/feeds.conf.default') }}
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-openwrt-2410-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-2410-ccache-
 
-      - name: Build Tools
-        if: steps.tools-cache.outputs.cache-hit != 'true'
+      - name: Clean feeds config (from repo/feeds.conf.default)
         working-directory: ${{ env.WORK_DIR }}
         run: |
-          git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} .
-          cp $GITHUB_WORKSPACE/repo/feeds.conf.default feeds.conf.default
+          cp -f "$GITHUB_WORKSPACE/repo/feeds.conf.default" feeds.conf.default
+
+      - name: Update feeds
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          cp -v feeds.conf.default feeds.lock
 
-          # 防止 menuconfig
-          touch .config
+      - name: Run clean-feeds.sh（自愈 + feeds.lock）
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          chmod +x "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
+          bash "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
+
+      - name: Disable menuconfig globally
+        run: |
+          echo "KCONFIG_NONINTERACTIVE=1" >> $GITHUB_ENV
+          echo "TERM=dumb" >> $GITHUB_ENV
+          echo "LC_ALL=C" >> $GITHUB_ENV
+          echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
+
+      - name: Detect three-piece consistency (DTS/MK/CONFIG)
+        run: |
+          echo "🔍 Checking DTS/MK/CONFIG consistency..."
+          DTS=repo/sl3000/dts/mt7981b-sl3000-emmc.dts
+          MKF=repo/sl3000/mk/filogic-sl3000.mk
+          CFG=repo/sl3000/config/sl3000.config
+
+          [ -f "$DTS" ] || (echo "❌ DTS missing" && exit 1)
+          [ -f "$MKF" ] || (echo "❌ MK missing" && exit 1)
+          [ -f "$CFG" ] || (echo "❌ CONFIG missing" && exit 1)
+
+          grep -q "mediatek,mt7981" "$DTS" || (echo "❌ DTS SoC mismatch" && exit 1)
+          grep -q "sl_3000-emmc" "$MKF" || (echo "❌ MK device name mismatch" && exit 1)
+          grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CFG" || (echo "❌ CONFIG device missing" && exit 1)
+
+      - name: Apply DTS (atomic replace)
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          mkdir -p target/linux/mediatek/dts
+          rm -f target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts || true
+          cp "$GITHUB_WORKSPACE/repo/sl3000/dts/mt7981b-sl3000-emmc.dts" target/linux/mediatek/dts/
+
+      - name: Apply MK (structured insert)
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          MK=target/linux/mediatek/image/filogic.mk
+          sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK"
+          sed -i '/TARGET_DEVICES += sl_3000-emmc/d' "$MK"
+          cat "$GITHUB_WORKSPACE/repo/sl3000/mk/filogic-sl3000.mk" >> "$MK"
+
+      - name: Apply device config (.config)
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          rm -f .config
+          cp "$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config" .config
           make defconfig
 
-          make tools/install -j$(nproc) || make tools/install -j1 V=s
-
-      - name: Mid-clean Disk
-        if: always()
-        run: |
-          find ${{ env.WORK_DIR }} -maxdepth 1 -mindepth 1 \
-            ! -name 'staging_dir' ! -name 'feeds' ! -name 'feeds.lock' \
-            -exec rm -rf {} +
-
-  # ============================
-  #  阶段二：Toolchain
-  # ============================
-  Build_Toolchain:
-    needs: Build_Tools
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-        with:
-          path: repo
-
-      - name: Toolchain Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.WORK_DIR }}/staging_dir
-            ${{ env.WORK_DIR }}/feeds
-            ${{ env.WORK_DIR }}/feeds.lock
-          key: ${{ runner.os }}-toolchain-${{ hashFiles('repo/sl3000/sl3000.config', 'repo/feeds.conf.default', 'repo/sl3000/mt7981b-sl3000-emmc.dts', 'repo/sl3000/filogic-sl3000.mk') }}
-
-      - name: Build Toolchain
+      - name: Build host tools (self-heal)
         working-directory: ${{ env.WORK_DIR }}
         run: |
-          mkdir -p ${{ env.WORK_DIR }}
-          [ -d .git ] || git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} .
-          cp $GITHUB_WORKSPACE/repo/feeds.conf.default feeds.conf.default
-          bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
-          make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
+          make tools/install -j"$(nproc)" V=s || \
+          (make tools/clean && make tools/install -j"$(nproc)" V=s)
 
-      - name: Mid-clean Disk
-        if: always()
-        run: |
-          find ${{ env.WORK_DIR }} -maxdepth 1 -mindepth 1 \
-            ! -name 'staging_dir' ! -name 'feeds' ! -name 'feeds.lock' \
-            -exec rm -rf {} +
-
-  # ============================
-  #  阶段三：Target
-  # ============================
-  Build_Target:
-    needs: Build_Toolchain
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-        with:
-          path: repo
-
-      - name: Restore Build Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.WORK_DIR }}/staging_dir
-            ${{ env.WORK_DIR }}/dl
-            ${{ env.CCACHE_DIR }}
-            ${{ env.WORK_DIR }}/feeds
-            ${{ env.WORK_DIR }}/feeds.lock
-          key: ${{ runner.os }}-target-${{ hashFiles('repo/sl3000/sl3000.config', 'repo/feeds.conf.default', 'repo/sl3000/mt7981b-sl3000-emmc.dts', 'repo/sl3000/filogic-sl3000.mk') }}
-
-      - name: Build Target
+      - name: Build toolchain (self-heal)
         working-directory: ${{ env.WORK_DIR }}
         run: |
-          mkdir -p ${{ env.WORK_DIR }}
-          [ -d .git ] || git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} .
-          cp $GITHUB_WORKSPACE/repo/feeds.conf.default feeds.conf.default
+          make toolchain/install -j"$(nproc)" V=s || \
+          (make toolchain/clean && make toolchain/install -j"$(nproc)" V=s)
 
-          export CCACHE_DIR=${{ env.CCACHE_DIR }}
-          export CC="ccache gcc"
-          export CXX="ccache g++"
-
-          bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
-
-          make download -j$(nproc) || make download -j1 V=s
-          find dl -type f -size 0 -delete
-
-          ccache -z || true
-          make -j$(nproc) || make -j1 V=s
-          ccache -s || true
-
-      - name: Collect Artifacts
+      - name: Build kernel (self-heal)
+        working-directory: ${{ env.WORK_DIR }}
         run: |
-          mkdir -p output logs
-          cp ${{ env.WORK_DIR }}/bin/targets/mediatek/filogic/*sl* output/ || true
-          cp ${{ env.WORK_DIR }}/bin/targets/mediatek/filogic/*.manifest output/ || true
-          cp ${{ env.WORK_DIR }}/bin/targets/mediatek/filogic/sha256sums logs/ || true
-          cp ${{ env.WORK_DIR }}/feeds.lock logs/ || true
-          cp ${{ env.WORK_DIR }}/.config logs/config.buildinfo || true
+          make target/linux/compile -j"$(nproc)" V=s || \
+          (make target/linux/clean && make target/linux/compile -j"$(nproc)" V=s)
 
-      - name: Upload Artifacts
+      - name: Build packages (self-heal)
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          make package/compile -j"$(nproc)" V=s || \
+          (make package/clean && make package/compile -j"$(nproc)" V=s)
+
+      - name: Build image (self-heal)
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          make target/image/compile -j"$(nproc)" V=s || \
+          (make target/image/clean && make target/image/compile -j"$(nproc)" V=s)
+
+      - name: Validate firmware output
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          ls -lh bin/targets/mediatek/filogic/*sl_3000-emmc*sysupgrade.bin
+
+      - name: Collect logs and metadata
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/output" "$GITHUB_WORKSPACE/logs"
+          cp bin/targets/mediatek/filogic/*sl_3000-emmc* "$GITHUB_WORKSPACE/output/" || true
+          cp bin/targets/mediatek/filogic/*.manifest "$GITHUB_WORKSPACE/output/" || true
+          cp bin/targets/mediatek/filogic/sha256sums "$GITHUB_WORKSPACE/logs/" || true
+          [ -f feeds.lock ] && cp feeds.lock "$GITHUB_WORKSPACE/logs/" || true
+          [ -f .config ] && cp .config "$GITHUB_WORKSPACE/logs/config.buildinfo" || true
+
+      - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-firmware-${{ github.run_number }}
+          name: sl3000-2410-firmware
           path: |
             output/*
             logs/*
 
-      - name: Release Firmware
+      - name: Auto Release firmware
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tag_name: SL3000_Decoupled_v${{ github.run_number }}
-          name: SL3000 Firmware Build #${{ github.run_number }}
+          tag_name: sl3000-openwrt-2410-${{ github.run_number }}
+          name: SL3000 OpenWrt 24.10 Build #${{ github.run_number }}
           body: |
-            自动构建固件（Decoupled_v10）
-            - 分层构建：Tools / Toolchain / Target
-            - feeds.lock 可复现
-            - 三件套闭环（DTS/MK/Config）
-            - 全链路自愈
-            - 构建链缓存命中率优化
+            OpenWrt 24.10 / kernel 6.6
+            Target: SL3000 (MT7981B eMMC)
+            Three-piece (DTS/MK/CONFIG) closed-loop
+            feeds.lock reproducible build
+            Build: ${{ github.run_number }}
+            Commit: ${{ github.sha }}
           files: |
             output/*
             logs/*
+          prerelease: true
 
-      - name: Final Cleanup
-        if: always()
+      - name: Optimize disk space
+        working-directory: ${{ env.WORK_DIR }}
         run: |
-          sudo rm -rf ${{ env.WORK_DIR }} || true
-          sudo rm -rf ${{ env.CCACHE_DIR }} || true
-          sudo rm -rf /tmp/* || true
+          echo "Cleaning build_dir, staging_dir, tmp to free disk space..."
+          find dl -type f -size +100M -delete || true
+          rm -rf build_dir/* staging_dir/* tmp/*
+          echo "Remaining firmware size:"
+          du -sh bin/targets || true
