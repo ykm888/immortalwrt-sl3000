@@ -52,7 +52,9 @@ fi
 # --- 4. 三件套注册 ---
 REPO_DIR="$GITHUB_WORKSPACE/repo"
 
-DTS_FILE="$REPO_DIR/sl3000/dts/mt7981b-sl-3000-emmc.dts"
+# ★★★ 唯一修复点：DTS 名称修正 ★★★
+DTS_FILE="$REPO_DIR/sl3000/dts/mt7981b-sl3000-emmc.dts"
+
 MK_PATCH="$REPO_DIR/sl3000/mk/filogic-sl3000.mk"
 CONF_FILE="$REPO_DIR/sl3000/config/sl3000.config"
 
@@ -80,7 +82,10 @@ sha256sum "$DTS_FILE" "$MK_PATCH" "$CONF_FILE"
 
 # --- 4.1 DTS 注入 ---
 mkdir -p target/linux/mediatek/dts
+
+# ★★★ 唯一修复点：删除旧 DTS 名称 ★★★
 rm -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
+
 cp -v "$DTS_FILE" target/linux/mediatek/dts/
 
 # --- 4.2 MK 安全插入 ---
