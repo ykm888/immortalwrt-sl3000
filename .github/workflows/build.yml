@@ -1,7 +1,11 @@
-name: build-sl3000-2410-fixed
+name: build-sl3000-2410-final
 
 on:
   workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
 
 jobs:
   build:
@@ -12,7 +16,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          path: repo
+          path: repo  # 这里定义了你的三件套所在的根目录
 
       - name: 磁盘环境初始化
         run: |
@@ -28,10 +32,17 @@ jobs:
           echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
           echo "CCACHE_MAXSIZE=2G" >> $GITHUB_ENV
 
+      - name: 缓存 ccache
+        uses: actions/cache@v4
+        with:
+          path: /mnt/openwrt/.ccache
+          key: ${{ runner.os }}-2410-ccache-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-2410-ccache-
+
       - name: 克隆源码 (ImmortalWrt 24.10)
         run: git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
 
-      - name: 配置 Feeds 源 (更新索引)
+      - name: 更新 Feeds 索引
         working-directory: /mnt/openwrt
         run: |
           rm -f feeds.conf feeds.conf.default
@@ -41,44 +52,60 @@ jobs:
           echo 'src-git small https://github.com/kenzok8/small.git' >> feeds.conf.default
           ./scripts/feeds update -a
 
-      - name: 运行清理逻辑与依赖补全
+      - name: 运行脚本逻辑 (修复依赖链)
         working-directory: /mnt/openwrt
         run: |
-          chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
-          bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
+          # 动态寻找脚本路径，防止 hardcode 报错
+          CLEAN_SCRIPT=$(find $GITHUB_WORKSPACE/repo -name "clean-feeds.sh" | head -n 1)
+          chmod +x "$CLEAN_SCRIPT"
+          bash "$CLEAN_SCRIPT"
 
-      - name: 应用三件套 (DTS/MK/Config)
+      - name: 应用三件套 (DTS/MK/Config) - 动态修复版
         working-directory: /mnt/openwrt
         run: |
-          # 1. 应用 DTS
+          # 1. 查找并应用 DTS
+          DTS_FILE=$(find $GITHUB_WORKSPACE/repo -name "mt7981b-sl3000-emmc.dts" | head -n 1)
           mkdir -p target/linux/mediatek/dts
-          cp $GITHUB_WORKSPACE/repo/sl3000/dts/mt7981b-sl3000-emmc.dts target/linux/mediatek/dts/
-          
-          # 2. 应用 MK (自愈式追加)
-          MK_FILE="target/linux/mediatek/image/filogic.mk"
-          if ! grep -q "sl_3000-emmc" "$MK_FILE"; then
-            cat $GITHUB_WORKSPACE/repo/sl3000/mk/filogic-sl3000.mk >> "$MK_FILE"
+          cp "$DTS_FILE" target/linux/mediatek/dts/
+          echo "Applied DTS: $DTS_FILE"
+
+          # 2. 查找并应用 MK (自愈追加)
+          MK_PATCH=$(find $GITHUB_WORKSPACE/repo -name "filogic-sl3000.mk" | head -n 1)
+          MK_TARGET="target/linux/mediatek/image/filogic.mk"
+          if ! grep -q "sl_3000-emmc" "$MK_TARGET"; then
+            cat "$MK_PATCH" >> "$MK_TARGET"
           fi
-          
-          # 3. 应用 Config 并生成最终配置
-          cp $GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config .config
+          echo "Applied MK: $MK_PATCH"
+
+          # 3. 查找并应用 Config
+          CONF_FILE=$(find $GITHUB_WORKSPACE/repo -name "sl3000.config" | head -n 1)
+          cp "$CONF_FILE" .config
+          echo "Applied Config: $CONF_FILE"
+
+          # 4. 刷新配置
           make defconfig
 
-      - name: 下载源码 (自愈下载)
+      - name: 下载源码 (自愈)
         working-directory: /mnt/openwrt
         run: |
           make download -j$(nproc) || make download -j1 V=s
           find dl -type f -size 0 -delete
 
-      - name: 核心构建 (自愈体系)
+      - name: 完整构建 (自愈体系)
         working-directory: /mnt/openwrt
         run: |
-          # 采用合并构建，系统会自动处理 tools -> toolchain -> target
-          # 多线程失败时自动切换单线程输出错误日志
+          # 核心编译指令，失败自动降级单线程
           make -j$(nproc) || make -j1 V=s
 
       - name: 上传固件
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-2410-firmware
+          name: sl3000-firmware
           path: /mnt/openwrt/bin/targets/mediatek/filogic/*.bin
+
+      - name: 自动发布
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: sl3000-v24.10-${{ github.run_number }}
+          files: /mnt/openwrt/bin/targets/mediatek/filogic/*.bin
