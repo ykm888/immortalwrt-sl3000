@@ -9,7 +9,7 @@ if [ ! -f "scripts/feeds" ]; then
     exit 1
 fi
 
-# --- 1. 冲突包清理（源码树内） ---
+# --- 1. 冲突包清理 ---
 CONFLICTS="
 package/system/refpolicy
 package/system/selinux-policy
@@ -20,26 +20,23 @@ package/boot/kexec-tools
 package/emortal/default-settings
 "
 for p in $CONFLICTS; do
-    if [ -d "$p" ]; then
-        echo "Cleaning conflict: $p"
-        rm -rf "$p"
-    fi
+    [ -d "$p" ] && rm -rf "$p"
 done
 
-# --- 2. Feeds 可复现机制（feeds.conf.default == feeds.lock） ---
+# --- 2. Feeds 可复现机制 ---
 if [ -f "feeds.lock" ]; then
-    echo ">>> 检测到 feeds.lock，按锁定版本重放 feeds"
+    echo ">>> 使用 feeds.lock 重放 feeds"
     cp -v feeds.lock feeds.conf.default
     ./scripts/feeds update -a
     ./scripts/feeds install -a
 else
-    echo ">>> 未检测到 feeds.lock，首次初始化 feeds"
+    echo ">>> 首次初始化 feeds"
     ./scripts/feeds update -a
     ./scripts/feeds install -a
     cp -v feeds.conf.default feeds.lock
 fi
 
-# --- 3. 依赖链补齐（24.10 关键包） ---
+# --- 3. 依赖链补齐 ---
 ./scripts/feeds install \
   libcrypt-compat \
   libpam \
@@ -52,7 +49,7 @@ fi
   attr \
   || true
 
-# --- 4. 三件套注册（DTS / MK / Config） ---
+# --- 4. 三件套注册 ---
 REPO_DIR="$GITHUB_WORKSPACE/repo"
 
 DTS_FILE="$REPO_DIR/sl3000/dts/mt7981b-sl-3000-emmc.dts"
@@ -60,16 +57,13 @@ MK_PATCH="$REPO_DIR/sl3000/mk/filogic-sl3000.mk"
 CONF_FILE="$REPO_DIR/sl3000/config/sl3000.config"
 
 if [ ! -f "$DTS_FILE" ] || [ ! -f "$MK_PATCH" ] || [ ! -f "$CONF_FILE" ]; then
-    echo "[ERROR] 三件套缺失："
-    echo "  DTS_FILE=$DTS_FILE"
-    echo "  MK_PATCH=$MK_PATCH"
-    echo "  CONF_FILE=$CONF_FILE"
+    echo "[ERROR] 三件套缺失"
     exit 1
 fi
 
 echo ">>> 三件套一致性检查..."
 grep -q "mediatek,mt7981" "$DTS_FILE" || { echo "[ERROR] DTS SoC 不匹配"; exit 1; }
-grep -q "sl_3000-emmc" "$MK_PATCH" || { echo "[ERROR] MK 设备名不匹配"; exit 1; }
+grep -q "sl3000-emmc" "$MK_PATCH" || { echo "[ERROR] MK 设备名不匹配"; exit 1; }
 grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CONF_FILE" || {
     echo "[ERROR] CONFIG 设备项缺失"
     exit 1
@@ -79,20 +73,16 @@ echo ">>> 三件套 Hash："
 sha256sum "$DTS_FILE" "$MK_PATCH" "$CONF_FILE"
 
 # --- 4.1 DTS 注入 ---
-echo ">>> 注入 DTS..."
 mkdir -p target/linux/mediatek/dts
 rm -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
 cp -v "$DTS_FILE" target/linux/mediatek/dts/
 
 # --- 4.2 MK 安全插入 ---
-echo ">>> 处理 MK（安全插入）..."
 MK_TARGET="target/linux/mediatek/image/filogic.mk"
 
-# 删除旧定义避免重复
-sed -i '/Device\/sl_3000-emmc/,/endef/d' "$MK_TARGET"
-sed -i '/TARGET_DEVICES += sl_3000-emmc/d' "$MK_TARGET"
+sed -i '/Device\/sl3000-emmc/,/endef/d' "$MK_TARGET"
+sed -i '/TARGET_DEVICES += sl3000-emmc/d' "$MK_TARGET"
 
-# 结构化插入
 awk -v patch="$MK_PATCH" '
   BEGIN { inserted=0 }
   /^define Device/ { last=NR }
@@ -110,7 +100,6 @@ awk -v patch="$MK_PATCH" '
 mv "$MK_TARGET.tmp" "$MK_TARGET"
 
 # --- 4.3 Config 注册 ---
-echo ">>> 注册 Config..."
 cp -v "$CONF_FILE" .config
 make defconfig
 
