@@ -1,4 +1,4 @@
-name: build-sl3000-openwrt-2410
+name: build-sl3000-2410
 
 on:
   workflow_dispatch:
@@ -8,14 +8,14 @@ permissions:
   packages: write
 
 jobs:
-  build-sl3000-2410:
+  build:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
     env:
       DEVICE_ID: sl_3000-emmc
       TARGET_PROFILE: mediatek_mt7981
-      DTS_NAME: mt7981b-sl-3000-emmc
+      DTS_NAME: mt7981b-sl3000-emmc
 
     steps:
       - name: Checkout repo
@@ -23,7 +23,7 @@ jobs:
         with:
           path: repo
 
-      - name: Prepare /mnt/openwrt
+      - name: Prepare workspace
         run: |
           sudo mkdir -p /mnt/openwrt
           sudo chown -R $USER:$USER /mnt
@@ -31,7 +31,7 @@ jobs:
       - name: Clone ImmortalWrt 24.10
         run: git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
 
-      - name: Pre-clean disk space (before build)
+      - name: Pre-clean disk
         working-directory: /mnt/openwrt
         run: |
           [ -d build_dir ] && rm -rf build_dir/* || true
@@ -44,50 +44,26 @@ jobs:
             find dl -type f -size +200M -delete || true
           fi
 
-      - name: Install build dependencies + ccache
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            python3 python3-pip python3-setuptools python3-wheel python3-dev python3-venv \
-            libffi-dev libssl-dev ccache
-          echo "export CCACHE_DIR=/mnt/openwrt/.ccache" >> $GITHUB_ENV
-          echo "export CCACHE_COMPRESS=1" >> $GITHUB_ENV
-          echo "export CCACHE_MAXSIZE=2G" >> $GITHUB_ENV
+          sudo apt-get install -y build-essential ccache python3
 
       - name: Cache ccache
         uses: actions/cache@v4
         with:
           path: /mnt/openwrt/.ccache
-          key: ${{ runner.os }}-openwrt-ccache-${{ github.sha }}
+          key: ${{ runner.os }}-ccache-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-openwrt-ccache-
+            ${{ runner.os }}-ccache-
 
       - name: Cache dl
         uses: actions/cache@v4
         with:
           path: /mnt/openwrt/dl
-          key: ${{ runner.os }}-openwrt-24.10-dl-${{ hashFiles('repo/sl3000/config/sl3000.config') }}
+          key: ${{ runner.os }}-dl-${{ hashFiles('repo/sl3000/config/sl3000.config') }}
           restore-keys: |
-            ${{ runner.os }}-openwrt-24.10-dl-
-
-      - name: Cache toolchain & host
-        uses: actions/cache@v4
-        with:
-          path: |
-            /mnt/openwrt/staging_dir/toolchain
-            /mnt/openwrt/staging_dir/host
-          key: ${{ runner.os }}-openwrt-24.10-toolchain-${{ hashFiles('repo/sl3000/config/sl3000.config') }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-24.10-toolchain-
-
-      - name: Clean feeds config
-        working-directory: /mnt/openwrt
-        run: |
-          echo 'src-git packages https://github.com/openwrt/packages.git' > feeds.conf.default
-          echo 'src-git luci https://github.com/openwrt/luci.git' >> feeds.conf.default
-          echo 'src-git helloworld https://github.com/fw876/helloworld.git' >> feeds.conf.default
-          echo 'src-git small https://github.com/kenzok8/small.git' >> feeds.conf.default
+            ${{ runner.os }}-dl-
 
       - name: Update feeds
         working-directory: /mnt/openwrt
@@ -95,74 +71,32 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Strip system packages (24.10 only)
+      - name: Run clean-feeds.sh（唯一脚本）
         working-directory: /mnt/openwrt
         run: |
-          bash $GITHUB_WORKSPACE/repo/scripts/strip-system-2410.sh
-
-      - name: Run clean-feeds.sh (white list)
-        working-directory: /mnt/openwrt
-        run: |
-          chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
           bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
 
-      - name: Disable menuconfig globally
+      - name: Disable menuconfig
         run: |
           echo "KCONFIG_NONINTERACTIVE=1" >> $GITHUB_ENV
-          echo "TERM=dumb" >> $GITHUB_ENV
-          echo "LC_ALL=C" >> $GITHUB_ENV
-          echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
-          echo "MAKEFLAGS=--no-builtin-rules" >> $GITHUB_ENV
 
-      - name: Download sources (enterprise self-heal)
+      - name: Download sources
         working-directory: /mnt/openwrt
         run: |
-          make download -j$(nproc) && exit 0
-          find dl -type f -size 0 -delete || true
-          find dl -type f -name "*.tmp" -delete || true
-          make download -j$(nproc) && exit 0
-          rm -rf dl/*
           make download -j$(nproc)
 
-      - name: Build host tools (self-heal)
+      - name: Build tools
         working-directory: /mnt/openwrt
         run: |
-          make tools/install -j$(nproc) V=s || \
-          (make tools/clean && make tools/install -j$(nproc) V=s)
+          make tools/install -j$(nproc) V=s
 
-      - name: Build toolchain (self-heal)
+      - name: Build toolchain
         working-directory: /mnt/openwrt
         run: |
-          make toolchain/install -j$(nproc) V=s || \
-          (make toolchain/clean && make toolchain/install -j$(nproc) V=s)
-
-      - name: Build kernel prepare (self-heal)
-        working-directory: /mnt/openwrt
-        run: |
-          make target/linux/prepare -j$(nproc) V=s || \
-          (make target/linux/clean && make target/linux/prepare -j$(nproc) V=s)
-
-      - name: Build kernel (self-heal)
-        working-directory: /mnt/openwrt
-        run: |
-          make target/linux/compile -j$(nproc) V=s || \
-          (make target/linux/clean && make target/linux/compile -j$(nproc) V=s)
-
-      - name: Build packages (self-heal)
-        working-directory: /mnt/openwrt
-        run: |
-          make package/compile -j$(nproc) V=s || \
-          (make package/clean && make package/compile -j$(nproc) V=s)
-
-      - name: Detect three-piece consistency
-        run: |
-          test -f repo/sl3000/dts/${DTS_NAME}.dts || exit 1
-          test -f repo/sl3000/mk/filogic-sl3000.mk || exit 1
-          test -f repo/sl3000/config/sl3000.config || exit 1
+          make toolchain/install -j$(nproc) V=s
 
       - name: Apply DTS
         run: |
-          mkdir -p /mnt/openwrt/target/linux/mediatek/dts
           cp repo/sl3000/dts/${DTS_NAME}.dts /mnt/openwrt/target/linux/mediatek/dts/
 
       - name: Apply MK
@@ -172,39 +106,20 @@ jobs:
           sed -i "/TARGET_DEVICES += ${DEVICE_ID}/d" "$MK"
           cat repo/sl3000/mk/filogic-sl3000.mk >> "$MK"
 
-      - name: Apply device config (.config)
+      - name: Apply config
         working-directory: /mnt/openwrt
         run: |
           rm -f .config
           cp $GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config .config
           make defconfig
 
-      - name: Build image (self-heal)
+      - name: Build image
         working-directory: /mnt/openwrt
         run: |
-          make target/image/compile -j$(nproc) V=s || \
-          (make target/image/clean && make target/image/compile -j$(nproc) V=s)
-
-      - name: Validate firmware output
-        working-directory: /mnt/openwrt
-        run: |
-          ls -lh bin/targets/mediatek/*/*${DEVICE_ID}*sysupgrade.bin
+          make -j$(nproc) V=s
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-2410-firmware
+          name: sl3000-2410
           path: /mnt/openwrt/bin/targets/mediatek/*/*
-
-      - name: Auto Release firmware
-        uses: softprops/action-gh-release@v2
-        if: success()
-        with:
-          tag_name: sl3000-openwrt-2410-${{ github.run_number }}
-          name: SL3000 OpenWrt 24.10 Build #${{ github.run_number }}
-          body: |
-            OpenWrt 24.10 / SL3000 eMMC
-            Three-piece verified
-            Build: ${{ github.run_number }}
-          files: /mnt/openwrt/bin/targets/mediatek/*/*
-          prerelease: true
