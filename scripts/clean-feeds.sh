@@ -1,79 +1,42 @@
 #!/bin/bash
 set -e
 
-echo "=== clean-feeds.sh (SL3000 / 24.10 FINAL) ==="
+echo "=== clean-feeds.sh (SL3000 / 24.10 / Dependency Fixed) ==="
 
-# ---------------------------------------------------------
-# 关键：强制进入 OpenWrt 根目录
-# ---------------------------------------------------------
-cd /mnt/openwrt || {
-    echo "[FATAL] /mnt/openwrt 不存在，脚本无法继续"
-    exit 1
-}
+# 强制进入 OpenWrt 根目录
+cd /mnt/openwrt || { echo "[FATAL] Directory /mnt/openwrt not found"; exit 1; }
 
-echo "[1] 删除 24.10 所有卡死源头（主树 package/）"
+# [1] 清理源码树中导致冲突的旧包
+# 24.10 版本中，这些包在主树中往往与第三方 Feeds 冲突
+CONFLICT_PACKS="
+package/system/refpolicy 
+package/system/selinux-policy 
+package/utils/policycoreutils
+package/utils/pcat-manager 
+package/network/services/lldpd 
+package/boot/kexec-tools 
+package/emortal/default-settings
+"
 
-# SELinux / policy
-rm -rf package/system/refpolicy
-rm -rf package/system/selinux-policy
+# 同时也清理主树中可能导致版本冲突的旧库（稍后通过 feeds 补回）
+OLD_LIBS="package/libs/libpam package/libs/libtirpc package/libs/libnsl package/libs/xz"
 
-# 24.10 真正的 policycoreutils 路径
-rm -rf package/utils/policycoreutils
-
-# 缺失依赖链（libpam / libtirpc / libnsl / xz）
-rm -rf package/libs/libpam
-rm -rf package/libs/libtirpc
-rm -rf package/libs/libnsl
-rm -rf package/libs/xz
-
-# 依赖这些库的包
-rm -rf package/utils/pcat-manager
-rm -rf package/network/services/lldpd
-rm -rf package/boot/kexec-tools
-
-# 默认设置（依赖 luci-i18n-base-zh-cn）
-rm -rf package/emortal/default-settings
-
-echo "[2] 清空 feeds 包（只动 package/feeds）"
-
-FEEDS_ROOT="package/feeds"
-
-rm -rf "$FEEDS_ROOT"/packages/*
-rm -rf "$FEEDS_ROOT"/luci/*
-rm -rf "$FEEDS_ROOT"/small/*
-rm -rf "$FEEDS_ROOT"/helloworld/*
-
-mkdir -p "$FEEDS_ROOT"/packages
-mkdir -p "$FEEDS_ROOT"/packages/libs
-mkdir -p "$FEEDS_ROOT"/packages/lang
-mkdir -p "$FEEDS_ROOT"/luci
-mkdir -p "$FEEDS_ROOT"/small
-mkdir -p "$FEEDS_ROOT"/helloworld
-
-echo "[3] 保留 LuCI 白名单"
-
-for p in \
-  luci-base luci-compat luci-lua-runtime \
-  luci-lib-ip luci-lib-jsonc luci-theme-bootstrap
-do
-  cp -r feeds/luci/**/"$p" "$FEEDS_ROOT"/luci/ 2>/dev/null || true
+for p in $CONFLICT_PACKS $OLD_LIBS; do
+    rm -rf "$p"
 done
 
-echo "[4] 检查是否还有卡死包（必须为空）"
+# [2] 重置 feeds 链接（彻底杜绝残留软链接导致的扫描卡顿）
+FEEDS_ROOT="package/feeds"
+rm -rf "$FEEDS_ROOT"
+mkdir -p "$FEEDS_ROOT"/packages "$FEEDS_ROOT"/luci "$FEEDS_ROOT"/small "$FEEDS_ROOT"/helloworld
 
-LEFT=$(find package -maxdepth 3 -type d \
-  -name "policycoreutils" -o \
-  -name "libpam" -o \
-  -name "libtirpc" -o \
-  -name "libnsl" -o \
-  -name "kexec-tools" -o \
-  -name "lldpd" -o \
-  -name "pcat-manager")
+# [3] 修复“地基”：重新从 feeds 安装被清理的底层库
+# 这一步是解决 "libpam not exist" 警告、让 busybox 顺利通过编译的关键
+echo "[3] 修复核心系统依赖 (libpam/libtirpc/libev)..."
+./scripts/feeds install -p packages libpam libtirpc libev libnsl xz lm-sensors wsdd2 attr
 
-if [ -n "$LEFT" ]; then
-    echo "[FATAL] 以下卡死包仍然存在："
-    echo "$LEFT"
-    exit 1
-fi
+# [4] 恢复 LuCI 基础框架白名单
+echo "[4] 恢复 LuCI 基础组件..."
+./scripts/feeds install -p luci luci-base luci-compat luci-lua-runtime luci-lib-ip luci-lib-jsonc luci-theme-bootstrap
 
-echo "=== clean-feeds.sh 完成（24.10 卡死链已彻底清除）==="
+echo "=== clean-feeds.sh 执行完毕 ==="
