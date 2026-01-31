@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# Only run on first boot
+[ -e /etc/.rootfs_expanded ] && exit 0
+
+echo "[expand-rootfs] Starting rootfs_data expansion..."
+
+# Identify rootfs_data partition
+PART=$(grep -E "rootfs_data" /proc/mounts | awk '{print $1}' | sed 's/[0-9]*$//')
+
+if [ -z "$PART" ]; then
+    echo "[expand-rootfs] ERROR: rootfs_data partition not found"
+    exit 1
+fi
+
+# Expand partition to full disk
+echo "[expand-rootfs] Growing partition..."
+growpart "$PART" 1
+
+# Resize filesystem
+echo "[expand-rootfs] Resizing filesystem..."
+resize2fs "${PART}p1"
+
+touch /etc/.rootfs_expanded
+echo "[expand-rootfs] Done."
