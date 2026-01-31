@@ -8,7 +8,7 @@ permissions:
   packages: write
 
 env:
-  WORK_DIR: ${{ github.workspace }}/openwrt_src
+  WORK_DIR: ${{ github.workspace }}/../openwrt_src
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
   SOURCE_BRANCH: openwrt-24.10
@@ -180,20 +180,3 @@ jobs:
           body: |
             OpenWrt 24.10 / kernel 6.6
             Target: SL3000 (MT7981B eMMC)
-            Three-piece (DTS/MK/CONFIG) closed-loop
-            feeds.lock reproducible build
-            Build: ${{ github.run_number }}
-            Commit: ${{ github.sha }}
-          files: |
-            output/*
-            logs/*
-          prerelease: true
-
-      - name: Optimize disk space
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          echo "Cleaning build_dir, staging_dir, tmp to free disk space..."
-          find dl -type f -size +100M -delete || true
-          rm -rf build_dir/* staging_dir/* tmp/*
-          echo "Remaining firmware size:"
-          du -sh bin/targets || true
