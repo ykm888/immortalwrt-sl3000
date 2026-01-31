@@ -57,11 +57,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-openwrt-2410-ccache-
 
-      - name: Run clean-feeds.sh（v12 三件套自动闭环）
+      - name: Run clean-feeds.sh（三件套闭环）
         working-directory: ${{ env.WORK_DIR }}
         run: |
           chmod +x "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
           bash "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
+
+      - name: Copy custom files (拉起 99-expand-rootfs)
+        run: |
+          mkdir -p ${{ env.WORK_DIR }}/files
+          cp -r $GITHUB_WORKSPACE/repo/files/* ${{ env.WORK_DIR }}/files/
 
       - name: Disable menuconfig globally
         run: |
@@ -70,7 +75,7 @@ jobs:
           echo "LC_ALL=C" >> $GITHUB_ENV
           echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
 
-      # ===== 构建链（延续 v10 工程体系） =====
+      # ===== 构建链（延续 v10 工程体系，自愈分段） =====
 
       - name: Build host tools (self-heal)
         working-directory: ${{ env.WORK_DIR }}
@@ -96,11 +101,11 @@ jobs:
           make package/compile -j"$(nproc)" V=s || \
           (make package/clean && make package/compile -j"$(nproc)" V=s)
 
-      - name: Build image (self-heal)
+      - name: Build image (修复 target/image/compile)
         working-directory: ${{ env.WORK_DIR }}
         run: |
-          make target/image/compile -j"$(nproc)" V=s || \
-          (make target/image/clean && make target/image/compile -j"$(nproc)" V=s)
+          make -j"$(nproc)" V=s || \
+          (make clean && make -j"$(nproc)" V=s)
 
       - name: Validate firmware output
         working-directory: ${{ env.WORK_DIR }}
@@ -124,27 +129,3 @@ jobs:
           path: |
             output/*
             logs/*
-
-      - name: Auto Release firmware
-        uses: softprops/action-gh-release@v2
-        if: success()
-        with:
-          tag_name: sl3000-openwrt-2410-${{ github.run_number }}
-          name: SL3000 OpenWrt 24.10 Build #${{ github.run_number }}
-          body: |
-            OpenWrt 24.10 / kernel 6.6
-            Target: SL3000 (MT7981B eMMC)
-            三件套自动闭环（clean-feeds.sh v12）
-            feeds.lock 可复现构建
-            Build: ${{ github.run_number }}
-            Commit: ${{ github.sha }}
-          files: |
-            output/*
-            logs/*
-
-      - name: Optimize disk space
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          find dl -type f -size +100M -delete || true
-          rm -rf build_dir/* staging_dir/* tmp/*
-          du -sh bin/targets || true
