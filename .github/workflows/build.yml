@@ -1,94 +1,123 @@
-name: Enterprise_SL3000_MT7981B_Production
+name: Enterprise_SL3000_Decoupled_v4
 
 on:
   workflow_dispatch:
 
 env:
-  # 修复 WORK_DIR 稳定性：使用当前工作区
-  WORK_DIR: openwrt_src
+  WORK_DIR: ${{ github.workspace }}/openwrt_src
   CCACHE_DIR: ${{ github.workspace }}/.ccache
+  SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
+  SOURCE_BRANCH: openwrt-24.10
 
 jobs:
-  Build:
+  # --- 阶段一：Tools ---
+  Build_Tools:
     runs-on: ubuntu-22.04
     steps:
-      - name: 🛡️ 检出工程仓库
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           path: repo
 
-      - name: 🧹 磁盘空间深度优化
+      - name: Cleanup
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo docker image prune -a -f
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/node_modules
           mkdir -p ${{ env.WORK_DIR }}
-          df -h
 
-      - name: 🛠️ 准备构建环境
+      - name: Tools Cache
+        id: tools-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.WORK_DIR }}/staging_dir/host
+          key: ${{ runner.os }}-tools-${{ env.SOURCE_BRANCH }}-${{ hashFiles('repo/feeds.conf.default') }}
+
+      - name: Build Tools
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ env.WORK_DIR }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential ccache python3 libncurses5-dev gawk gettext libssl-dev
-          echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
-          echo "CCACHE_MAXSIZE=5G" >> $GITHUB_ENV
+          git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} .
+          [ -f $GITHUB_WORKSPACE/repo/feeds.conf.default ] && cp $GITHUB_WORKSPACE/repo/feeds.conf.default .
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          make tools/install -j$(nproc)
 
-      - name: 💾 智能缓存 (Key 修复)
+  # --- 阶段二：Toolchain ---
+  Build_Toolchain:
+    needs: Build_Tools
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Toolchain Cache
         uses: actions/cache@v4
         with:
           path: |
-            ${{ env.CCACHE_DIR }}
+            ${{ env.WORK_DIR }}/staging_dir/host
+            ${{ env.WORK_DIR }}/staging_dir/toolchain-*
+          key: ${{ runner.os }}-toolchain-${{ hashFiles('repo/sl3000/sl3000.config', 'repo/feeds.conf.default') }}
+
+      - name: Build Toolchain
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          [ -d .git ] || git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} .
+          [ -f $GITHUB_WORKSPACE/repo/feeds.conf.default ] && cp $GITHUB_WORKSPACE/repo/feeds.conf.default .
+          bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
+          cp $GITHUB_WORKSPACE/repo/sl3000.config .config
+          make defconfig
+          make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
+
+  # --- 阶段三：Target ---
+  Build_Target:
+    needs: Build_Toolchain
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Restore Build Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.WORK_DIR }}/staging_dir
             ${{ env.WORK_DIR }}/dl
-          # 基于脚本 Hash 和 Config，确保缓存只在依赖变动时失效
-          key: ${{ runner.os }}-openwrt-v1-${{ hashFiles('repo/**/clean-feeds.sh', 'repo/**/*.config') }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-v1-
+            ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-target-${{ hashFiles('repo/sl3000/sl3000.config', 'repo/feeds.conf.default') }}
 
-      - name: 📥 克隆源码 (24.10)
-        run: git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git ${{ env.WORK_DIR }}
-
-      - name: 🚀 运行全链路自愈脚本
+      - name: Build Target
         working-directory: ${{ env.WORK_DIR }}
         run: |
-          # 动态寻找并执行脚本
-          SCRIPT=$(find $GITHUB_WORKSPACE/repo -name "clean-feeds.sh" | head -n 1)
-          chmod +x "$SCRIPT"
-          bash "$SCRIPT"
+          [ -d .git ] || git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} .
+          [ -f $GITHUB_WORKSPACE/repo/feeds.conf.default ] && cp $GITHUB_WORKSPACE/repo/feeds.conf.default .
+          export CCACHE_DIR=${{ env.CCACHE_DIR }}
+          export CC="ccache gcc"
+          export CXX="ccache g++"
 
-      - name: 🧩 注入配置与环境自愈
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          CONF=$(find $GITHUB_WORKSPACE/repo -name "sl3000.config" | head -n 1)
-          [ -f "$CONF" ] && cp "$CONF" .config
-          
-          # 强制锁定 24.10 兼容项
-          echo "CONFIG_PACKAGE_libcrypt-compat=y" >> .config
+          bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
+          cp $GITHUB_WORKSPACE/repo/sl3000.config .config
           make defconfig
 
-      - name: 📥 下载源码 (失败降级自愈)
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          make download -j$(nproc) || (make download -j1 V=s && exit 1)
+          make download -j$(nproc) || make download -j1 V=s
+          find dl -type f -size 0 -delete
 
-      - name: 🚀 核心编译 (自愈体系)
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          ccache -z
+          ccache -z || true
           make -j$(nproc) || make -j1 V=s
-          ccache -s
+          ccache -s || true
 
-      - name: 📊 收集元数据与日志
-        if: always()
+      - name: Collect Artifacts
         run: |
-          mkdir -p output/logs
-          cp ${{ env.WORK_DIR }}/.config output/config.buildinfo || true
-          find ${{ env.WORK_DIR }}/bin/targets/mediatek/filogic/ -name "*.bin" -exec cp {} output/ \;
-          find ${{ env.WORK_DIR }}/bin/targets/mediatek/filogic/ -name "*.manifest" -exec cp {} output/ \;
+          mkdir -p output logs
+          cp ${{ env.WORK_DIR }}/bin/targets/mediatek/filogic/*sl* output/ || true
+          cp ${{ env.WORK_DIR }}/bin/targets/mediatek/filogic/*.manifest output/ || true
+          cp ${{ env.WORK_DIR }}/bin/targets/mediatek/filogic/sha256sums logs/ || true
+          cp ${{ env.WORK_DIR }}/feeds.lock logs/ || true
+          cp ${{ env.WORK_DIR }}/.config logs/config.buildinfo || true
 
-      - name: 📦 自动化固件发布
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tag_name: SL3000_Release_${{ github.run_number }}
+          tag_name: SL3000_Decoupled_v${{ github.run_number }}
           files: |
-            output/*.bin
-            output/*.manifest
-            output/config.buildinfo
+            output/*
+            logs/*
