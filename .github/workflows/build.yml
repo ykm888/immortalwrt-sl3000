@@ -1,21 +1,12 @@
-name: build-sl3000-2410
+name: build-sl3000-2410-fixed
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
-  packages: write
-
 jobs:
-  build-sl3000-2410:
+  build:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
-
-    env:
-      DEVICE_ID: sl_3000-emmc
-      TARGET_PROFILE: mediatek_mt7981
-      DTS_NAME: mt7981b-sl3000-emmc
 
     steps:
       - name: Checkout repo
@@ -23,172 +14,71 @@ jobs:
         with:
           path: repo
 
-      - name: 预清理磁盘空间（构建之前）
+      - name: 磁盘环境初始化
         run: |
           sudo mkdir -p /mnt/openwrt
           sudo chown -R $USER:$USER /mnt
           rm -rf /mnt/openwrt/* || true
 
-      - name: 安装构建依赖项 + ccache
+      - name: 安装依赖与 ccache
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential ccache python3
+          sudo apt-get install -y build-essential ccache python3 libncurses5-dev gawk gettext libssl-dev
           echo "CCACHE_DIR=/mnt/openwrt/.ccache" >> $GITHUB_ENV
           echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
           echo "CCACHE_MAXSIZE=2G" >> $GITHUB_ENV
 
-      - name: 缓存 ccache
-        uses: actions/cache@v4
-        with:
-          path: /mnt/openwrt/.ccache
-          key: ${{ runner.os }}-2410-ccache-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-2410-ccache-
-
-      - name: 缓存下载
-        uses: actions/cache@v4
-        with:
-          path: /mnt/openwrt/dl
-          key: ${{ runner.os }}-2410-dl-${{ hashFiles('repo/sl3000/config/sl3000.config') }}
-          restore-keys: |
-            ${{ runner.os }}-2410-dl-
-
-      - name: 缓存工具链和主机
-        uses: actions/cache@v4
-        with:
-          path: |
-            /mnt/openwrt/staging_dir/toolchain
-            /mnt/openwrt/staging_dir/host
-          key: ${{ runner.os }}-2410-toolchain-${{ hashFiles('repo/sl3000/config/sl3000.config') }}
-          restore-keys: |
-            ${{ runner.os }}-2410-toolchain-
-
-      - name: 克隆 ImmortalWrt 24.10
+      - name: 克隆源码 (ImmortalWrt 24.10)
         run: git clone --depth=1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.git /mnt/openwrt
 
-      - name: 清理信息流配置
+      - name: 配置 Feeds 源 (更新索引)
         working-directory: /mnt/openwrt
         run: |
           rm -f feeds.conf feeds.conf.default
-
-      - name: 更新信息流
-        working-directory: /mnt/openwrt
-        run: |
           echo 'src-git packages https://github.com/openwrt/packages.git' > feeds.conf.default
           echo 'src-git luci https://github.com/openwrt/luci.git' >> feeds.conf.default
           echo 'src-git helloworld https://github.com/fw876/helloworld.git' >> feeds.conf.default
           echo 'src-git small https://github.com/kenzok8/small.git' >> feeds.conf.default
           ./scripts/feeds update -a
-          ./scripts/feeds install -a
 
-      - name: Strip系统级包（24.10专用）
-        working-directory: /mnt/openwrt
-        run: |
-          rm -rf package/system/refpolicy
-          rm -rf package/system/selinux-policy
-          rm -rf package/system/policycoreutils
-          rm -rf package/utils/pcat-manager
-          rm -rf package/network/services/lldpd
-          rm -rf package/libs/libpam
-          rm -rf package/libs/libtirpc
-          rm -rf package/libs/libnsl
-          rm -rf package/utils/kexec-tools
-          rm -rf package/libs/xz
-          rm -rf package/emortal/default-settings 2>/dev/null || true
-
-      - name: 运行 clean-feeds.sh（白名单模式）
+      - name: 运行清理逻辑与依赖补全
         working-directory: /mnt/openwrt
         run: |
           chmod +x $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
           bash $GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh
 
-      - name: 全局禁用 menuconfig
-        run: |
-          echo "KCONFIG_NONINTERACTIVE=1" >> $GITHUB_ENV
-          echo "TERM=dumb" >> $GITHUB_ENV
-          echo "LC_ALL=C" >> $GITHUB_ENV
-
-      - name: 下载源代码（企业自愈）
+      - name: 应用三件套 (DTS/MK/Config)
         working-directory: /mnt/openwrt
         run: |
-          make download -j$(nproc) || true
-          find dl -type f -size 0 -delete || true
-          find dl -type f -name "*.tmp" -delete || true
-          make download -j$(nproc) || true
-          find dl -type f -size 0 -delete || true
-          make download -j$(nproc)
-
-      - name: 构建主机工具（自愈）
-        working-directory: /mnt/openwrt
-        run: |
-          make tools/install -j$(nproc) V=s || (make tools/clean && make tools/install -j$(nproc) V=s)
-
-      - name: 构建工具链（自愈）
-        working-directory: /mnt/openwrt
-        run: |
-          make toolchain/install -j$(nproc) V=s || (make toolchain/clean && make toolchain/install -j$(nproc) V=s)
-
-      - name: 构建内核准备（自愈）
-        working-directory: /mnt/openwrt
-        run: |
-          make target/linux/prepare -j$(nproc) V=s || (make target/linux/clean && make target/linux/prepare -j$(nproc) V=s)
-
-      - name: 构建内核（自愈）
-        working-directory: /mnt/openwrt
-        run: |
-          make target/linux/compile -j$(nproc) V=s || (make target/linux/clean && make target/linux/compile -j$(nproc) V=s)
-
-      - name: 构建软件包（自愈）
-        working-directory: /mnt/openwrt
-        run: |
-          make package/compile -j$(nproc) V=s || (make package/clean && make package/compile -j$(nproc) V=s)
-
-      - name: 检测三件套一致性
-        working-directory: $GITHUB_WORKSPACE
-        run: |
-          test -f repo/sl3000/dts/${DTS_NAME}.dts
-          test -f repo/sl3000/mk/filogic-sl3000.mk
-          test -f repo/sl3000/config/sl3000.config
-
-      - name: 应用 DTS
-        run: |
-          mkdir -p /mnt/openwrt/target/linux/mediatek/dts
-          cp repo/sl3000/dts/${DTS_NAME}.dts /mnt/openwrt/target/linux/mediatek/dts/
-
-      - name: 应用 MK
-        run: |
-          MK=/mnt/openwrt/target/linux/mediatek/image/filogic.mk
-          sed -i "/Device\/${DEVICE_ID}/,/endef/d" "$MK"
-          sed -i "/TARGET_DEVICES += ${DEVICE_ID}/d" "$MK"
-          cat repo/sl3000/mk/filogic-sl3000.mk >> "$MK"
-
-      - name: 应用 config
-        working-directory: /mnt/openwrt
-        run: |
-          rm -f .config
+          # 1. 应用 DTS
+          mkdir -p target/linux/mediatek/dts
+          cp $GITHUB_WORKSPACE/repo/sl3000/dts/mt7981b-sl3000-emmc.dts target/linux/mediatek/dts/
+          
+          # 2. 应用 MK (自愈式追加)
+          MK_FILE="target/linux/mediatek/image/filogic.mk"
+          if ! grep -q "sl_3000-emmc" "$MK_FILE"; then
+            cat $GITHUB_WORKSPACE/repo/sl3000/mk/filogic-sl3000.mk >> "$MK_FILE"
+          fi
+          
+          # 3. 应用 Config 并生成最终配置
           cp $GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config .config
           make defconfig
 
-      - name: 构建镜像（自愈）
+      - name: 下载源码 (自愈下载)
         working-directory: /mnt/openwrt
         run: |
-          make target/image/compile -j$(nproc) V=s || (make target/image/clean && make target/image/compile -j$(nproc) V=s)
+          make download -j$(nproc) || make download -j1 V=s
+          find dl -type f -size 0 -delete
+
+      - name: 核心构建 (自愈体系)
+        working-directory: /mnt/openwrt
+        run: |
+          # 采用合并构建，系统会自动处理 tools -> toolchain -> target
+          # 多线程失败时自动切换单线程输出错误日志
+          make -j$(nproc) || make -j1 V=s
 
       - name: 上传固件
         uses: actions/upload-artifact@v4
         with:
-          name: sl3000-2410
-          path: /mnt/openwrt/bin/targets/mediatek/*/*
-
-      - name: 自动发布固件（Auto Release）
-        uses: softprops/action-gh-release@v2
-        if: success()
-        with:
-          tag_name: sl3000-emmc-openwrt-24.10-${{ github.run_number }}-${{ github.run_id }}
-          name: SL3000 eMMC OpenWrt 24.10 #${{ github.run_number }}
-          body: |
-            OpenWrt 24.10 / kernel 6.6
-            Target: SL3000 (MT7981B eMMC)
-            Auto three-piece (DTS/MK/CONFIG)
-          files: /mnt/openwrt/bin/targets/mediatek/filogic/*
-          prerelease: true
+          name: sl3000-2410-firmware
+          path: /mnt/openwrt/bin/targets/mediatek/filogic/*.bin
