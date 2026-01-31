@@ -71,7 +71,7 @@ jobs:
         working-directory: ${{ env.WORK_DIR }}
         run: |
           echo ">>> Applying DTS/MK/CONFIG..."
-          cp -v "$GITHUB_WORKSPACE/repo/sl3000/dts/mt7981b-sl-3000-emmc.dts" target/linux/mediatek/dts/
+          cp -v "$GITHUB_WORKSPACE/repo/sl3000/dts/mt7981b-sl3000-emmc.dts" target/linux/mediatek/dts/
           cp -v "$GITHUB_WORKSPACE/repo/sl3000/mk/filogic-sl3000.mk" target/linux/mediatek/image/
           cp -v "$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config" .config
           make defconfig
