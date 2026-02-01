@@ -74,7 +74,7 @@ jobs:
           cp -v "$GITHUB_WORKSPACE/repo/sl3000/dts/mt7981b-sl3000-emmc.dts" target/linux/mediatek/dts/
           cp -v "$GITHUB_WORKSPACE/repo/sl3000/mk/filogic-sl3000.mk" target/linux/mediatek/image/
           cp -v "$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config" .config
-          make defconfig   # ✅ 保留一次即可
+          make defconfig
 
       - name: Verify CONFIG loaded
         working-directory: ${{ env.WORK_DIR }}
@@ -149,22 +149,20 @@ jobs:
         working-directory: ${{ env.WORK_DIR }}
         run: |
           echo ">>> Listing firmware outputs..."
-          ls -lh bin/targets/mediatek/filogic/ || true
+          find bin/targets/mediatek/filogic/ -type f -maxdepth 1 -ls || true
 
       - name: Validate firmware output
         working-directory: ${{ env.WORK_DIR }}
         run: |
           echo ">>> Checking final firmware..."
-          ls -lh bin/targets/mediatek/filogic/*sysupgrade*.bin bin/targets/mediatek/filogic/*factory*.bin || \
-          (echo "未生成 sysupgrade/factory 固件"; exit 1)
+          ls -lh bin/targets/mediatek/filogic/*.bin || (echo "未生成固件"; exit 1)
 
       - name: Collect logs and metadata
         working-directory: ${{ env.WORK_DIR }}
         run: |
           mkdir -p "$GITHUB_WORKSPACE/output" "$GITHUB_WORKSPACE/logs"
-          cp bin/targets/mediatek/filogic/*sysupgrade* "$GITHUB_WORKSPACE/output/" || true
-          cp bin/targets/mediatek/filogic/*factory* "$GITHUB_WORKSPACE/output/" || true
-          cp bin/targets/mediatek/filogic/*.manifest "$GITHUB_WORKSPACE/output/" || true   # 修复 fillogic → filogic
+          cp bin/targets/mediatek/filogic/*.bin "$GITHUB_WORKSPACE/output/" || true
+          cp bin/targets/mediatek/filogic/*.manifest "$GITHUB_WORKSPACE/output/" || true
           cp bin/targets/mediatek/filogic/sha256sums "$GITHUB_WORKSPACE/logs/" || true
           [ -f feeds.lock ] && cp feeds.lock "$GITHUB_WORKSPACE/logs/" || true
           [ -f .config ] && cp .config "$GITHUB_WORKSPACE/logs/config.buildinfo" || true
