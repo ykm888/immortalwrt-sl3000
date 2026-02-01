@@ -15,13 +15,11 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      # 1. Checkout 仓库（你的 clean-feeds.sh 在这里）
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           path: repo
 
-      # 2. 安装构建依赖项 + ccache
       - name: 安装构建依赖项 + ccache
         run: |
           sudo apt-get update
@@ -30,7 +28,6 @@ jobs:
             python3 python3-pip python3-setuptools python3-wheel \
             libssl-dev libffi-dev ccache
 
-      # 3. 缓存 ccache
       - name: 缓存 ccache
         uses: actions/cache@v4
         with:
@@ -38,56 +35,37 @@ jobs:
           key: sl3000-2410-ccache-${{ github.sha }}
           restore-keys: sl3000-2410-ccache-
 
-      # 4. 清理信息流配置
       - name: 清理信息流配置
         run: |
           rm -rf "${{ env.WORKDIR }}"
           mkdir -p "${{ env.WORKDIR }}"
 
-      # 5. 克隆 OpenWrt 源码
-      - name: 更新信息流
+      - name: 克隆 OpenWrt 源码
         run: |
           git clone --depth=1 -b "${{ env.SOURCE_BRANCH }}" \
             "${{ env.SOURCE_REPO }}" "${{ env.WORKDIR }}"
 
-      # 6. 注入三件套（确保第一次 clean-feeds.sh 能通过检测）
       - name: 注入三件套（DTS / MK / CONFIG）
         run: |
           cd "$WORKDIR"
-
-          # DTS
           mkdir -p target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" \
              target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
-
-          # MK
           mkdir -p target/linux/mediatek/image
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
              target/linux/mediatek/image/
-
-          # CONFIG
           mkdir -p sl3000/config
           cp "$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config" \
              sl3000/config/
 
-      # 7. 确保 feeds.conf 存在（避免 feeds 报错）
-      - name: 确保 feeds.conf 存在
+      - name: 确保 feeds.conf 存在（ImmortalWrt 官方 feed）
         run: |
           cd "$WORKDIR"
-          if [ ! -f feeds.conf ]; then
-            if [ -f feeds.conf.default ]; then
-              cp feeds.conf.default feeds.conf
-            elif [ -f "$GITHUB_WORKSPACE/repo/feeds.conf" ]; then
-              cp "$GITHUB_WORKSPACE/repo/feeds.conf" feeds.conf
-            else
-              echo "src-git packages https://github.com/openwrt/packages.git" > feeds.conf
-              echo "src-git luci https://github.com/openwrt/luci.git" >> feeds.conf
-              echo "src-git routing https://github.com/openwrt-routing/packages.git" >> feeds.conf
-              echo "src-git telephony https://github.com/openwrt/telephony.git" >> feeds.conf
-            fi
-          fi
+          echo "src-git packages https://github.com/immortalwrt/packages.git" > feeds.conf
+          echo "src-git luci https://github.com/immortalwrt/luci.git" >> feeds.conf
+          echo "src-git routing https://github.com/immortalwrt/routing.git" >> feeds.conf
+          echo "src-git telephony https://github.com/immortalwrt/telephony.git" >> feeds.conf
 
-      # 8. 运行 clean-feeds.sh（白名单 + 三件套检测修复注册）
       - name: 运行 clean-feeds.sh（白名单）
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -95,65 +73,61 @@ jobs:
           chmod +x "$WORKDIR/clean-feeds.sh"
           ./clean-feeds.sh
 
-      # 9. 全局禁用 menuconfig
+      # 🔥🔥🔥 关键修复：生成完整 .config，避免 menuconfig
+      - name: 生成完整 defconfig（避免 menuconfig）
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make defconfig
+
       - name: 全局禁用 menuconfig
         working-directory: ${{ env.WORKDIR }}
         run: |
           echo "# CONFIG_DEVEL is not set" >> .config
           echo "# CONFIG_BUILD_MENUCONFIG is not set" >> .config
 
-      # 10. 下载源文件（自愈）
       - name: 下载源文件（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
           make download -j$(nproc) V=s || make download -j1 V=s
 
-      # 11. 构建主机工具（自愈）
       - name: 构建主机工具（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
           make tools/install -j$(nproc) V=s || make tools/install -j1 V=s
 
-      # 12. 构建工具链（自愈）
       - name: 构建工具链（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
           make toolchain/install -j$(nproc) V=s || make toolchain/install -j1 V=s
 
-      # 13. 再次执行三件套检测（确保一致性）
       - name: 再次执行 clean-feeds.sh（三件套一致性）
         working-directory: ${{ env.WORKDIR }}
         run: |
           ./clean-feeds.sh
 
-      # 14. 自动修复三段式命名
       - name: 自动修复三段式命名
         working-directory: ${{ env.WORKDIR }}
         run: |
           sed -i 's/DEVICE_DTS := .*/DEVICE_DTS := mt7981b-sl3000-emmc/' \
             target/linux/mediatek/image/filogic.mk
 
-      # 15. 应用 DTS
       - name: 应用 DTS
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" \
              target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
 
-      # 16. 应用 MK
       - name: 应用 MK
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
              target/linux/mediatek/image/
 
-      # 17. 构建内核（自愈）
       - name: 构建内核（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
           make target/linux/compile -j$(nproc) V=s || make target/linux/compile -j1 V=s
 
-      # 18. 构建软件包（自愈）
       - name: 构建软件包（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
