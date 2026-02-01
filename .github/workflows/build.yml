@@ -20,7 +20,7 @@ jobs:
         with:
           path: repo
 
-      - name: 安装构建依赖项 + ccache
+      - name: Install build dependencies + ccache
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -28,24 +28,24 @@ jobs:
             python3 python3-pip python3-setuptools python3-wheel \
             libssl-dev libffi-dev ccache
 
-      - name: 缓存 ccache
+      - name: Cache ccache
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
           key: sl3000-2410-ccache-${{ github.sha }}
           restore-keys: sl3000-2410-ccache-
 
-      - name: 清理工作目录
+      - name: Prepare workspace
         run: |
           rm -rf "${{ env.WORKDIR }}"
           mkdir -p "${{ env.WORKDIR }}"
 
-      - name: 克隆 ImmortalWrt 源码
+      - name: Clone ImmortalWrt source
         run: |
           git clone --depth=1 -b "${{ env.SOURCE_BRANCH }}" \
             "${{ env.SOURCE_REPO }}" "${{ env.WORKDIR }}"
 
-      - name: 注入三件套（DTS / MK / CONFIG）
+      - name: Inject three-piece set (DTS / MK / CONFIG)
         run: |
           cd "$WORKDIR"
 
@@ -61,7 +61,7 @@ jobs:
           cp "$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config" \
              sl3000/config/
 
-      - name: feeds.conf 兜底（无 EOF）
+      - name: Ensure feeds.conf exists (no heredoc)
         working-directory: ${{ env.WORKDIR }}
         run: |
           if [ -f feeds.conf.default ] && [ ! -f feeds.conf ]; then
@@ -74,7 +74,7 @@ jobs:
             echo "src-git routing https://github.com/immortalwrt/routing.git" >> feeds.conf
           fi
 
-      - name: 运行 clean-feeds.sh（白名单 + 显示 12 道检测）
+      - name: Run clean-feeds.sh (12 checks visible)
         working-directory: ${{ env.WORKDIR }}
         run: |
           echo "================ CLEAN-FEEDS START ================"
@@ -85,82 +85,160 @@ jobs:
           set +x
           echo "================ CLEAN-FEEDS END =================="
 
-      - name: 生成基础 defconfig（避免 menuconfig）
+      - name: Generate base defconfig
         working-directory: ${{ env.WORKDIR }}
         run: |
           make defconfig
 
-      - name: 叠加 sl3000.config（无 EOF）
+      - name: Apply sl3000.config
         working-directory: ${{ env.WORKDIR }}
         run: |
           cat sl3000/config/sl3000.config >> .config
           make defconfig
 
-      - name: 全局禁用 menuconfig
+      - name: Ensure profile config enabled (auto-fix)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          echo "=== Ensuring target/profile config ==="
+          grep -q '^CONFIG_TARGET_mediatek=y' .config || echo 'CONFIG_TARGET_mediatek=y' >> .config
+          grep -q '^CONFIG_TARGET_mediatek_filogic=y' .config || echo 'CONFIG_TARGET_mediatek_filogic=y' >> .config
+          grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y' .config || echo 'CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y' >> .config
+
+      - name: Disable menuconfig
         working-directory: ${{ env.WORKDIR }}
         run: |
           echo "# CONFIG_DEVEL is not set" >> .config
           echo "# CONFIG_BUILD_MENUCONFIG is not set" >> .config
 
-      - name: 下载源文件（自愈）
+      - name: Download sources
         working-directory: ${{ env.WORKDIR }}
         run: |
           make download -j$(nproc) V=s || make download -j1 V=s
 
-      - name: 构建主机工具（自愈）
+      - name: Build host tools
         working-directory: ${{ env.WORKDIR }}
         run: |
           make tools/install -j$(nproc) V=s || make tools/install -j1 V=s
 
-      - name: 构建工具链（自愈）
+      - name: Build toolchain
         working-directory: ${{ env.WORKDIR }}
         run: |
           make toolchain/install -j$(nproc) V=s || make toolchain/install -j1 V=s
 
-      - name: 再次执行 clean-feeds.sh（三件套一致性）
+      - name: Run clean-feeds.sh again (consistency)
         working-directory: ${{ env.WORKDIR }}
         run: |
           ./clean-feeds.sh
 
-      - name: 自动修复三段式命名
+      - name: Ensure MK profile block (auto-fix)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          echo "=== Ensuring MK profile block for sl3000-emmc ==="
+          if ! grep -q 'Device/sl3000-emmc' target/linux/mediatek/image/filogic.mk; then
+            echo '' >> target/linux/mediatek/image/filogic.mk
+            echo 'define Device/sl3000-emmc' >> target/linux/mediatek/image/filogic.mk
+            echo '  DEVICE_VENDOR := SL' >> target/linux/mediatek/image/filogic.mk
+            echo '  DEVICE_MODEL := SL3000' >> target/linux/mediatek/image/filogic.mk
+            echo '  DEVICE_VARIANT := eMMC' >> target/linux/mediatek/image/filogic.mk
+            echo '  DEVICE_DTS := mt7981b-sl3000-emmc' >> target/linux/mediatek/image/filogic.mk
+            echo '  DEVICE_DTS_DIR := mediatek' >> target/linux/mediatek/image/filogic.mk
+            echo '  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware' >> target/linux/mediatek/image/filogic.mk
+            echo '  IMAGES := sysupgrade.bin factory.bin' >> target/linux/mediatek/image/filogic.mk
+            echo '  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata' >> target/linux/mediatek/image/filogic.mk
+            echo '  IMAGE/factory.bin := append-rootfs | pad-rootfs | append-metadata' >> target/linux/mediatek/image/filogic.mk
+            echo 'endef' >> target/linux/mediatek/image/filogic.mk
+            echo 'TARGET_DEVICES += sl3000-emmc' >> target/linux/mediatek/image/filogic.mk
+          fi
+
+      - name: Fix DEVICE_DTS naming
         working-directory: ${{ env.WORKDIR }}
         run: |
           sed -i 's/DEVICE_DTS := .*/DEVICE_DTS := mt7981b-sl3000-emmc/' \
             target/linux/mediatek/image/filogic.mk
 
-      - name: 应用 DTS（最终覆盖）
+      - name: Apply DTS (final)
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" \
              target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
 
-      - name: 应用 MK（最终覆盖）
+      - name: Ensure DTS include (auto-fix)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          echo "=== Ensuring DTS file exists ==="
+          ls target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts || exit 1
+
+      - name: Apply MK (final)
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
              target/linux/mediatek/image/
 
-      - name: 构建内核（自愈）
+      - name: Build kernel
         working-directory: ${{ env.WORKDIR }}
         run: |
           make target/linux/compile -j$(nproc) V=s || make target/linux/compile -j1 V=s
 
-      - name: 构建软件包（自愈）
+      - name: Build packages
         working-directory: ${{ env.WORKDIR }}
         run: |
           make package/compile -j$(nproc) V=s || make package/compile -j1 V=s
 
-      - name: 自动发布固件（无 EOF）
-        if: success()
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: sl3000-emmc-openwrt-24.10-${{ github.run_number }}-${{ github.run_id }}
-          name: SL3000 eMMC OpenWrt 24.10 #${{ github.run_number }}
-          body: |
-            Auto Release  
-            Target: SL3000 eMMC  
-            Build: ${{ github.run_number }}  
-            Run ID: ${{ github.run_id }}
+      - name: Build firmware (target/install)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make target/install -j$(nproc) V=s || make target/install -j1 V=s
 
-          files: |
-            ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*
+      - name: Install packages (package/install)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make package/install -j$(nproc) V=s || make package/install -j1 V=s
+
+      - name: Final firmware packaging (make install)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make install -j$(nproc) V=s || make install -j1 V=s
+
+      # ============================
+      # Firmware Diagnostics Section
+      # ============================
+
+      - name: Verify target/profile selection
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          echo "=== Checking .config target/profile ==="
+          grep CONFIG_TARGET_mediatek=y .config || echo "Missing CONFIG_TARGET_mediatek"
+          grep CONFIG_TARGET_mediatek_filogic=y .config || echo "Missing CONFIG_TARGET_mediatek_filogic"
+          grep CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y .config || echo "Missing sl3000-emmc profile"
+
+      - name: Verify MK profile registration
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          echo "=== Checking filogic.mk profile ==="
+          grep "Device/sl3000-emmc" target/linux/mediatek/image/filogic.mk || echo "Profile sl3000-emmc not found in filogic.mk"
+
+      - name: Verify DTS presence
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          echo "=== Checking DTS file ==="
+          ls target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts || echo "DTS missing"
+
+      - name: List firmware directory
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          echo "=== Listing firmware directory ==="
+          ls -l bin/targets/mediatek/filogic || echo "Firmware directory not found"
+
+      - name: Firmware existence check
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          echo "=== Checking for firmware files ==="
+          FILE_COUNT=$(ls bin/targets/mediatek/filogic/*.bin 2>/dev/null | wc -l)
+          if [ "$FILE_COUNT" -eq 0 ]; then
+            echo "NO FIRMWARE FILES FOUND"
+            echo "=== Diagnostic Summary ==="
+            echo "1. Target enabled:"
+            grep CONFIG_TARGET_mediatek=y .config || echo "Missing"
+            grep CONFIG_TARGET_mediatek_filogic=y .config || echo "Missing"
+            echo "2. Profile enabled:"
+            grep CONFIG_TARGET
