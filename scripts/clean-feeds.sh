@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo ">>> [自愈体系] clean-feeds.sh v27-sl3000-final 启动"
+echo ">>> [自愈体系] clean-feeds.sh v28-sl3000-final 启动"
 
 # --- 0. 路径校验 ---
 if [ ! -f "scripts/feeds" ]; then
@@ -50,13 +50,15 @@ fi
   || true
 
 # --- 4. 三件套注册 ---
-REPODIR="$GITHUB_WORKSPACE/repo"
 DTSFILE="target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts"
 MKFILE="target/linux/mediatek/image/filogic.mk"
-CONFFILE="$REPODIR/sl3000/config/sl3000.config"
+CONFFILE="$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config"
 
 if [ ! -f "$DTSFILE" ] || [ ! -f "$MKFILE" ] || [ ! -f "$CONFFILE" ]; then
     echo "[ERROR] 三件套缺失"
+    ls -lh target/linux/mediatek/dts/ || true
+    ls -lh target/linux/mediatek/image/ || true
+    ls -lh $GITHUB_WORKSPACE/repo/sl3000/config/ || true
     exit 1
 fi
 
@@ -78,4 +80,4 @@ grep "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" .config \
   && echo ">>> sl3000-emmc 已激活" \
   || { echo "[ERROR] sl3000-emmc 未激活"; exit 1; }
 
-echo "=== clean-feeds.sh v27-sl3000-final 完成（可复现 + 三件套闭环，MK/DTS 已固定路径） ==="
+echo "=== clean-feeds.sh v28-sl3000-final 完成（可复现 + 三件套闭环，MK/DTS 已固定路径） ==="
