@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      # 1. Checkout 仓库（你的脚本 clean-feeds.sh 在这里）
+      # 1. Checkout 仓库（你的 clean-feeds.sh 在这里）
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
@@ -50,73 +50,110 @@ jobs:
           git clone --depth=1 -b "${{ env.SOURCE_BRANCH }}" \
             "${{ env.SOURCE_REPO }}" "${{ env.WORKDIR }}"
 
-      # 6. 运行 clean-feeds.sh（白名单 + 三件套检测修复注册）
+      # 6. 注入三件套（确保第一次 clean-feeds.sh 能通过检测）
+      - name: 注入三件套（DTS / MK / CONFIG）
+        run: |
+          cd "$WORKDIR"
+
+          # DTS
+          mkdir -p target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek
+          cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" \
+             target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
+
+          # MK
+          mkdir -p target/linux/mediatek/image
+          cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
+             target/linux/mediatek/image/
+
+          # CONFIG
+          mkdir -p sl3000/config
+          cp "$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config" \
+             sl3000/config/
+
+      # 7. 确保 feeds.conf 存在（避免 feeds 报错）
+      - name: 确保 feeds.conf 存在
+        run: |
+          cd "$WORKDIR"
+          if [ ! -f feeds.conf ]; then
+            if [ -f feeds.conf.default ]; then
+              cp feeds.conf.default feeds.conf
+            elif [ -f "$GITHUB_WORKSPACE/repo/feeds.conf" ]; then
+              cp "$GITHUB_WORKSPACE/repo/feeds.conf" feeds.conf
+            else
+              echo "src-git packages https://github.com/openwrt/packages.git" > feeds.conf
+              echo "src-git luci https://github.com/openwrt/luci.git" >> feeds.conf
+              echo "src-git routing https://github.com/openwrt-routing/packages.git" >> feeds.conf
+              echo "src-git telephony https://github.com/openwrt/telephony.git" >> feeds.conf
+            fi
+          fi
+
+      # 8. 运行 clean-feeds.sh（白名单 + 三件套检测修复注册）
       - name: 运行 clean-feeds.sh（白名单）
         working-directory: ${{ env.WORKDIR }}
         run: |
-          cp "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh" .
-          chmod +x clean-feeds.sh
+          cp "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh" "$WORKDIR/clean-feeds.sh"
+          chmod +x "$WORKDIR/clean-feeds.sh"
           ./clean-feeds.sh
 
-      # 7. 全局禁用 menuconfig
+      # 9. 全局禁用 menuconfig
       - name: 全局禁用 menuconfig
         working-directory: ${{ env.WORKDIR }}
         run: |
           echo "# CONFIG_DEVEL is not set" >> .config
           echo "# CONFIG_BUILD_MENUCONFIG is not set" >> .config
 
-      # 8. 下载源文件（自愈）
+      # 10. 下载源文件（自愈）
       - name: 下载源文件（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
           make download -j$(nproc) V=s || make download -j1 V=s
 
-      # 9. 构建主机工具（自愈）
+      # 11. 构建主机工具（自愈）
       - name: 构建主机工具（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
           make tools/install -j$(nproc) V=s || make tools/install -j1 V=s
 
-      # 10. 构建工具链（自愈）
+      # 12. 构建工具链（自愈）
       - name: 构建工具链（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
           make toolchain/install -j$(nproc) V=s || make toolchain/install -j1 V=s
 
-      # 11. 再次执行三件套检测（确保一致性）
-      - name: 检测三件套一致性
+      # 13. 再次执行三件套检测（确保一致性）
+      - name: 再次执行 clean-feeds.sh（三件套一致性）
         working-directory: ${{ env.WORKDIR }}
         run: |
           ./clean-feeds.sh
 
-      # 12. 自动修复三段式命名
+      # 14. 自动修复三段式命名
       - name: 自动修复三段式命名
         working-directory: ${{ env.WORKDIR }}
         run: |
           sed -i 's/DEVICE_DTS := .*/DEVICE_DTS := mt7981b-sl3000-emmc/' \
             target/linux/mediatek/image/filogic.mk
 
-      # 13. 应用 DTS
+      # 15. 应用 DTS
       - name: 应用 DTS
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" \
              target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
 
-      # 14. 应用 MK
+      # 16. 应用 MK
       - name: 应用 MK
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
              target/linux/mediatek/image/
 
-      # 15. 构建内核（自愈）
+      # 17. 构建内核（自愈）
       - name: 构建内核（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
           make target/linux/compile -j$(nproc) V=s || make target/linux/compile -j1 V=s
 
-      # 16. 构建软件包（自愈）
+      # 18. 构建软件包（自愈）
       - name: 构建软件包（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
