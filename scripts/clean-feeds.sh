@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo ">>> [自愈体系] clean-feeds.sh v12-final 启动"
+echo ">>> [自愈体系] clean-feeds.sh v27-sl3000-final 启动"
 
 # --- 0. 路径校验 ---
 if [ ! -f "scripts/feeds" ]; then
@@ -51,61 +51,23 @@ fi
 
 # --- 4. 三件套注册 ---
 REPODIR="$GITHUB_WORKSPACE/repo"
-
-DTSFILE="$REPODIR/sl3000/dts/mt7981b-sl3000-emmc.dts"
-MKPATCH="$REPODIR/sl3000/mk/filogic-sl3000.mk"
+DTSFILE="target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts"
+MKFILE="target/linux/mediatek/image/filogic.mk"
 CONFFILE="$REPODIR/sl3000/config/sl3000.config"
 
-if [ ! -f "$DTSFILE" ] || [ ! -f "$MKPATCH" ] || [ ! -f "$CONFFILE" ]; then
+if [ ! -f "$DTSFILE" ] || [ ! -f "$MKFILE" ] || [ ! -f "$CONFFILE" ]; then
     echo "[ERROR] 三件套缺失"
     exit 1
 fi
 
 echo ">>> 三件套一致性检查..."
+sha256sum "$DTSFILE" "$MKFILE" "$CONFFILE"
 
-# --- DTS 检查 ---
-grep -q "mediatek,mt7981" "$DTSFILE" \
-  || { echo "[ERROR] DTS SoC 不匹配"; exit 1; }
+# --- 4.1 DTS 已在源码，不再复制 ---
+echo ">>> DTS 已在源码路径: $DTSFILE"
 
-# --- MK 检查 ---
-grep -q "sl3000-emmc" "$MKPATCH" \
-  || { echo "[ERROR] MK 设备名不匹配"; exit 1; }
-
-# --- CONFIG 检查 ---
-grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" "$CONFFILE" \
-  || { echo "[ERROR] CONFIG 设备项缺失"; exit 1; }
-
-echo ">>> 三件套 Hash："
-sha256sum "$DTSFILE" "$MKPATCH" "$CONFFILE"
-
-# --- 4.1 DTS 注入 ---
-mkdir -p target/linux/mediatek/dts
-rm -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
-cp -v "$DTSFILE" target/linux/mediatek/dts/
-
-# --- 4.2 MK 安全插入 ---
-MK_TARGET="target/linux/mediatek/image/filogic.mk"
-
-# 删除旧定义
-sed -i '/Device\/sl3000-emmc/,/endef/d' "$MK_TARGET"
-sed -i '/TARGET_DEVICES += sl3000-emmc/d' "$MK_TARGET"
-
-# 结构化插入（在最后一个 define Device 后插入）
-awk -v patch="$MKPATCH" '
-  BEGIN { inserted=0 }
-  /^define Device/ { last=NR }
-  { lines[NR]=$0 }
-  END {
-    for (i=1;i<=NR;i++) {
-      print lines[i]
-      if (i==last && !inserted) {
-        while ((getline line < patch) > 0) print line
-        inserted=1
-      }
-    }
-  }
-' "$MK_TARGET" > "$MK_TARGET.tmp"
-mv "$MK_TARGET.tmp" "$MK_TARGET"
+# --- 4.2 MK 已在源码，不再插入 ---
+echo ">>> MK 已在源码路径: $MKFILE"
 
 # --- 4.3 Config 注册 ---
 cp -v "$CONFFILE" .config
@@ -116,4 +78,4 @@ grep "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" .config \
   && echo ">>> sl3000-emmc 已激活" \
   || { echo "[ERROR] sl3000-emmc 未激活"; exit 1; }
 
-echo "=== clean-feeds.sh v12-final 完成（可复现 + 三件套闭环 + MK 安全插入 + DTS 固定路径） ==="
+echo "=== clean-feeds.sh v27-sl3000-final 完成（可复现 + 三件套闭环，MK/DTS 已固定路径） ==="
