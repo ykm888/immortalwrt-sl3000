@@ -65,9 +65,21 @@ jobs:
             ${{ runner.os }}-openwrt-2410-ccache-
 
       # ============================================================
+      # 强制重建 host 工具链（彻底解决 flex/m4 崩溃）
+      # ============================================================
+      - name: Force rebuild host tools
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          echo ">>> Forcing rebuild of host tools..."
+          rm -rf staging_dir/host
+          make tools/clean
+          make toolchain/clean
+          make tools/install -j"$(nproc)" V=s
+          make toolchain/install -j"$(nproc)" V=s
+
+      # ============================================================
       # 三件套闭环：复制 + 全量检测
       # ============================================================
-
       - name: Copy DTS + MK from repo
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -118,7 +130,6 @@ jobs:
       # ============================================================
       # DTS/MK 编译级校验
       # ============================================================
-
       - name: Verify DTS/MK compile
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -128,7 +139,6 @@ jobs:
       # ============================================================
       # 自定义 files
       # ============================================================
-
       - name: Copy custom files (拉起 99-expand-rootfs)
         run: |
           mkdir -p ${{ env.WORKDIR }}/files
@@ -144,7 +154,6 @@ jobs:
       # ============================================================
       # 构建链（6 段）
       # ============================================================
-
       - name: Build host tools (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -185,7 +194,6 @@ jobs:
       # ============================================================
       # 校验 + 收集产物
       # ============================================================
-
       - name: Debug firmware directory
         working-directory: ${{ env.WORKDIR }}
         run: |
