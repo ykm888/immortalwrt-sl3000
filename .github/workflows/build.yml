@@ -61,12 +61,11 @@ jobs:
             ${{ runner.os }}-openwrt-2410-ccache-
 
       # ============================================================
-      # 🔥 一次性彻底修复 flex/m4：强制使用系统 m4
+      # 🔥 flex/m4 修复（保持原样）
       # ============================================================
       - name: Force flex to use system m4
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> Forcing flex to use system m4..."
           mkdir -p staging_dir/host/bin
           SYS_M4="$(command -v m4)"
           rm -f staging_dir/host/bin/m4
@@ -74,7 +73,7 @@ jobs:
           echo "M4=$SYS_M4" >> $GITHUB_ENV
 
       # ============================================================
-      # 三件套闭环（只保留 MK，同步 DTS 由仓库负责）
+      # 三件套闭环（只同步 MK，DTS 由仓库 overlay 提供）
       # ============================================================
       - name: Copy MK from repo
         working-directory: ${{ env.WORKDIR }}
@@ -112,6 +111,7 @@ jobs:
       # ============================================================
       # 构建链
       # ============================================================
+
       - name: Build host tools
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -127,10 +127,13 @@ jobs:
         run: |
           make target/linux/compile -j"$(nproc)" V=s
 
-      - name: Download sources
+      # ============================================================
+      # ⭐ 下载源文件（自愈机制）——恢复你原来的逻辑
+      # ============================================================
+      - name: Download sources (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make download -j"$(nproc)" V=s
+          make download -j"$(nproc)" V=s || make download -j1 V=s
 
       - name: Build packages
         working-directory: ${{ env.WORKDIR }}
