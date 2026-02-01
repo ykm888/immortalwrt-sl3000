@@ -72,8 +72,6 @@ jobs:
         run: |
           echo ">>> Forcing rebuild of host tools..."
           rm -rf staging_dir/host
-          make tools/clean
-          make toolchain/clean
           make tools/install -j"$(nproc)" V=s
           make toolchain/install -j"$(nproc)" V=s
 
@@ -91,6 +89,15 @@ jobs:
         run: |
           chmod +x "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
           bash "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
+
+      # ============================================================
+      # 防止 menuconfig fallback（关键）
+      # ============================================================
+      - name: Ensure .config is complete
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          echo ">>> Running defconfig to avoid menuconfig fallback..."
+          make defconfig
 
       # ============================================================
       # 修复后的第12项检测（支持 DEVICE_DTS + 修复 in_dev）
@@ -157,39 +164,33 @@ jobs:
       - name: Build host tools (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make tools/install -j"$(nproc)" V=s || \
-          (make tools/clean && make tools/install -j"$(nproc)" V=s)
+          make tools/install -j"$(nproc)" V=s
 
       - name: Build toolchain (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make toolchain/install -j"$(nproc)" V=s || \
-          (make toolchain/clean && make toolchain/install -j"$(nproc)" V=s)
+          make toolchain/install -j"$(nproc)" V=s
 
       - name: Build kernel (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make target/linux/compile -j"$(nproc)" V=s || \
-          (make target/linux/clean && make target/linux/compile -j"$(nproc)" V=s)
+          make target/linux/compile -j"$(nproc)" V=s
 
       - name: Download sources (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
           echo ">>> Downloading sources..."
-          make download -j"$(nproc)" V=s || \
-          (echo "Download failed, retrying..." && make download -j"$(nproc)" V=s)
+          make download -j"$(nproc)" V=s
 
       - name: Build packages (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make package/compile -j"$(nproc)" V=s || \
-          (make package/clean && make package/compile -j"$(nproc)" V=s)
+          make package/compile -j"$(nproc)" V=s
 
       - name: Build image (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make -j"$(nproc)" V=s || \
-          (make clean && make -j"$(nproc)" V=s)
+          make -j"$(nproc)" V=s
 
       # ============================================================
       # 校验 + 收集产物
