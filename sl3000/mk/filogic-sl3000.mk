@@ -7,21 +7,25 @@ define Device/sl3000-emmc
   DEVICE_DTS_DIR := target/linux/mediatek/dts
 
   DEVICE_PACKAGES := \
-	kmod-mt7915e \
-	kmod-mt7981-firmware \
-	mt7981-wo-firmware \
-	automount \
-	coremark \
-	blkid blockdev fdisk \
-	f2fsck mkf2fs \
-	kmod-mmc
+    kmod-mt7915e \
+    kmod-mt7981-firmware \
+    mt7981-wo-firmware \
+    automount \
+    coremark \
+    blkid blockdev fdisk \
+    f2fsck mkf2fs \
+    kmod-mmc
 
   KERNEL := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
 
   KERNEL_INITRAMFS := kernel-bin | lzma | \
-	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+    fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+
+  # 修复点：声明 IMAGES
+  IMAGES := sysupgrade.bin factory.bin
 
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+  IMAGE/factory.bin := append-rootfs | pad-rootfs | append-metadata
 endef
 
 TARGET_DEVICES += sl3000-emmc
