@@ -61,7 +61,7 @@ jobs:
             ${{ runner.os }}-openwrt-2410-ccache-
 
       # ============================================================
-      # 🔥 flex/m4 修复（保持原样）
+      # flex/m4 修复
       # ============================================================
       - name: Force flex to use system m4
         working-directory: ${{ env.WORKDIR }}
@@ -92,6 +92,12 @@ jobs:
         run: |
           make defconfig
 
+      - name: Disable menuconfig globally
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          echo "# CONFIG_DEVEL is not set" >> .config
+          echo "# CONFIG_BUILD_MENUCONFIG is not set" >> .config
+
       - name: Verify MK <-> DTS mapping
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -109,41 +115,43 @@ jobs:
           echo "OK"
 
       # ============================================================
-      # 构建链
+      # 构建链（全链路自愈）
       # ============================================================
 
-      - name: Build host tools
+      - name: Build host tools (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make tools/install -j"$(nproc)" V=s
+          make tools/install -j"$(nproc)" V=s || make tools/install -j1 V=s
 
-      - name: Build toolchain
+      - name: Build toolchain (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make toolchain/install -j"$(nproc)" V=s
+          make toolchain/install -j"$(nproc)" V=s || make toolchain/install -j1 V=s
 
-      - name: Build kernel
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          make target/linux/compile -j"$(nproc)" V=s
-
-      # ============================================================
-      # ⭐ 下载源文件（自愈机制）——恢复你原来的逻辑
-      # ============================================================
       - name: Download sources (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
           make download -j"$(nproc)" V=s || make download -j1 V=s
 
-      - name: Build packages
+      - name: Build OpenSSL first (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make package/compile -j"$(nproc)" V=s
+          make package/openssl/compile -j"$(nproc)" V=s || make package/openssl/compile -j1 V=s
 
-      - name: Build image
+      - name: Build kernel (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make -j"$(nproc)" V=s
+          make target/linux/compile -j"$(nproc)" V=s || make target/linux/compile -j1 V=s
+
+      - name: Build packages (self-heal)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make package/compile -j"$(nproc)" V=s || make package/compile -j1 V=s
+
+      - name: Build image (self-heal)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make -j"$(nproc)" V=s || make -j1 V=s
 
       - name: Collect outputs
         working-directory: ${{ env.WORKDIR }}
