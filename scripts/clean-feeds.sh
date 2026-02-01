@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo ">>> [自愈体系] clean-feeds.sh v12-final 启动 (延续 build-sl3000-openwrt-2410 工作流)"
+echo ">>> [自愈体系] clean-feeds.sh v12-final 启动 (延续 build-sl3000-2512 工作流)"
 
 # --- 路径校验 ---
 if [ ! -f "scripts/feeds" ]; then
@@ -56,4 +56,4 @@ grep -q "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" "$CONF_FILE" || { 
 sha256sum "$DTS_FILE" "$MK_TARGET" "$CONF_FILE"
 [[ -s "$DTS_FILE" && -s "$MK_TARGET" && -s "$CONF_FILE" ]] || { echo "[ERROR] 三件套文件为空"; exit 1; }
 
-echo "=== clean-feeds.sh v12-final 完成 (延续 build-sl3000-openwrt-2410 工作流) ==="
+echo "=== clean-feeds.sh v12-final 完成 (延续 build-sl3000-2512 工作流) ==="
