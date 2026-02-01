@@ -8,7 +8,7 @@ permissions:
   packages: write
 
 env:
-  WORK_DIR: ${{ github.workspace }}/../openwrt_src
+  WORKDIR: ${{ github.workspace }}/../openwrtsrc
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
   SOURCE_BRANCH: openwrt-24.10
@@ -24,18 +24,24 @@ jobs:
         with:
           path: repo
 
+      # ============================================================
+      # 强制清理缓存（解决 MK 未更新 / 旧源码残留）
+      # ============================================================
+      - name: Clean WORKDIR (force fresh tree)
+        run: |
+          echo ">>> Cleaning WORKDIR: ${{ env.WORKDIR }}"
+          rm -rf "${{ env.WORKDIR }}"
+          mkdir -p "${{ env.WORKDIR }}"
+
       - name: Pre-clean disk
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/node_modules /opt/hostedtoolcache
           sudo docker system prune -af || true
           sudo rm -rf /var/lib/apt/lists/*
-          mkdir -p "${{ env.WORK_DIR }}"
 
       - name: Clone ImmortalWrt 24.10
         run: |
-          if [ ! -d "${{ env.WORK_DIR }}/.git" ]; then
-            git clone --depth=1 -b "${{ env.SOURCE_BRANCH }}" "${{ env.SOURCE_REPO }}" "${{ env.WORK_DIR }}"
-          fi
+          git clone --depth=1 -b "${{ env.SOURCE_BRANCH }}" "${{ env.SOURCE_REPO }}" "${{ env.WORKDIR }}"
 
       - name: Install build dependencies + ccache
         run: |
@@ -63,19 +69,22 @@ jobs:
       # ============================================================
 
       - name: Copy DTS + MK from repo
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           cp -v "$GITHUB_WORKSPACE/repo/target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts" target/linux/mediatek/dts/
           cp -v "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" target/linux/mediatek/image/filogic.mk
 
       - name: Run clean-feeds.sh（三件套闭环）
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           chmod +x "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
           bash "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
 
+      # ============================================================
+      # 修复后的第12项检测（支持 DEVICE_DTS + 修复 in_dev）
+      # ============================================================
       - name: Verify MK <-> DTS mapping（第12项检测）
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           MKFILE="target/linux/mediatek/image/filogic.mk"
           DTSFILE="target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts"
@@ -83,25 +92,24 @@ jobs:
 
           echo ">>> 校验 MK 中 Device/${DEV} 的 DTS 定义是否与 ${DTSFILE} 一致..."
 
-          # 从 MK 中提取 Device/sl3000-emmc 段的 DTS 行
-          DTS_IN_MK=$(awk '
+          DTSINMK=$(awk '
             $0 ~ "^define[ \t]+Device/'"$DEV"'" { in_dev=1 }
             in_dev && $1 == "endef" { in_dev=0 }
-            in_dev && $1 == "DTS" && $2 == ":=" { print $3 }
+            in_dev && ($1 == "DTS" || $1 == "DEVICE_DTS") && $2 == ":=" { print $3 }
           ' "$MKFILE")
 
-          if [ -z "$DTS_IN_MK" ]; then
-            echo "[ERROR] 在 ${MKFILE} 中未找到 Device/${DEV} 的 DTS := 定义"
+          if [ -z "$DTSINMK" ]; then
+            echo "[ERROR] 在 ${MKFILE} 中未找到 Device/${DEV} 的 DTS 或 DEVICE_DTS 定义"
             exit 1
           fi
 
           DTS_BASENAME=$(basename "$DTSFILE" .dts)
 
-          echo ">>> MK 中 DTS := ${DTS_IN_MK}"
+          echo ">>> MK 中 DTS := ${DTSINMK}"
           echo ">>> DTS 文件名基名: ${DTS_BASENAME}"
 
-          if [ "$DTS_IN_MK" != "$DTS_BASENAME" ]; then
-            echo "[ERROR] MK 中 DTS 名称(${DTS_IN_MK}) 与 DTS 文件名(${DTS_BASENAME}) 不一致"
+          if [ "$DTSINMK" != "$DTS_BASENAME" ]; then
+            echo "[ERROR] MK 中 DTS 名称(${DTSINMK}) 与 DTS 文件名(${DTS_BASENAME}) 不一致"
             exit 1
           fi
 
@@ -112,7 +120,7 @@ jobs:
       # ============================================================
 
       - name: Verify DTS/MK compile
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           echo ">>> Running DTS/MK compile check..."
           make target/linux/compile V=s
@@ -123,8 +131,8 @@ jobs:
 
       - name: Copy custom files (拉起 99-expand-rootfs)
         run: |
-          mkdir -p ${{ env.WORK_DIR }}/files
-          cp -r $GITHUB_WORKSPACE/repo/files/* ${{ env.WORK_DIR }}/files/
+          mkdir -p ${{ env.WORKDIR }}/files
+          cp -r $GITHUB_WORKSPACE/repo/files/* ${{ env.WORKDIR }}/files/
 
       - name: Disable menuconfig globally
         run: |
@@ -138,38 +146,38 @@ jobs:
       # ============================================================
 
       - name: Build host tools (self-heal)
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           make tools/install -j"$(nproc)" V=s || \
           (make tools/clean && make tools/install -j"$(nproc)" V=s)
 
       - name: Build toolchain (self-heal)
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           make toolchain/install -j"$(nproc)" V=s || \
           (make toolchain/clean && make toolchain/install -j"$(nproc)" V=s)
 
       - name: Build kernel (self-heal)
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           make target/linux/compile -j"$(nproc)" V=s || \
           (make target/linux/clean && make target/linux/compile -j"$(nproc)" V=s)
 
       - name: Download sources (self-heal)
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           echo ">>> Downloading sources..."
           make download -j"$(nproc)" V=s || \
           (echo "Download failed, retrying..." && make download -j"$(nproc)" V=s)
 
       - name: Build packages (self-heal)
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           make package/compile -j"$(nproc)" V=s || \
           (make package/clean && make package/compile -j"$(nproc)" V=s)
 
       - name: Build image (self-heal)
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           make -j"$(nproc)" V=s || \
           (make clean && make -j"$(nproc)" V=s)
@@ -179,19 +187,19 @@ jobs:
       # ============================================================
 
       - name: Debug firmware directory
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           echo ">>> Listing firmware outputs..."
           find bin/targets/mediatek/filogic/ -type f -maxdepth 1 -ls || true
 
       - name: Validate firmware output
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           echo ">>> Checking final firmware..."
           ls -lh bin/targets/mediatek/filogic/*.bin || (echo "未生成固件"; exit 1)
 
       - name: Collect logs and metadata
-        working-directory: ${{ env.WORK_DIR }}
+        working-directory: ${{ env.WORKDIR }}
         run: |
           mkdir -p "$GITHUB_WORKSPACE/output" "$GITHUB_WORKSPACE/logs"
           cp bin/targets/mediatek/filogic/*.bin "$GITHUB_WORKSPACE/output/" || true
