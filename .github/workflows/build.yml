@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 env:
-  WORKDIR: ${{ github.workspace }}/openwrtsrc
+  WORKDIR: ${{ github.workspace }}/openwrt-src
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
   SOURCE_BRANCH: openwrt-24.10
@@ -48,22 +48,38 @@ jobs:
       - name: 注入三件套（DTS / MK / CONFIG）
         run: |
           cd "$WORKDIR"
+
           mkdir -p target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" \
              target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
+
           mkdir -p target/linux/mediatek/image
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
              target/linux/mediatek/image/
+
           mkdir -p sl3000/config
           cp "$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config" \
              sl3000/config/
+
+      - name: feeds.conf 兜底（无 EOF）
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          if [ -f feeds.conf.default ] && [ ! -f feeds.conf ]; then
+            cp feeds.conf.default feeds.conf
+          fi
+
+          if [ ! -f feeds.conf ] && [ ! -f feeds.conf.default ]; then
+            echo "src-git packages https://github.com/immortalwrt/packages.git" > feeds.conf
+            echo "src-git luci https://github.com/immortalwrt/luci.git" >> feeds.conf
+            echo "src-git routing https://github.com/immortalwrt/routing.git" >> feeds.conf
+          fi
 
       - name: 运行 clean-feeds.sh（白名单 + 显示 12 道检测）
         working-directory: ${{ env.WORKDIR }}
         run: |
           echo "================ CLEAN-FEEDS START ================"
-          cp "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh" "$WORKDIR/clean-feeds.sh"
-          chmod +x "$WORKDIR/clean-feeds.sh"
+          cp "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh" clean-feeds.sh
+          chmod +x clean-feeds.sh
           set -x
           ./clean-feeds.sh
           set +x
@@ -74,7 +90,7 @@ jobs:
         run: |
           make defconfig
 
-      - name: 叠加 sl3000.config（你的机型配置）
+      - name: 叠加 sl3000.config（无 EOF）
         working-directory: ${{ env.WORKDIR }}
         run: |
           cat sl3000/config/sl3000.config >> .config
@@ -112,13 +128,13 @@ jobs:
           sed -i 's/DEVICE_DTS := .*/DEVICE_DTS := mt7981b-sl3000-emmc/' \
             target/linux/mediatek/image/filogic.mk
 
-      - name: 应用 DTS（最终覆盖一次）
+      - name: 应用 DTS（最终覆盖）
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" \
              target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
 
-      - name: 应用 MK（最终覆盖一次）
+      - name: 应用 MK（最终覆盖）
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
@@ -133,3 +149,18 @@ jobs:
         working-directory: ${{ env.WORKDIR }}
         run: |
           make package/compile -j$(nproc) V=s || make package/compile -j1 V=s
+
+      - name: 自动发布固件（无 EOF）
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: sl3000-emmc-openwrt-24.10-${{ github.run_number }}-${{ github.run_id }}
+          name: SL3000 eMMC OpenWrt 24.10 #${{ github.run_number }}
+          body: |
+            Auto Release  
+            Target: SL3000 eMMC  
+            Build: ${{ github.run_number }}  
+            Run ID: ${{ github.run_id }}
+
+          files: |
+            ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*
