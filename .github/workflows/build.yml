@@ -58,7 +58,7 @@ jobs:
             ${{ runner.os }}-openwrt-2410-ccache-
 
       # ============================================================
-      # 三件套闭环
+      # 三件套闭环（调用修复后的 clean-feeds.sh）
       # ============================================================
 
       - name: Run clean-feeds.sh（三件套闭环）
@@ -66,35 +66,6 @@ jobs:
         run: |
           chmod +x "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
           bash "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
-
-      - name: Apply DTS + CONFIG
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          echo ">>> Applying DTS + CONFIG..."
-          cp -v "$GITHUB_WORKSPACE/repo/sl3000/dts/mt7981b-sl3000-emmc.dts" target/linux/mediatek/dts/
-          cp -v "$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config" .config
-
-      - name: Merge MK file into filogic.mk
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          MK_TARGET="target/linux/mediatek/image/filogic.mk"
-          MK_PATCH="$GITHUB_WORKSPACE/repo/sl3000/mk/filogic-sl3000.mk"
-          # 删除旧定义
-          sed -i '/Device\/sl3000-emmc/,/endef/d' "$MK_TARGET"
-          sed -i '/TARGET_DEVICES += sl3000-emmc/d' "$MK_TARGET"
-          # 插入新定义到文件末尾
-          cat "$MK_PATCH" >> "$MK_TARGET"
-          echo ">>> MK 合并完成"
-          grep -A5 sl3000-emmc "$MK_TARGET" || (echo "MK 插入失败"; exit 1)
-
-      - name: Verify CONFIG after defconfig
-        working-directory: ${{ env.WORK_DIR }}
-        run: |
-          make defconfig
-          echo ">>> Checking .config for sl3000-emmc..."
-          grep "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" .config \
-            && echo ">>> sl3000-emmc 已激活" \
-            || (echo "[ERROR] sl3000-emmc 未激活"; exit 1)
 
       # ============================================================
       # 自定义 files
