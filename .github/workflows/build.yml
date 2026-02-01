@@ -8,7 +8,7 @@ permissions:
   packages: write
 
 env:
-  WORKDIR: ${{ github.workspace }}/../openwrtsrc
+  WORKDIR: ${{ github.workspace }}/openwrtsrc
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
   SOURCE_BRANCH: openwrt-24.10
@@ -25,7 +25,7 @@ jobs:
           path: repo
 
       # ============================================================
-      # 强制清理缓存（解决 MK 未更新 / 旧源码残留）
+      # 强制清理 WORKDIR（解决旧源码残留 / MK 未更新）
       # ============================================================
       - name: Clean WORKDIR (force fresh tree)
         run: |
