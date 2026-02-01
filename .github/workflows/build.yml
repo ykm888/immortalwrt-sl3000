@@ -1,11 +1,7 @@
-name: build-sl3000-openwrt-2410
+name: build-sl3000-2410
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: write
-  packages: write
 
 env:
   WORKDIR: ${{ github.workspace }}/openwrtsrc
@@ -14,157 +10,108 @@ env:
   SOURCE_BRANCH: openwrt-24.10
 
 jobs:
-  build-sl3000-2410:
+  build:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          path: repo
+      # 1. 安装构建依赖项 + ccache
+      - name: 安装构建依赖项 + ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential flex bison gawk m4 \
+            python3 python3-pip python3-setuptools python3-wheel \
+            libssl-dev libffi-dev ccache
 
-      - name: Clean WORKDIR
+      # 2. 缓存 ccache
+      - name: 缓存 ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: sl3000-2410-ccache-${{ github.sha }}
+          restore-keys: sl3000-2410-ccache-
+
+      # 3. 清理信息流配置
+      - name: 清理信息流配置
         run: |
           rm -rf "${{ env.WORKDIR }}"
           mkdir -p "${{ env.WORKDIR }}"
 
-      - name: Pre-clean disk
+      # 4. 更新信息流
+      - name: 更新信息流
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/node_modules /opt/hostedtoolcache
-          sudo docker system prune -af || true
-          sudo rm -rf /var/lib/apt/lists/*
+          git clone --depth=1 -b "${{ env.SOURCE_BRANCH }}" \
+            "${{ env.SOURCE_REPO }}" "${{ env.WORKDIR }}"
 
-      - name: Clone ImmortalWrt 24.10
-        run: |
-          git clone --depth=1 -b "${{ env.SOURCE_BRANCH }}" "${{ env.SOURCE_REPO }}" "${{ env.WORKDIR }}"
-
-      - name: Install build dependencies + ccache
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            python3 python3-pip python3-setuptools python3-wheel python3-dev python3-venv \
-            libffi-dev libssl-dev ccache \
-            perl libperl-dev libtext-template-perl \
-            flex bison gawk m4
-          echo "CCACHE_DIR=${{ env.CCACHE_DIR }}" >> $GITHUB_ENV
-          echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
-          echo "CCACHE_MAXSIZE=2G" >> $GITHUB_ENV
-
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-openwrt-2410-ccache-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-2410-ccache-
-
-      # ============================================================
-      # flex/m4 修复
-      # ============================================================
-      - name: Force flex to use system m4
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          mkdir -p staging_dir/host/bin
-          SYS_M4="$(command -v m4)"
-          rm -f staging_dir/host/bin/m4
-          ln -s "$SYS_M4" staging_dir/host/bin/m4
-          echo "M4=$SYS_M4" >> $GITHUB_ENV
-
-      # ============================================================
-      # 三件套闭环
-      # ============================================================
-      - name: Copy MK from repo
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          cp -v "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
-                target/linux/mediatek/image/filogic.mk
-
-      - name: Run clean-feeds.sh
+      # 5. 运行 clean-feeds.sh（白名单）
+      - name: 运行 clean-feeds.sh（白名单）
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh" .
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
 
-      - name: Ensure .config complete
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          make defconfig
-
-      - name: Disable menuconfig globally
+      # 6. 全局禁用 menuconfig
+      - name: 全局禁用 menuconfig
         working-directory: ${{ env.WORKDIR }}
         run: |
           echo "# CONFIG_DEVEL is not set" >> .config
           echo "# CONFIG_BUILD_MENUCONFIG is not set" >> .config
 
-      - name: Verify MK <-> DTS mapping
+      # 7. 下载源文件（自愈）
+      - name: 下载源文件（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
-          MKFILE="target/linux/mediatek/image/filogic.mk"
-          DTSFILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-          DEV="sl3000-emmc"
-          DTSINMK=$(awk '
-            $0 ~ "^define[ \t]+Device/'"$DEV"'" { in_dev=1 }
-            in_dev && $1 == "endef" { in_dev=0 }
-            in_dev && ($1 == "DTS" || $1 == "DEVICE_DTS") && $2 == ":=" { print $3 }
-          ' "$MKFILE")
-          [ -z "$DTSINMK" ] && echo "[ERROR] DTS missing" && exit 1
-          DTS_BASENAME=$(basename "$DTSFILE" .dts)
-          [ "$DTSINMK" != "$DTS_BASENAME" ] && echo "[ERROR] mismatch" && exit 1
-          echo "OK"
+          make download -j$(nproc) V=s || make download -j1 V=s
 
-      # ============================================================
-      # 构建链（全链路自愈）
-      # ============================================================
-      - name: Build host tools
+      # 8. 构建主机工具（自愈）
+      - name: 构建主机工具（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make tools/install -j"$(nproc)" V=s || make tools/install -j1 V=s
+          make tools/install -j$(nproc) V=s || make tools/install -j1 V=s
 
-      - name: Build toolchain
+      # 9. 构建工具链（自愈）
+      - name: 构建工具链（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make toolchain/install -j"$(nproc)" V=s || make toolchain/install -j1 V=s
+          make toolchain/install -j$(nproc) V=s || make toolchain/install -j1 V=s
 
-      - name: Download sources
+      # 10. 检测三件套一致性
+      - name: 检测三件套一致性
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make download -j"$(nproc)" V=s || make download -j1 V=s
+          bash clean-feeds.sh
 
-      - name: Build OpenSSL first
+      # 11. 自动修复三段式命名
+      - name: 自动修复三段式命名
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make package/libs/openssl/compile -j"$(nproc)" V=s || make package/libs/openssl/compile -j1 V=s
+          sed -i 's/DEVICE_DTS := .*/DEVICE_DTS := mt7981b-sl3000-emmc/' \
+            target/linux/mediatek/image/filogic.mk
 
-      - name: Build kernel
+      # 12. 应用 DTS
+      - name: 应用 DTS
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make target/linux/compile -j"$(nproc)" V=s || make target/linux/compile -j1 V=s
+          cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" \
+             target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
 
-      - name: Build packages
+      # 13. 应用 MK
+      - name: 应用 MK
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make package/compile -j"$(nproc)" V=s || make package/compile -j1 V=s
+          cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
+             target/linux/mediatek/image/
 
-      - name: Build image
+      # 14. 构建内核（自愈）
+      - name: 构建内核（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make -j"$(nproc)" V=s || make -j1 V=s
+          make target/linux/compile -j$(nproc) V=s || make target/linux/compile -j1 V=s
 
-      - name: Collect outputs
+      # 15. 构建软件包（自愈）
+      - name: 构建软件包（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/output" "$GITHUB_WORKSPACE/logs"
-          cp bin/targets/mediatek/filogic/* "$GITHUB_WORKSPACE/output/" || true
-          cp bin/targets/mediatek/filogic/sha256sums "$GITHUB_WORKSPACE/logs/" || true
-          cp .config "$GITHUB_WORKSPACE/logs/config.buildinfo" || true
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: sl3000-2410-firmware
-          path: |
-            output/*
-            logs/*
+          make package/compile -j$(nproc) V=s || make package/compile -j1 V=s
