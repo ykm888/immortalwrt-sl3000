@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo ">>> [自愈体系] clean-feeds.sh v29-sl3000-final 启动"
+echo ">>> [自愈体系] clean-feeds.sh v30-sl3000-final 启动"
 
 # --- 0. 路径校验 ---
 if [ ! -f "scripts/feeds" ]; then
@@ -80,4 +80,32 @@ grep "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" .config \
   && echo ">>> sl3000-emmc 已激活" \
   || { echo "[ERROR] sl3000-emmc 未激活"; exit 1; }
 
-echo "=== clean-feeds.sh v29-sl3000-final 完成（可复现 + 三件套闭环，MK/DTS 已固定路径） ==="
+# --- 4.5 MK ↔ DTS 名称一致性检测（新增） ---
+echo ">>> 校验 MK <-> DTS 映射一致性..."
+
+DEV="sl3000-emmc"
+
+DTS_IN_MK=$(awk '
+  $0 ~ "^define[ \t]+Device/'"$DEV"'" { in_dev=1 }
+  in_dev && $1 == "endef" { in_dev=0 }
+  in_dev && $1 == "DTS" && $2 == ":=" { print $3 }
+' "$MKFILE")
+
+if [ -z "$DTS_IN_MK" ]; then
+    echo "[ERROR] MK 中未找到 Device/${DEV} 的 DTS := 定义"
+    exit 1
+fi
+
+DTS_BASENAME=$(basename "$DTSFILE" .dts)
+
+echo ">>> MK 中 DTS := $DTS_IN_MK"
+echo ">>> DTS 文件名基名: $DTS_BASENAME"
+
+if [ "$DTS_IN_MK" != "$DTS_BASENAME" ]; then
+    echo "[ERROR] MK 中 DTS 名称(${DTS_IN_MK}) 与 DTS 文件名(${DTS_BASENAME}) 不一致"
+    exit 1
+fi
+
+echo ">>> MK <-> DTS 映射一致"
+
+echo "=== clean-feeds.sh v30-sl3000-final 完成（可复现 + 三件套闭环 + 第12项检测） ==="
