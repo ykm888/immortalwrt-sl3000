@@ -59,7 +59,7 @@ jobs:
             ${{ runner.os }}-openwrt-2410-ccache-
 
       # ============================================================
-      # 三件套闭环
+      # 三件套闭环：复制 + 全量检测
       # ============================================================
 
       - name: Copy DTS + MK from repo
@@ -74,8 +74,41 @@ jobs:
           chmod +x "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
           bash "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
 
+      - name: Verify MK <-> DTS mapping（第12项检测）
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          MKFILE="target/linux/mediatek/image/filogic.mk"
+          DTSFILE="target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts"
+          DEV="sl3000-emmc"
+
+          echo ">>> 校验 MK 中 Device/${DEV} 的 DTS 定义是否与 ${DTSFILE} 一致..."
+
+          # 从 MK 中提取 Device/sl3000-emmc 段的 DTS 行
+          DTS_IN_MK=$(awk '
+            $0 ~ "^define[ \t]+Device/'"$DEV"'" { in_dev=1 }
+            in_dev && $1 == "endef" { in_dev=0 }
+            in_dev && $1 == "DTS" && $2 == ":=" { print $3 }
+          ' "$MKFILE")
+
+          if [ -z "$DTS_IN_MK" ]; then
+            echo "[ERROR] 在 ${MKFILE} 中未找到 Device/${DEV} 的 DTS := 定义"
+            exit 1
+          fi
+
+          DTS_BASENAME=$(basename "$DTSFILE" .dts)
+
+          echo ">>> MK 中 DTS := ${DTS_IN_MK}"
+          echo ">>> DTS 文件名基名: ${DTS_BASENAME}"
+
+          if [ "$DTS_IN_MK" != "$DTS_BASENAME" ]; then
+            echo "[ERROR] MK 中 DTS 名称(${DTS_IN_MK}) 与 DTS 文件名(${DTS_BASENAME}) 不一致"
+            exit 1
+          fi
+
+          echo ">>> MK <-> DTS 映射一致，三件套第12项检测通过"
+
       # ============================================================
-      # DTS/MK 校验（提前捕捉错误）
+      # DTS/MK 编译级校验
       # ============================================================
 
       - name: Verify DTS/MK compile
