@@ -92,7 +92,7 @@ define Device/sl3000-emmc
   DEVICE_MODEL := SL3000
   DEVICE_VARIANT := eMMC
   DEVICE_DTS := mt7981b-sl3000-emmc
-  DEVICE_DTS_DIR := ../dts
+  DEVICE_DTS_DIR := mediatek
   DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware
   IMAGES := sysupgrade.bin factory.bin
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
