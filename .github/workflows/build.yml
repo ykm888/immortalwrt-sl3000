@@ -1,4 +1,4 @@
-name: build-sl3000-openwrt-2410
+name: build-sl3000-2512
 
 on:
   workflow_dispatch:
@@ -11,10 +11,10 @@ env:
   WORKDIR: ${{ github.workspace }}/openwrtsrc
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
-  SOURCE_BRANCH: openwrt-24.10
+  SOURCE_BRANCH: openwrt-25.12
 
 jobs:
-  build-sl3000-2410:
+  build-sl3000-2512:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
@@ -29,17 +29,7 @@ jobs:
           rm -rf "${{ env.WORKDIR }}"
           mkdir -p "${{ env.WORKDIR }}"
 
-      - name: Pre-clean disk
-        run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/node_modules /opt/hostedtoolcache
-          sudo docker system prune -af || true
-          sudo rm -rf /var/lib/apt/lists/*
-
-      - name: Clone ImmortalWrt 24.10
-        run: |
-          git clone --depth=1 -b "${{ env.SOURCE_BRANCH }}" "${{ env.SOURCE_REPO }}" "${{ env.WORKDIR }}"
-
-      - name: Install build dependencies + ccache
+      - name: Install build dependencies + ccache + OpenSSL
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -52,76 +42,70 @@ jobs:
           echo "CCACHE_COMPRESS=1" >> $GITHUB_ENV
           echo "CCACHE_MAXSIZE=2G" >> $GITHUB_ENV
 
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-openwrt-2410-ccache-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-openwrt-2410-ccache-
-
-      # ============================================================
-      # flex/m4 修复
-      # ============================================================
-      - name: Force flex to use system m4
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          mkdir -p staging_dir/host/bin
-          SYS_M4="$(command -v m4)"
-          rm -f staging_dir/host/bin/m4
-          ln -s "$SYS_M4" staging_dir/host/bin/m4
-          echo "M4=$SYS_M4" >> $GITHUB_ENV
-
-      # ============================================================
-      # 三件套闭环
-      # ============================================================
-      - name: Copy MK from repo
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          cp -v "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
-                target/linux/mediatek/image/filogic.mk
-
       - name: Run clean-feeds.sh
         working-directory: ${{ env.WORKDIR }}
         run: |
           chmod +x "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
           bash "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
 
-      - name: Ensure .config complete
+      - name: Disable menuconfig globally
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make defconfig
+          echo "# CONFIG_DEVEL is not set" >> .config
+          echo "# CONFIG_BUILD_MENUCONFIG is not set" >> .config
 
-      - name: Verify MK <-> DTS mapping
+      - name: Download sources (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          MKFILE="target/linux/mediatek/image/filogic.mk"
-          DTSFILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-          DEV="sl3000-emmc"
-          DTSINMK=$(awk '
-            $0 ~ "^define[ \t]+Device/'"$DEV"'" { in_dev=1 }
-            in_dev && $1 == "endef" { in_dev=0 }
-            in_dev && ($1 == "DTS" || $1 == "DEVICE_DTS") && $2 == ":=" { print $3 }
-          ' "$MKFILE")
-          [ -z "$DTSINMK" ] && echo "[ERROR] DTS missing" && exit 1
-          DTS_BASENAME=$(basename "$DTSFILE" .dts)
-          [ "$DTSINMK" != "$DTS_BASENAME" ] && echo "[ERROR] mismatch" && exit 1
-          echo "OK"
+          make download -j"$(nproc)" V=s || make download -j1 V=s
 
-      # ============================================================
-      # 构建链（全链路自愈）
-      # ============================================================
-      - name: Build host tools
+      - name: Build host tools (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
           make tools/install -j"$(nproc)" V=s || make tools/install -j1 V=s
 
-      - name: Build toolchain
+      - name: Build toolchain (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
           make toolchain/install -j"$(nproc)" V=s || make toolchain/install -j1 V=s
 
-      - name: Download sources
+      - name: Build OpenSSL first (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make download -j"$(nproc)" V=s || make download -j1 V=s
+          make package/libs/openssl/compile -j"$(nproc)" V=s || make package/libs/openssl/compile -j1 V=s
+
+      - name: Verify 三件套一致性
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          bash "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
+
+      - name: Build kernel (self-heal)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make target/linux/compile -j"$(nproc)" V=s || make target/linux/compile -j1 V=s
+
+      - name: Build packages (self-heal)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make package/compile -j"$(nproc)" V=s || make package/compile -j1 V=s
+
+      - name: Build image (self-heal)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make -j"$(nproc)" V=s || make -j1 V=s
+
+      - name: Collect outputs
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/output" "$GITHUB_WORKSPACE/logs"
+          cp bin/targets/mediatek/filogic/* "$GITHUB_WORKSPACE/output/" || true
+          cp bin/targets/mediatek/filogic/sha256sums "$GITHUB_WORKSPACE/logs/" || true
+          cp .config "$GITHUB_WORKSPACE/logs/config.buildinfo" || true
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: sl3000-2512-firmware
+          path: |
+            output/*
+            logs/*
