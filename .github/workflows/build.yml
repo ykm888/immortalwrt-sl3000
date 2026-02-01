@@ -74,13 +74,20 @@ jobs:
           echo "M4=$SYS_M4" >> $GITHUB_ENV
 
       # ============================================================
-      # 三件套闭环
+      # 三件套闭环 + DTS 内核同步补丁（关键修复）
       # ============================================================
       - name: Copy DTS + MK from repo
         working-directory: ${{ env.WORKDIR }}
         run: |
+          # 三件套使用的 DTS + MK（保持原样）
           cp -v "$GITHUB_WORKSPACE/repo/target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts" target/linux/mediatek/dts/
           cp -v "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" target/linux/mediatek/image/filogic.mk
+
+          # 内核实际编译 DTB 使用的 DTS 目录（关键补丁）
+          KERNEL_DTS_DIR="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek"
+          mkdir -p "$KERNEL_DTS_DIR"
+          cp -v "$GITHUB_WORKSPACE/repo/target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts" \
+                "$KERNEL_DTS_DIR/mt7981b-sl3000-emmc.dts"
 
       - name: Run clean-feeds.sh
         working-directory: ${{ env.WORKDIR }}
