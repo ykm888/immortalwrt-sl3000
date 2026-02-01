@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo ">>> clean-feeds.sh（白名单）— 恢复截图工程体系 + 12 道三件套检测修复注册"
+echo ">>> clean-feeds.sh（白名单）— 恢复工程体系 + 12 道三件套检测修复注册"
 
 # 1. 校验 OpenWrt 根目录
 if [ ! -f "scripts/feeds" ]; then
