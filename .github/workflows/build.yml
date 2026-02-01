@@ -73,7 +73,7 @@ jobs:
           echo "M4=$SYS_M4" >> $GITHUB_ENV
 
       # ============================================================
-      # 三件套闭环（只同步 MK，DTS 由仓库 overlay 提供）
+      # 三件套闭环
       # ============================================================
       - name: Copy MK from repo
         working-directory: ${{ env.WORKDIR }}
@@ -92,17 +92,11 @@ jobs:
         run: |
           make defconfig
 
-      - name: Disable menuconfig globally
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          echo "# CONFIG_DEVEL is not set" >> .config
-          echo "# CONFIG_BUILD_MENUCONFIG is not set" >> .config
-
       - name: Verify MK <-> DTS mapping
         working-directory: ${{ env.WORKDIR }}
         run: |
           MKFILE="target/linux/mediatek/image/filogic.mk"
-          DTSFILE="target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts"
+          DTSFILE="target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
           DEV="sl3000-emmc"
           DTSINMK=$(awk '
             $0 ~ "^define[ \t]+Device/'"$DEV"'" { in_dev=1 }
@@ -117,54 +111,17 @@ jobs:
       # ============================================================
       # 构建链（全链路自愈）
       # ============================================================
-
-      - name: Build host tools (self-heal)
+      - name: Build host tools
         working-directory: ${{ env.WORKDIR }}
         run: |
           make tools/install -j"$(nproc)" V=s || make tools/install -j1 V=s
 
-      - name: Build toolchain (self-heal)
+      - name: Build toolchain
         working-directory: ${{ env.WORKDIR }}
         run: |
           make toolchain/install -j"$(nproc)" V=s || make toolchain/install -j1 V=s
 
-      - name: Download sources (self-heal)
+      - name: Download sources
         working-directory: ${{ env.WORKDIR }}
         run: |
           make download -j"$(nproc)" V=s || make download -j1 V=s
-
-      - name: Build OpenSSL first (self-heal)
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          make package/openssl/compile -j"$(nproc)" V=s || make package/openssl/compile -j1 V=s
-
-      - name: Build kernel (self-heal)
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          make target/linux/compile -j"$(nproc)" V=s || make target/linux/compile -j1 V=s
-
-      - name: Build packages (self-heal)
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          make package/compile -j"$(nproc)" V=s || make package/compile -j1 V=s
-
-      - name: Build image (self-heal)
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          make -j"$(nproc)" V=s || make -j1 V=s
-
-      - name: Collect outputs
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/output" "$GITHUB_WORKSPACE/logs"
-          cp bin/targets/mediatek/filogic/* "$GITHUB_WORKSPACE/output/" || true
-          cp bin/targets/mediatek/filogic/sha256sums "$GITHUB_WORKSPACE/logs/" || true
-          cp .config "$GITHUB_WORKSPACE/logs/config.buildinfo" || true
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: sl3000-2410-firmware
-          path: |
-            output/*
-            logs/*
