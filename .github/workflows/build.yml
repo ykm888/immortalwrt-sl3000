@@ -74,6 +74,16 @@ jobs:
           bash "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
 
       # ============================================================
+      # DTS/MK 校验（提前捕捉错误）
+      # ============================================================
+
+      - name: Verify DTS/MK compile
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          echo ">>> Running DTS/MK compile check..."
+          make target/linux/compile V=s
+
+      # ============================================================
       # 自定义 files
       # ============================================================
 
