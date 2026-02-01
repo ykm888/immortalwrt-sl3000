@@ -80,7 +80,7 @@ grep "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" .config \
   && echo ">>> sl3000-emmc 已激活" \
   || { echo "[ERROR] sl3000-emmc 未激活"; exit 1; }
 
-# --- 4.5 MK ↔ DTS 名称一致性检测（新增） ---
+# --- 4.5 MK ↔ DTS 名称一致性检测（支持 DEVICE_DTS） ---
 echo ">>> 校验 MK <-> DTS 映射一致性..."
 
 DEV="sl3000-emmc"
@@ -88,11 +88,11 @@ DEV="sl3000-emmc"
 DTS_IN_MK=$(awk '
   $0 ~ "^define[ \t]+Device/'"$DEV"'" { in_dev=1 }
   in_dev && $1 == "endef" { in_dev=0 }
-  in_dev && $1 == "DTS" && $2 == ":=" { print $3 }
+  in_dev && ($1 == "DTS" || $1 == "DEVICE_DTS") && $2 == ":=" { print $3 }
 ' "$MKFILE")
 
 if [ -z "$DTS_IN_MK" ]; then
-    echo "[ERROR] MK 中未找到 Device/${DEV} 的 DTS := 定义"
+    echo "[ERROR] MK 中未找到 Device/${DEV} 的 DTS 或 DEVICE_DTS 定义"
     exit 1
 fi
 
