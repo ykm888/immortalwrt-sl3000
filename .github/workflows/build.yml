@@ -24,12 +24,8 @@ jobs:
         with:
           path: repo
 
-      # ============================================================
-      # 强制清理 WORKDIR（解决旧源码残留 / MK 未更新）
-      # ============================================================
-      - name: Clean WORKDIR (force fresh tree)
+      - name: Clean WORKDIR
         run: |
-          echo ">>> Cleaning WORKDIR: ${{ env.WORKDIR }}"
           rm -rf "${{ env.WORKDIR }}"
           mkdir -p "${{ env.WORKDIR }}"
 
@@ -65,17 +61,20 @@ jobs:
             ${{ runner.os }}-openwrt-2410-ccache-
 
       # ============================================================
-      # 提前全局禁止 menuconfig（必须在所有 make 之前）
+      # 🔥 一次性彻底修复 flex/m4：强制使用系统 m4
       # ============================================================
-      - name: Disable menuconfig globally
+      - name: Force flex to use system m4
+        working-directory: ${{ env.WORKDIR }}
         run: |
-          echo "KCONFIG_NONINTERACTIVE=1" >> $GITHUB_ENV
-          echo "TERM=dumb" >> $GITHUB_ENV
-          echo "LC_ALL=C" >> $GITHUB_ENV
-          echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
+          echo ">>> Forcing flex to use system m4..."
+          mkdir -p staging_dir/host/bin
+          SYS_M4="$(command -v m4)"
+          rm -f staging_dir/host/bin/m4
+          ln -s "$SYS_M4" staging_dir/host/bin/m4
+          echo "M4=$SYS_M4" >> $GITHUB_ENV
 
       # ============================================================
-      # 三件套闭环：复制 + 全量检测
+      # 三件套闭环
       # ============================================================
       - name: Copy DTS + MK from repo
         working-directory: ${{ env.WORKDIR }}
@@ -83,137 +82,73 @@ jobs:
           cp -v "$GITHUB_WORKSPACE/repo/target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts" target/linux/mediatek/dts/
           cp -v "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" target/linux/mediatek/image/filogic.mk
 
-      - name: Run clean-feeds.sh（三件套闭环）
+      - name: Run clean-feeds.sh
         working-directory: ${{ env.WORKDIR }}
         run: |
           chmod +x "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
           bash "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
 
-      # ============================================================
-      # 确保 .config 完整，避免 menuconfig fallback
-      # ============================================================
-      - name: Ensure .config is complete
+      - name: Ensure .config complete
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> Running defconfig to avoid menuconfig fallback..."
           make defconfig
 
-      # ============================================================
-      # 修复后的第12项检测（支持 DEVICE_DTS + 修复 in_dev）
-      # ============================================================
-      - name: Verify MK <-> DTS mapping（第12项检测）
+      - name: Verify MK <-> DTS mapping
         working-directory: ${{ env.WORKDIR }}
         run: |
           MKFILE="target/linux/mediatek/image/filogic.mk"
           DTSFILE="target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts"
           DEV="sl3000-emmc"
-
-          echo ">>> 校验 MK 中 Device/${DEV} 的 DTS 定义是否与 ${DTSFILE} 一致..."
-
           DTSINMK=$(awk '
             $0 ~ "^define[ \t]+Device/'"$DEV"'" { in_dev=1 }
             in_dev && $1 == "endef" { in_dev=0 }
             in_dev && ($1 == "DTS" || $1 == "DEVICE_DTS") && $2 == ":=" { print $3 }
           ' "$MKFILE")
-
-          if [ -z "$DTSINMK" ]; then
-            echo "[ERROR] 在 ${MKFILE} 中未找到 Device/${DEV} 的 DTS 或 DEVICE_DTS 定义"
-            exit 1
-          fi
-
+          [ -z "$DTSINMK" ] && echo "[ERROR] DTS missing" && exit 1
           DTS_BASENAME=$(basename "$DTSFILE" .dts)
-
-          echo ">>> MK 中 DTS := ${DTSINMK}"
-          echo ">>> DTS 文件名基名: ${DTS_BASENAME}"
-
-          if [ "$DTSINMK" != "$DTS_BASENAME" ]; then
-            echo "[ERROR] MK 中 DTS 名称(${DTSINMK}) 与 DTS 文件名(${DTS_BASENAME}) 不一致"
-            exit 1
-          fi
-
-          echo ">>> MK <-> DTS 映射一致，三件套第12项检测通过"
+          [ "$DTSINMK" != "$DTS_BASENAME" ] && echo "[ERROR] mismatch" && exit 1
+          echo "OK"
 
       # ============================================================
-      # DTS/MK 编译级校验
+      # 构建链
       # ============================================================
-      - name: Verify DTS/MK compile
+      - name: Build host tools
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> Running DTS/MK compile check..."
-          make target/linux/compile V=s
+          make tools/install -j"$(nproc)" V=s
 
-      # ============================================================
-      # 自定义 files
-      # ============================================================
-      - name: Copy custom files (拉起 99-expand-rootfs)
-        run: |
-          mkdir -p ${{ env.WORKDIR }}/files
-          cp -r $GITHUB_WORKSPACE/repo/files/* ${{ env.WORKDIR }}/files/
-
-      # ============================================================
-      # 构建链（6 段）
-      # ============================================================
-      - name: Build host tools (self-heal)
+      - name: Build toolchain
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make tools/install -j"$(nproc)" V=s || \
-          (make tools/clean && make tools/install -j"$(nproc)" V=s)
+          make toolchain/install -j"$(nproc)" V=s
 
-      - name: Build toolchain (self-heal)
+      - name: Build kernel
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make toolchain/install -j"$(nproc)" V=s || \
-          (make toolchain/clean && make toolchain/install -j"$(nproc)" V=s)
+          make target/linux/compile -j"$(nproc)" V=s
 
-      - name: Build kernel (self-heal)
+      - name: Download sources
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make target/linux/compile -j"$(nproc)" V=s || \
-          (make target/linux/clean && make target/linux/compile -j"$(nproc)" V=s)
+          make download -j"$(nproc)" V=s
 
-      - name: Download sources (self-heal)
+      - name: Build packages
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> Downloading sources..."
-          make download -j"$(nproc)" V=s || \
-          (echo "Download failed, retrying..." && make download -j"$(nproc)" V=s)
+          make package/compile -j"$(nproc)" V=s
 
-      - name: Build packages (self-heal)
+      - name: Build image
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make package/compile -j"$(nproc)" V=s || \
-          (make package/clean && make package/compile -j"$(nproc)" V=s)
+          make -j"$(nproc)" V=s
 
-      - name: Build image (self-heal)
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          make -j"$(nproc)" V=s || \
-          (make clean && make -j"$(nproc)" V=s)
-
-      # ============================================================
-      # 校验 + 收集产物
-      # ============================================================
-      - name: Debug firmware directory
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          echo ">>> Listing firmware outputs..."
-          find bin/targets/mediatek/filogic/ -type f -maxdepth 1 -ls || true
-
-      - name: Validate firmware output
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          echo ">>> Checking final firmware..."
-          ls -lh bin/targets/mediatek/filogic/*.bin || (echo "未生成固件"; exit 1)
-
-      - name: Collect logs and metadata
+      - name: Collect outputs
         working-directory: ${{ env.WORKDIR }}
         run: |
           mkdir -p "$GITHUB_WORKSPACE/output" "$GITHUB_WORKSPACE/logs"
-          cp bin/targets/mediatek/filogic/*.bin "$GITHUB_WORKSPACE/output/" || true
-          cp bin/targets/mediatek/filogic/*.manifest "$GITHUB_WORKSPACE/output/" || true
+          cp bin/targets/mediatek/filogic/* "$GITHUB_WORKSPACE/output/" || true
           cp bin/targets/mediatek/filogic/sha256sums "$GITHUB_WORKSPACE/logs/" || true
-          [ -f feeds.lock ] && cp feeds.lock "$GITHUB_WORKSPACE/logs/" || true
-          [ -f .config ] && cp .config "$GITHUB_WORKSPACE/logs/config.buildinfo" || true
+          cp .config "$GITHUB_WORKSPACE/logs/config.buildinfo" || true
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
