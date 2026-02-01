@@ -35,12 +35,12 @@ jobs:
           key: sl3000-2410-ccache-${{ github.sha }}
           restore-keys: sl3000-2410-ccache-
 
-      - name: 清理信息流配置
+      - name: 清理工作目录
         run: |
           rm -rf "${{ env.WORKDIR }}"
           mkdir -p "${{ env.WORKDIR }}"
 
-      - name: 克隆 OpenWrt 源码
+      - name: 克隆 ImmortalWrt 源码
         run: |
           git clone --depth=1 -b "${{ env.SOURCE_BRANCH }}" \
             "${{ env.SOURCE_REPO }}" "${{ env.WORKDIR }}"
@@ -58,25 +58,26 @@ jobs:
           cp "$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config" \
              sl3000/config/
 
-      - name: 确保 feeds.conf 存在（ImmortalWrt 官方 feed）
-        run: |
-          cd "$WORKDIR"
-          echo "src-git packages https://github.com/immortalwrt/packages.git" > feeds.conf
-          echo "src-git luci https://github.com/immortalwrt/luci.git" >> feeds.conf
-          echo "src-git routing https://github.com/immortalwrt/routing.git" >> feeds.conf
-          echo "src-git telephony https://github.com/immortalwrt/telephony.git" >> feeds.conf
-
-      - name: 运行 clean-feeds.sh（白名单）
+      - name: 运行 clean-feeds.sh（白名单 + 显示 12 道检测）
         working-directory: ${{ env.WORKDIR }}
         run: |
+          echo "================ CLEAN-FEEDS START ================"
           cp "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh" "$WORKDIR/clean-feeds.sh"
           chmod +x "$WORKDIR/clean-feeds.sh"
+          set -x
           ./clean-feeds.sh
+          set +x
+          echo "================ CLEAN-FEEDS END =================="
 
-      # 🔥🔥🔥 关键修复：生成完整 .config，避免 menuconfig
-      - name: 生成完整 defconfig（避免 menuconfig）
+      - name: 生成基础 defconfig（避免 menuconfig）
         working-directory: ${{ env.WORKDIR }}
         run: |
+          make defconfig
+
+      - name: 叠加 sl3000.config（你的机型配置）
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          cat sl3000/config/sl3000.config >> .config
           make defconfig
 
       - name: 全局禁用 menuconfig
@@ -111,13 +112,13 @@ jobs:
           sed -i 's/DEVICE_DTS := .*/DEVICE_DTS := mt7981b-sl3000-emmc/' \
             target/linux/mediatek/image/filogic.mk
 
-      - name: 应用 DTS
+      - name: 应用 DTS（最终覆盖一次）
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" \
              target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
 
-      - name: 应用 MK
+      - name: 应用 MK（最终覆盖一次）
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
