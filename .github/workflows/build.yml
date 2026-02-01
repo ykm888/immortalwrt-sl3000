@@ -15,7 +15,13 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      # 1. 安装构建依赖项 + ccache
+      # 1. Checkout 仓库（你的脚本 clean-feeds.sh 在这里）
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      # 2. 安装构建依赖项 + ccache
       - name: 安装构建依赖项 + ccache
         run: |
           sudo apt-get update
@@ -24,7 +30,7 @@ jobs:
             python3 python3-pip python3-setuptools python3-wheel \
             libssl-dev libffi-dev ccache
 
-      # 2. 缓存 ccache
+      # 3. 缓存 ccache
       - name: 缓存 ccache
         uses: actions/cache@v4
         with:
@@ -32,19 +38,19 @@ jobs:
           key: sl3000-2410-ccache-${{ github.sha }}
           restore-keys: sl3000-2410-ccache-
 
-      # 3. 清理信息流配置
+      # 4. 清理信息流配置
       - name: 清理信息流配置
         run: |
           rm -rf "${{ env.WORKDIR }}"
           mkdir -p "${{ env.WORKDIR }}"
 
-      # 4. 更新信息流
+      # 5. 克隆 OpenWrt 源码
       - name: 更新信息流
         run: |
           git clone --depth=1 -b "${{ env.SOURCE_BRANCH }}" \
             "${{ env.SOURCE_REPO }}" "${{ env.WORKDIR }}"
 
-      # 5. 运行 clean-feeds.sh（白名单）
+      # 6. 运行 clean-feeds.sh（白名单 + 三件套检测修复注册）
       - name: 运行 clean-feeds.sh（白名单）
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -52,65 +58,65 @@ jobs:
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
 
-      # 6. 全局禁用 menuconfig
+      # 7. 全局禁用 menuconfig
       - name: 全局禁用 menuconfig
         working-directory: ${{ env.WORKDIR }}
         run: |
           echo "# CONFIG_DEVEL is not set" >> .config
           echo "# CONFIG_BUILD_MENUCONFIG is not set" >> .config
 
-      # 7. 下载源文件（自愈）
+      # 8. 下载源文件（自愈）
       - name: 下载源文件（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
           make download -j$(nproc) V=s || make download -j1 V=s
 
-      # 8. 构建主机工具（自愈）
+      # 9. 构建主机工具（自愈）
       - name: 构建主机工具（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
           make tools/install -j$(nproc) V=s || make tools/install -j1 V=s
 
-      # 9. 构建工具链（自愈）
+      # 10. 构建工具链（自愈）
       - name: 构建工具链（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
           make toolchain/install -j$(nproc) V=s || make toolchain/install -j1 V=s
 
-      # 10. 检测三件套一致性
+      # 11. 再次执行三件套检测（确保一致性）
       - name: 检测三件套一致性
         working-directory: ${{ env.WORKDIR }}
         run: |
-          bash clean-feeds.sh
+          ./clean-feeds.sh
 
-      # 11. 自动修复三段式命名
+      # 12. 自动修复三段式命名
       - name: 自动修复三段式命名
         working-directory: ${{ env.WORKDIR }}
         run: |
           sed -i 's/DEVICE_DTS := .*/DEVICE_DTS := mt7981b-sl3000-emmc/' \
             target/linux/mediatek/image/filogic.mk
 
-      # 12. 应用 DTS
+      # 13. 应用 DTS
       - name: 应用 DTS
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts" \
              target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/
 
-      # 13. 应用 MK
+      # 14. 应用 MK
       - name: 应用 MK
         working-directory: ${{ env.WORKDIR }}
         run: |
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
              target/linux/mediatek/image/
 
-      # 14. 构建内核（自愈）
+      # 15. 构建内核（自愈）
       - name: 构建内核（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
           make target/linux/compile -j$(nproc) V=s || make target/linux/compile -j1 V=s
 
-      # 15. 构建软件包（自愈）
+      # 16. 构建软件包（自愈）
       - name: 构建软件包（自愈）
         working-directory: ${{ env.WORKDIR }}
         run: |
