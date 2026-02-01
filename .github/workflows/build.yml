@@ -58,8 +58,14 @@ jobs:
             ${{ runner.os }}-openwrt-2410-ccache-
 
       # ============================================================
-      # 三件套闭环（调用修复后的 clean-feeds.sh）
+      # 三件套闭环
       # ============================================================
+
+      - name: Copy DTS + MK from repo
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          cp -v "$GITHUB_WORKSPACE/repo/target/linux/mediatek/dts/mt7981b-sl3000-emmc.dts" target/linux/mediatek/dts/
+          cp -v "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" target/linux/mediatek/image/filogic.mk
 
       - name: Run clean-feeds.sh（三件套闭环）
         working-directory: ${{ env.WORK_DIR }}
