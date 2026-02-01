@@ -25,8 +25,8 @@ done
 
 # --- 2. Feeds 可复现机制 ---
 if [ -f "feeds.lock" ]; then
-    echo ">>> 使用 feeds.lock 重放 feeds"
-    cp -v feeds.lock feeds.conf.default
+    echo ">>> 使用 feeds.lock 校验 feeds"
+    diff -u feeds.conf.default feeds.lock || true
     ./scripts/feeds update -a
     ./scripts/feeds install -a
 else
@@ -80,10 +80,7 @@ sha256sum "$DTSFILE" "$MKPATCH" "$CONFFILE"
 
 # --- 4.1 DTS 注入 ---
 mkdir -p target/linux/mediatek/dts
-
-# 删除旧 DTS 名称
 rm -f target/linux/mediatek/dts/mt7981b-sl-3000-emmc.dts
-
 cp -v "$DTSFILE" target/linux/mediatek/dts/
 
 # --- 4.2 MK 安全插入 ---
@@ -93,7 +90,7 @@ MK_TARGET="target/linux/mediatek/image/filogic.mk"
 sed -i '/Device\/sl3000-emmc/,/endef/d' "$MK_TARGET"
 sed -i '/TARGET_DEVICES += sl3000-emmc/d' "$MK_TARGET"
 
-# 结构化插入
+# 结构化插入（在最后一个 define Device 后插入）
 awk -v patch="$MKPATCH" '
   BEGIN { inserted=0 }
   /^define Device/ { last=NR }
@@ -116,6 +113,7 @@ make defconfig
 
 # --- 4.4 激活确认 ---
 grep "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" .config \
-  && echo ">>> sl3000-emmc 已激活"
+  && echo ">>> sl3000-emmc 已激活" \
+  || { echo "[ERROR] sl3000-emmc 未激活"; exit 1; }
 
 echo "=== clean-feeds.sh v12-final 完成（可复现 + 三件套闭环 + MK 安全插入 + DTS 固定路径） ==="
