@@ -65,15 +65,14 @@ jobs:
             ${{ runner.os }}-openwrt-2410-ccache-
 
       # ============================================================
-      # 强制重建 host 工具链（彻底解决 flex/m4 崩溃）
+      # 提前全局禁止 menuconfig（必须在所有 make 之前）
       # ============================================================
-      - name: Force rebuild host tools
-        working-directory: ${{ env.WORKDIR }}
+      - name: Disable menuconfig globally
         run: |
-          echo ">>> Forcing rebuild of host tools..."
-          rm -rf staging_dir/host
-          make tools/install -j"$(nproc)" V=s
-          make toolchain/install -j"$(nproc)" V=s
+          echo "KCONFIG_NONINTERACTIVE=1" >> $GITHUB_ENV
+          echo "TERM=dumb" >> $GITHUB_ENV
+          echo "LC_ALL=C" >> $GITHUB_ENV
+          echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
 
       # ============================================================
       # 三件套闭环：复制 + 全量检测
@@ -91,7 +90,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/repo/scripts/clean-feeds.sh"
 
       # ============================================================
-      # 防止 menuconfig fallback（关键）
+      # 确保 .config 完整，避免 menuconfig fallback
       # ============================================================
       - name: Ensure .config is complete
         working-directory: ${{ env.WORKDIR }}
@@ -151,46 +150,45 @@ jobs:
           mkdir -p ${{ env.WORKDIR }}/files
           cp -r $GITHUB_WORKSPACE/repo/files/* ${{ env.WORKDIR }}/files/
 
-      - name: Disable menuconfig globally
-        run: |
-          echo "KCONFIG_NONINTERACTIVE=1" >> $GITHUB_ENV
-          echo "TERM=dumb" >> $GITHUB_ENV
-          echo "LC_ALL=C" >> $GITHUB_ENV
-          echo "FORCE_UNSAFE_CONFIGURE=1" >> $GITHUB_ENV
-
       # ============================================================
       # 构建链（6 段）
       # ============================================================
       - name: Build host tools (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make tools/install -j"$(nproc)" V=s
+          make tools/install -j"$(nproc)" V=s || \
+          (make tools/clean && make tools/install -j"$(nproc)" V=s)
 
       - name: Build toolchain (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make toolchain/install -j"$(nproc)" V=s
+          make toolchain/install -j"$(nproc)" V=s || \
+          (make toolchain/clean && make toolchain/install -j"$(nproc)" V=s)
 
       - name: Build kernel (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make target/linux/compile -j"$(nproc)" V=s
+          make target/linux/compile -j"$(nproc)" V=s || \
+          (make target/linux/clean && make target/linux/compile -j"$(nproc)" V=s)
 
       - name: Download sources (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
           echo ">>> Downloading sources..."
-          make download -j"$(nproc)" V=s
+          make download -j"$(nproc)" V=s || \
+          (echo "Download failed, retrying..." && make download -j"$(nproc)" V=s)
 
       - name: Build packages (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make package/compile -j"$(nproc)" V=s
+          make package/compile -j"$(nproc)" V=s || \
+          (make package/clean && make package/compile -j"$(nproc)" V=s)
 
       - name: Build image (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make -j"$(nproc)" V=s
+          make -j"$(nproc)" V=s || \
+          (make clean && make -j"$(nproc)" V=s)
 
       # ============================================================
       # 校验 + 收集产物
