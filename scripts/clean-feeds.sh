@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo ">>> [自愈体系] clean-feeds.sh v28-sl3000-final 启动"
+echo ">>> [自愈体系] clean-feeds.sh v29-sl3000-final 启动"
 
 # --- 0. 路径校验 ---
 if [ ! -f "scripts/feeds" ]; then
@@ -80,4 +80,4 @@ grep "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" .config \
   && echo ">>> sl3000-emmc 已激活" \
   || { echo "[ERROR] sl3000-emmc 未激活"; exit 1; }
 
-echo "=== clean-feeds.sh v28-sl3000-final 完成（可复现 + 三件套闭环，MK/DTS 已固定路径） ==="
+echo "=== clean-feeds.sh v29-sl3000-final 完成（可复现 + 三件套闭环，MK/DTS 已固定路径） ==="
