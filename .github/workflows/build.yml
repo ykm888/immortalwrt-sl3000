@@ -46,7 +46,7 @@ jobs:
           restore-keys: |
             ${{ env.TARGET_PROFILE }}-${{ env.SOURCE_BRANCH }}-ccache-dl
 
-      - name: 5. Engineering Injection (V5.0)
+      - name: 5. Initial Engineering Injection
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -54,47 +54,57 @@ jobs:
           cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
+          cp configs/sl3000-emmc.config .config
+          make defconfig
 
-      - name: 6. Defconfig & CCACHE Setup
+      - name: 6. Build Target Preparation & Dual Injection
         working-directory: ${{ env.WORKDIR }}
         run: |
-          cp configs/sl3000-emmc.config .config
-          echo "CONFIG_CCACHE=y" >> .config
-          echo "CONFIG_CCACHE_DIR=\"${{ env.CCACHE_DIR }}\"" >> .config
-          make defconfig
+          echo ">>> [核心修复] 强制解压内核源码..."
+          # 仅准备内核源码，不开始真正编译
+          make target/linux/prepare -j$(nproc)
+          
+          echo ">>> [核心修复] 探测 build_dir 中的物理 DTS 路径..."
+          # 动态寻找解压后的 DTS 目录
+          REAL_DTS_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
+          
+          if [ -n "$REAL_DTS_DIR" ]; then
+            echo ">>> 锁定物理路径: $REAL_DTS_DIR"
+            DTS_FILE_SOURCE=$(find ${{ github.workspace }}/custom-config -name "mt7981b-sl3000-emmc.dts")
+            
+            # 执行多点暴力注入：
+            # 1. 塞进 mediatek 子目录
+            cp -v "$DTS_FILE_SOURCE" "$REAL_DTS_DIR/"
+            # 2. 塞进上一级目录 (应对报错中显示 mediatek/xxxx.dts 的逻辑)
+            cp -v "$DTS_FILE_SOURCE" "$REAL_DTS_DIR/../"
+            echo ">>> 物理注入完成！"
+          else
+            echo "WARNING: 未能锁定 build_dir 中的 DTS 路径，可能内核尚未解压或路径变更"
+          fi
 
       - name: 7. Build Tools & Toolchain
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make tools/install -j$(nproc) V=s || make tools/install -j1 V=s
-          make toolchain/install -j$(nproc) V=s || make toolchain/install -j1 V=s
+          make tools/install -j$(nproc)
+          make toolchain/install -j$(nproc)
 
-      - name: 8. Build Kernel (Fixed Step)
+      - name: 8. Final Kernel & Image Build
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 如果这里报错，说明 DTS 路径仍有冲突，强制单线程输出错误日志
+          # 此时 DTS 已经在 build_dir 里“严阵以待”，cc1 将无法报错
           make target/linux/install -j$(nproc) V=s || make target/linux/install -j1 V=s
+          make target/install -j$(nproc)
 
-      - name: 9. Build Packages & Image
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          make package/compile -j$(nproc) V=s || make package/compile -j1 V=s
-          make target/install -j$(nproc) V=s || make target/install -j1 V=s
-
-      - name: 10. Diagnostic Summary
+      - name: 9. Diagnostic & Release
         if: always()
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> [工程总结] 固件生成检查"
           FIRMWARE_DIR="bin/targets/mediatek/filogic"
           if ls "$FIRMWARE_DIR"/*.bin >/dev/null 2>&1; then
             echo "FIRMWARE_STATUS=SUCCESS" >> $GITHUB_ENV
-            ls -lh "$FIRMWARE_DIR"/*.bin
-          else
-            echo "FIRMWARE_STATUS=FAILED" >> $GITHUB_ENV
           fi
 
-      - name: 11. Create Auto Release
+      - name: 10. Create Auto Release
         if: env.FIRMWARE_STATUS == 'SUCCESS'
         uses: softprops/action-gh-release@v2
         with:
