@@ -1,4 +1,4 @@
-name: build-sl3000-2410-ultimate
+name: build-sl3000-2410-v15
 
 on:
   workflow_dispatch:
@@ -8,7 +8,6 @@ permissions:
 
 env:
   WORKDIR: ${{ github.workspace }}/immortalwrt
-  CCACHE_DIR: ${{ github.workspace }}/.ccache
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
   SOURCE_BRANCH: openwrt-24.10
   TARGET_PROFILE: sl3000-emmc
@@ -33,7 +32,7 @@ jobs:
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. Engineering Injection (V13.1)
+      - name: 4. Execute Auto-Merge & Defconfig
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -41,42 +40,56 @@ jobs:
           cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
-          cp configs/sl3000-emmc.config .config
           make defconfig
 
-      - name: 5. Build Preparation & Kernel Dual-Injection
+      - name: 5. Kernel Source Hook (The Ultimate Shield)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> 预解压内核并注入物理补丁..."
+          echo ">>> 执行内核源码级拦截与 Hook..."
           make target/linux/prepare -j$(nproc)
           
-          # 寻找 build_dir 物理路径并强制同步已修复引用的 DTS
           REAL_DTS_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
           if [ -n "$REAL_DTS_DIR" ]; then
-            # 从之前 clean-feeds 修复过的目录复制到 build_dir
             FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts")
             cp -v "$FIXED_DTS" "$REAL_DTS_DIR/"
             
-            # 同样同步修改 build_dir 里的内核 Makefile
-            REAL_MAKEFILE="$REAL_DTS_DIR/Makefile"
-            grep -q "mt7981b-sl3000-emmc.dtb" "$REAL_MAKEFILE" || \
-            sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_MAKEFILE"
+            # 物理注册：防止 Makefile 被还原
+            sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_DTS_DIR/Makefile"
+            
+            # 绝杀：强制将 DTS 物理路径加入编译器搜索范围
+            sed -i "s|DTC_FLAGS += |DTC_FLAGS += -i $REAL_DTS_DIR |" $(find build_dir -name "Makefile.lib") 2>/dev/null || true
           fi
 
-      - name: 6. Full Build (Tools & Toolchain & Image)
+      - name: 6. Build Tools & Toolchain
         working-directory: ${{ env.WORKDIR }}
         run: |
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
-          # 执行内核与固件生成
-          make target/linux/install -j$(nproc) V=s || make target/linux/install -j1 V=s
+
+      - name: 7. Build Kernel & Image (Diagnostic Mode)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          # 尝试并行编译，失败则自动切换单线程详查模式
+          if ! make target/linux/install -j$(nproc) V=i; then
+            echo "::error::编译失败，正在提取详细错误日志..."
+            make target/linux/install -j1 V=s 2>&1 | tee build_detailed_error.log
+            exit 1
+          fi
           make target/install -j$(nproc)
 
-      - name: 7. Create Auto Release
+      - name: 8. Diagnostic Upload on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-logs
+          path: |
+            ${{ env.WORKDIR }}/dts_syntax_error.log
+            ${{ env.WORKDIR }}/build_detailed_error.log
+            ${{ env.WORKDIR }}/.config
+
+      - name: 9. Create Auto Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TARGET_PROFILE }}-${{ github.run_number }}
-          files: |
-            ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
-            ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/sha256sums
+          files: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
