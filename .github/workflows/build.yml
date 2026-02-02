@@ -12,52 +12,93 @@ env:
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
   SOURCE_BRANCH: openwrt-24.10
   TARGET_PROFILE: sl3000-emmc
+  FORCE_UNSAFE_CONFIGURE: 1
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 480
+
     steps:
-      - name: Free Disk Space
+      - name: 1. Maximize Build Space
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /var/lib/docker
           sudo docker system prune -af --volumes
 
-      - name: Install Deps
+      - name: 2. Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc
+          echo "CCACHE_DIR=${{ env.CCACHE_DIR }}" >> $GITHUB_ENV
 
-      - name: Clone Source
+      - name: 3. Checkout & Clone
         run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
-          # 显式克隆到 custom-config 目录
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: Inject & Build
+      - name: 4. Strategic Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CCACHE_DIR }}
+            ${{ env.WORKDIR }}/dl
+          key: ${{ env.TARGET_PROFILE }}-${{ env.SOURCE_BRANCH }}-ccache-dl
+          restore-keys: |
+            ${{ env.TARGET_PROFILE }}-${{ env.SOURCE_BRANCH }}-ccache-dl
+
+      - name: 5. Engineering Injection (V5.0)
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
-          # 运行终极自愈脚本
           cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
-          
-          # 生成配置
-          cp configs/sl3000-emmc.config .config
-          make defconfig
-          
-          # 阶段化编译，方便排查
-          make tools/install -j$(nproc) || make tools/install -j1 V=s
-          make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
-          # 报错就在这一步：
-          make target/linux/install -j$(nproc) || make target/linux/install -j1 V=s
-          make package/compile -j$(nproc) || make package/compile -j1 V=s
-          make target/install -j$(nproc) || make target/install -j1 V=s
 
-      - name: Upload Firmware
-        if: success()
+      - name: 6. Defconfig & CCACHE Setup
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          cp configs/sl3000-emmc.config .config
+          echo "CONFIG_CCACHE=y" >> .config
+          echo "CONFIG_CCACHE_DIR=\"${{ env.CCACHE_DIR }}\"" >> .config
+          make defconfig
+
+      - name: 7. Build Tools & Toolchain
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make tools/install -j$(nproc) V=s || make tools/install -j1 V=s
+          make toolchain/install -j$(nproc) V=s || make toolchain/install -j1 V=s
+
+      - name: 8. Build Kernel (Fixed Step)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          # 如果这里报错，说明 DTS 路径仍有冲突，强制单线程输出错误日志
+          make target/linux/install -j$(nproc) V=s || make target/linux/install -j1 V=s
+
+      - name: 9. Build Packages & Image
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make package/compile -j$(nproc) V=s || make package/compile -j1 V=s
+          make target/install -j$(nproc) V=s || make target/install -j1 V=s
+
+      - name: 10. Diagnostic Summary
+        if: always()
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          echo ">>> [工程总结] 固件生成检查"
+          FIRMWARE_DIR="bin/targets/mediatek/filogic"
+          if ls "$FIRMWARE_DIR"/*.bin >/dev/null 2>&1; then
+            echo "FIRMWARE_STATUS=SUCCESS" >> $GITHUB_ENV
+            ls -lh "$FIRMWARE_DIR"/*.bin
+          else
+            echo "FIRMWARE_STATUS=FAILED" >> $GITHUB_ENV
+          fi
+
+      - name: 11. Create Auto Release
+        if: env.FIRMWARE_STATUS == 'SUCCESS'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TARGET_PROFILE }}-${{ github.run_number }}
-          files: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
+          files: |
+            ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
+            ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/sha256sums
