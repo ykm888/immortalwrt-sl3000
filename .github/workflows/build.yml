@@ -45,6 +45,9 @@ jobs:
           git clone --depth=1 -b "${{ env.SOURCE_BRANCH }}" \
             "${{ env.SOURCE_REPO }}" "${{ env.WORKDIR }}"
 
+      # ============================
+      # 三件套注入
+      # ============================
       - name: Inject three-piece set (DTS / MK / CONFIG)
         run: |
           cd "$WORKDIR"
@@ -61,6 +64,9 @@ jobs:
           cp "$GITHUB_WORKSPACE/repo/sl3000/config/sl3000.config" \
              sl3000/config/
 
+      # ============================
+      # feeds / clean-feeds 自愈
+      # ============================
       - name: Ensure feeds.conf exists (no heredoc)
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -85,6 +91,9 @@ jobs:
           set +x
           echo "================ CLEAN-FEEDS END =================="
 
+      # ============================
+      # defconfig + profile 自愈
+      # ============================
       - name: Generate base defconfig
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -96,13 +105,14 @@ jobs:
           cat sl3000/config/sl3000.config >> .config
           make defconfig
 
-      - name: Ensure profile config enabled (auto-fix)
+      - name: Ensure profile config enabled (self-heal)
         working-directory: ${{ env.WORKDIR }}
         run: |
           echo "=== Ensuring target/profile config ==="
           grep -q '^CONFIG_TARGET_mediatek=y' .config || echo 'CONFIG_TARGET_mediatek=y' >> .config
           grep -q '^CONFIG_TARGET_mediatek_filogic=y' .config || echo 'CONFIG_TARGET_mediatek_filogic=y' >> .config
           grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y' .config || echo 'CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y' >> .config
+          make defconfig
 
       - name: Disable menuconfig
         working-directory: ${{ env.WORKDIR }}
@@ -110,6 +120,9 @@ jobs:
           echo "# CONFIG_DEVEL is not set" >> .config
           echo "# CONFIG_BUILD_MENUCONFIG is not set" >> .config
 
+      # ============================
+      # 下载 / 工具链
+      # ============================
       - name: Download sources
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -130,6 +143,9 @@ jobs:
         run: |
           ./clean-feeds.sh
 
+      # ============================
+      # MK / DTS 自愈
+      # ============================
       - name: Ensure MK profile block (auto-fix)
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -165,7 +181,6 @@ jobs:
       - name: Ensure DTS include (auto-fix)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo "=== Ensuring DTS file exists ==="
           ls target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts || exit 1
 
       - name: Apply MK (final)
@@ -174,6 +189,9 @@ jobs:
           cp "$GITHUB_WORKSPACE/repo/target/linux/mediatek/image/filogic.mk" \
              target/linux/mediatek/image/
 
+      # ============================
+      # 编译阶段
+      # ============================
       - name: Build kernel
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -200,9 +218,8 @@ jobs:
           make install -j$(nproc) V=s || make install -j1 V=s
 
       # ============================
-      # Firmware Diagnostics Section
+      # 诊断 + 固件存在性检查
       # ============================
-
       - name: Verify target/profile selection
         working-directory: ${{ env.WORKDIR }}
         run: |
@@ -241,4 +258,32 @@ jobs:
             grep CONFIG_TARGET_mediatek=y .config || echo "Missing"
             grep CONFIG_TARGET_mediatek_filogic=y .config || echo "Missing"
             echo "2. Profile enabled:"
-            grep CONFIG_TARGET
+            grep CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y .config || echo "Missing"
+            echo "3. MK profile:"
+            grep Device/sl3000-emmc target/linux/mediatek/image/filogic.mk || echo "Missing"
+            echo "4. DTS:"
+            ls target/linux/mediatek/files-6.6/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts || echo "Missing"
+            echo "5. Directory content:"
+            ls -l bin/targets/mediatek/filogic || echo "Directory missing"
+            exit 1
+          else
+            echo "Firmware files detected."
+          fi
+
+      # ============================
+      # 自动发布
+      # ============================
+      - name: Auto release firmware
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: sl3000-emmc-openwrt-24.10-${{ github.run_number }}-${{ github.run_id }}
+          name: SL3000 eMMC OpenWrt 24.10 #${{ github.run_number }}
+          body: |
+            Auto Release  
+            Target: SL3000 eMMC  
+            Build: ${{ github.run_number }}  
+            Run ID: ${{ github.run_id }}
+
+          files: |
+            ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*
