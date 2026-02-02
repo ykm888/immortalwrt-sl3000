@@ -12,119 +12,52 @@ env:
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
   SOURCE_BRANCH: openwrt-24.10
   TARGET_PROFILE: sl3000-emmc
-  FORCE_UNSAFE_CONFIGURE: 1
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 480
-
     steps:
-      - name: 1. Maximize Build Space
+      - name: Free Disk Space
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /var/lib/docker
-          sudo docker system prune -af --volumes || true
-          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo docker system prune -af --volumes
 
-      - name: 2. Install Dependencies
+      - name: Install Deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential flex bison gawk m4 libtool-bin \
-            rsync unzip wget curl patch git-core gettext \
-            libncurses-dev zlib1g-dev libssl-dev libelf-dev \
-            python3 python3-pip ccache device-tree-compiler bc
-          echo "CCACHE_DIR=${{ env.CCACHE_DIR }}" >> $GITHUB_ENV
+          sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc
 
-      - name: 3. Checkout & Clone
+      - name: Clone Source
         run: |
-          # 检出源码
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
-          # 检出自定义配置仓库
+          # 显式克隆到 custom-config 目录
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. Strategic Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.CCACHE_DIR }}
-            ${{ env.WORKDIR }}/dl
-          key: ${{ env.TARGET_PROFILE }}-${{ env.SOURCE_BRANCH }}-ccache-dl
-          restore-keys: |
-            ${{ env.TARGET_PROFILE }}-${{ env.SOURCE_BRANCH }}-ccache-dl
-
-      - name: 5. Engineering Injection (12 Gates)
+      - name: Inject & Build
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
-          # 调用 V4.0 版双路径自愈脚本
+          # 运行终极自愈脚本
           cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
-
-      - name: 6. Defconfig & CCACHE Setup
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          [ -f configs/sl3000-emmc.config ] || { echo "ERROR: 注入失败"; exit 1; }
+          
+          # 生成配置
           cp configs/sl3000-emmc.config .config
-          
-          # 动态同步 CCACHE 路径
-          sed -i 's|CONFIG_CCACHE_DIR=.*|CONFIG_CCACHE_DIR="${{ env.CCACHE_DIR }}"|' .config || \
-          echo "CONFIG_CCACHE_DIR=\"${{ env.CCACHE_DIR }}\"" >> .config
-          echo "CONFIG_CCACHE=y" >> .config
-          
           make defconfig
+          
+          # 阶段化编译，方便排查
+          make tools/install -j$(nproc) || make tools/install -j1 V=s
+          make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
+          # 报错就在这一步：
+          make target/linux/install -j$(nproc) || make target/linux/install -j1 V=s
+          make package/compile -j$(nproc) || make package/compile -j1 V=s
+          make target/install -j$(nproc) || make target/install -j1 V=s
 
-      - name: 7. Build Tools & Toolchain
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          make tools/install -j$(nproc) V=s || make tools/install -j1 V=s
-          make toolchain/install -j$(nproc) V=s || make toolchain/install -j1 V=s
-
-      - name: 8. Build Kernel & Packages
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          make target/linux/compile -j$(nproc) V=s || make target/linux/compile -j1 V=s
-          make package/compile -j$(nproc) V=s || make package/compile -j1 V=s
-
-      - name: 9. Final Image Generation
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          # 最终固件合成
-          make target/install -j$(nproc) V=s || make target/install -j1 V=s
-
-      - name: 10. Diagnostic Summary
-        if: always()
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          echo ">>> [工程总结] 链路最终检查"
-          FIRMWARE_DIR="bin/targets/mediatek/filogic"
-          if ls "$FIRMWARE_DIR"/*.bin >/dev/null 2>&1; then
-            echo "FIRMWARE_STATUS=SUCCESS" >> $GITHUB_ENV
-            ls -lh "$FIRMWARE_DIR"/*.bin
-          else
-            echo "FIRMWARE_STATUS=FAILED" >> $GITHUB_ENV
-          fi
-
-      - name: 11. Upload Logs on Failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: logs-${{ env.TARGET_PROFILE }}
-          path: ${{ env.WORKDIR }}/logs/
-
-      - name: 12. Create Auto Release
-        if: env.FIRMWARE_STATUS == 'SUCCESS'
+      - name: Upload Firmware
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TARGET_PROFILE }}-${{ github.run_number }}
-          name: SL3000 Build #${{ github.run_number }}
-          body: |
-            ### 编译状态：成功
-            - **设备**: SL3000 (MediaTek Filogic)
-            - **内核**: 24.10 / 6.6.x
-            - **自愈机制**: 已激活 (V4.0)
-          files: |
-            ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
-            ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/sha256sums
+          files: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
