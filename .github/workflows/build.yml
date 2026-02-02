@@ -24,6 +24,7 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /var/lib/docker
           sudo docker system prune -af --volumes || true
+          df -h
 
       - name: 2. Install Dependencies
         run: |
@@ -33,14 +34,13 @@ jobs:
             rsync unzip wget curl patch git-core gettext \
             libncurses-dev zlib1g-dev libssl-dev libelf-dev \
             python3 python3-pip ccache device-tree-compiler bc
-          # 确保 ccache 路径在全生命周期生效
           echo "CCACHE_DIR=${{ env.CCACHE_DIR }}" >> $GITHUB_ENV
-          echo "PATH=/usr/lib/ccache:$PATH" >> $GITHUB_ENV
 
       - name: 3. Checkout & Clone
         run: |
+          # 检出源码
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
-          # 重点：将配置仓库拉取到与源码平级的目录，方便脚本探测
+          # 检出自定义配置仓库
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
       - name: 4. Strategic Cache
@@ -49,17 +49,16 @@ jobs:
           path: |
             ${{ env.CCACHE_DIR }}
             ${{ env.WORKDIR }}/dl
-          # 增加 Key 的唯一性，防止不同分支缓存干扰
           key: ${{ env.TARGET_PROFILE }}-${{ env.SOURCE_BRANCH }}-ccache-dl
           restore-keys: |
             ${{ env.TARGET_PROFILE }}-${{ env.SOURCE_BRANCH }}-ccache-dl
 
       - name: 5. Engineering Injection (12 Gates)
         working-directory: ${{ env.WORKDIR }}
-        # 显式传递 GITHUB_WORKSPACE 确保脚本自愈逻辑生效
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
+          # 调用 V4.0 版双路径自愈脚本
           cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
@@ -67,60 +66,65 @@ jobs:
       - name: 6. Defconfig & CCACHE Setup
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 检查 configs 是否存在 (门禁延伸)
-          [ -f configs/sl3000-emmc.config ] || { echo "ERROR: 配置文件未注入"; exit 1; }
-          
+          [ -f configs/sl3000-emmc.config ] || { echo "ERROR: 注入失败"; exit 1; }
           cp configs/sl3000-emmc.config .config
-          echo "CONFIG_CCACHE=y" >> .config
+          
+          # 动态同步 CCACHE 路径
+          sed -i 's|CONFIG_CCACHE_DIR=.*|CONFIG_CCACHE_DIR="${{ env.CCACHE_DIR }}"|' .config || \
           echo "CONFIG_CCACHE_DIR=\"${{ env.CCACHE_DIR }}\"" >> .config
-          # 执行真正的自愈：清除重复条目
+          echo "CONFIG_CCACHE=y" >> .config
+          
           make defconfig
 
       - name: 7. Build Tools & Toolchain
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 延续分段构建体系
           make tools/install -j$(nproc) V=s || make tools/install -j1 V=s
           make toolchain/install -j$(nproc) V=s || make toolchain/install -j1 V=s
 
       - name: 8. Build Kernel & Packages
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 针对 MediaTek 平台的内核预编译自愈
           make target/linux/compile -j$(nproc) V=s || make target/linux/compile -j1 V=s
           make package/compile -j$(nproc) V=s || make package/compile -j1 V=s
 
       - name: 9. Final Image Generation
         working-directory: ${{ env.WORKDIR }}
         run: |
+          # 最终固件合成
           make target/install -j$(nproc) V=s || make target/install -j1 V=s
 
       - name: 10. Diagnostic Summary
         if: always()
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> [工程总结] 链路检查"
+          echo ">>> [工程总结] 链路最终检查"
           FIRMWARE_DIR="bin/targets/mediatek/filogic"
           if ls "$FIRMWARE_DIR"/*.bin >/dev/null 2>&1; then
             echo "FIRMWARE_STATUS=SUCCESS" >> $GITHUB_ENV
-            # 输出具体文件大小，确认不是 0kb 的废文件
             ls -lh "$FIRMWARE_DIR"/*.bin
           else
             echo "FIRMWARE_STATUS=FAILED" >> $GITHUB_ENV
           fi
 
-      - name: 11. Upload Logs
+      - name: 11. Upload Logs on Failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: logs-${{ env.TARGET_PROFILE }}
           path: ${{ env.WORKDIR }}/logs/
 
-      - name: 12. Create Release
+      - name: 12. Create Auto Release
         if: env.FIRMWARE_STATUS == 'SUCCESS'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TARGET_PROFILE }}-${{ github.run_number }}
+          name: SL3000 Build #${{ github.run_number }}
+          body: |
+            ### 编译状态：成功
+            - **设备**: SL3000 (MediaTek Filogic)
+            - **内核**: 24.10 / 6.6.x
+            - **自愈机制**: 已激活 (V4.0)
           files: |
             ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
             ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/sha256sums
