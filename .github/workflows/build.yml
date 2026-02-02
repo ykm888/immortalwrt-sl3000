@@ -38,9 +38,7 @@ jobs:
 
       - name: 3. Checkout & Clone
         run: |
-          # 克隆源码
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
-          # 检出自定义配置仓库到 custom-config 目录
           cd ${{ github.workspace }}
           git clone https://github.com/${{ github.repository }}.git custom-config
 
@@ -64,46 +62,61 @@ jobs:
       - name: 6. Defconfig & CCACHE Setup
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 用脚本注入好的 configs/sl3000-emmc.config 作为基础
+          echo ">>> [自愈] 检查 configs/sl3000-emmc.config 是否存在"
+          if [ ! -f configs/sl3000-emmc.config ]; then
+            echo "ERROR: configs/sl3000-emmc.config 不存在，说明 clean-feeds.sh 未正确注入"
+            ls -R configs || true
+            exit 1
+          fi
+
           cp configs/sl3000-emmc.config .config
-          # 强制注入编译链参数
           echo "CONFIG_CCACHE=y" >> .config
           echo "CONFIG_CCACHE_DIR=\"${{ env.CCACHE_DIR }}\"" >> .config
           make defconfig
 
-      # ================= 延续工程编译体系 =================
       - name: 7. Build Tools & Toolchain
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make tools/install -j$(nproc) V=s || make tools/install -j1 V=s
-          make toolchain/install -j$(nproc) V=s || make toolchain/install -j1 V=s
+          echo ">>> [自愈] 构建 tools/toolchain"
+          make tools/install -j$(nproc) V=s || { echo "ERROR: tools 构建失败"; exit 1; }
+          make toolchain/install -j$(nproc) V=s || { echo "ERROR: toolchain 构建失败"; exit 1; }
 
       - name: 8. Build Kernel & Packages
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make target/linux/compile -j$(nproc) V=s || make target/linux/compile -j1 V=s
-          make package/compile -j$(nproc) V=s || make package/compile -j1 V=s
+          echo ">>> [自愈] 构建 kernel/packages"
+          make target/linux/compile -j$(nproc) V=s || { echo "ERROR: kernel 构建失败"; exit 1; }
+          make package/compile -j$(nproc) V=s || { echo "ERROR: packages 构建失败"; exit 1; }
 
       - name: 9. Final Image Generation
         working-directory: ${{ env.WORKDIR }}
-        run: make target/install -j$(nproc) V=s || make install -j$(nproc) V=s
+        run: |
+          echo ">>> [自愈] 生成最终固件"
+          make target/install -j$(nproc) V=s || { echo "ERROR: 固件生成失败"; exit 1; }
 
-      # ================= 诊断与收口 =================
       - name: 10. Diagnostic Summary
         if: always()
         working-directory: ${{ env.WORKDIR }}
         run: |
           echo ">>> [工程总结] 编译链路最终状态检查"
-          echo "内核路径: $(ls -d target/linux/mediatek/files-* || echo '未找到 files-*')"
-          echo ".config 目标设备:"
-          grep "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" .config || echo '未激活'
+
+          echo ">>> 内核 files-* 路径:"
+          ls -d target/linux/mediatek/files-* || echo "未找到 files-*"
+
+          echo ">>> .config 状态:"
+          if [ -f .config ]; then
+            grep "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" .config || echo "未激活"
+          else
+            echo ".config 不存在（说明前序步骤已失败，未进入 defconfig）"
+          fi
+
           FIRMWARE_DIR="bin/targets/mediatek/filogic"
-          if [ -d "$FIRMWARE_DIR" ] && ls "$FIRMWARE_DIR"/*.bin >/dev/null 2>&1; then
+          echo ">>> 固件状态:"
+          if ls "$FIRMWARE_DIR"/*.bin >/dev/null 2>&1; then
             echo "FIRMWARE_STATUS=SUCCESS" >> $GITHUB_ENV
             ls -lh "$FIRMWARE_DIR"/*.bin
           else
             echo "FIRMWARE_STATUS=FAILED" >> $GITHUB_ENV
-            exit 1
           fi
 
       - name: 11. Upload Artifacts on Failure
