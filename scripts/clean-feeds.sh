@@ -18,7 +18,7 @@ DTS_DEST="$KVER_DIR/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
 echo ">>> 正在搜索源文件..."
 DTS_SRC=$(find "$SEARCH_ROOT" -name "mt7981b-sl3000-emmc.dts" | head -n 1)
 MK_SRC=$(find "$SEARCH_ROOT" -name "filogic.mk" | head -n 1)
-CONF_SRC=$(find "$SEARCH_ROOT" -name "sl3000.config" | head -n 1)
+CONF_SRC=$(find "$SEARCH_ROOT" -name "sl3000-emmc.config" | head -n 1)
 
 [ -n "$DTS_SRC" ] && [ -n "$MK_SRC" ] && [ -n "$CONF_SRC" ] || { echo "ERROR: 资源文件搜索失败"; exit 1; }
 
@@ -35,11 +35,13 @@ cp -f "$CONF_SRC" "configs/sl3000-emmc.config"
 # 5. Feeds 更新与冲突预处理
 echo ">>> 正在同步 Feeds 并处理包冲突..."
 ./scripts/feeds update -a
-# 预处理：删除可能引起编译中断的重复包定义
+
+# 删除可能引起编译中断的重复包定义
 rm -rf package/feeds/helloworld/luci-app-ssr-plus || true
+
 ./scripts/feeds install -a
 
-# --- 12 道工程门禁实装（只检测 + 修复 MK，不再动 .config） ---
+# --- 12 道工程门禁实装 ---
 echo ">>> 启动 12 道工程门禁..."
 
 # 1. DTS 注入物理存在
@@ -72,7 +74,7 @@ grep -q "TARGET_DEVICES += sl3000-emmc" "target/linux/mediatek/image/filogic.mk"
 # 10. Config 中包含 mediatek_filogic 平台
 grep -q "CONFIG_TARGET_mediatek_filogic=y" "configs/sl3000-emmc.config" || { echo "ERROR: 10. Config 平台定义缺失"; exit 1; }
 
-# 11. 精准修复 MK (使用强力补丁模式)
+# 11. 精准修复 MK
 echo ">>> 11. 正在执行 MK 精准修复..."
 awk -v dts="mt7981b-sl3000-emmc" '
 /define Device\/sl3000-emmc/ {in_block=1; found_dts=0; print; next}
