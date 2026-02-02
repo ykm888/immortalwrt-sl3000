@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
-
 /dts-v1/;
+
+/* SPDX-License-Identifier: GPL-2.0-or-later OR MIT */
+
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/leds/common.h>
-#include <dt-bindings/input/input.h>
 
 #include "mt7981.dtsi"
 
@@ -196,10 +196,14 @@
 };
 
 /* UART */
-&uart0 { status = "okay"; };
+&uart0 {
+	status = "okay";
+};
 
 /* Watchdog */
-&watchdog { status = "okay"; };
+&watchdog {
+	status = "okay";
+};
 
 /* WiFi */
 &wifi {
@@ -215,5 +219,10 @@
 };
 
 /* USB */
-&usb_phy { status = "okay"; };
-&xhci { status = "okay"; };
+&usb_phy {
+	status = "okay";
+};
+
+&xhci {
+	status = "okay";
+};
