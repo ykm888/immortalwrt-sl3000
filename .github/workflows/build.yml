@@ -17,8 +17,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 480
-
     steps:
       - name: 1. Maximize Build Space
         run: |
@@ -29,24 +27,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc
-          echo "CCACHE_DIR=${{ env.CCACHE_DIR }}" >> $GITHUB_ENV
 
       - name: 3. Checkout & Clone
         run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. Strategic Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.CCACHE_DIR }}
-            ${{ env.WORKDIR }}/dl
-          key: ${{ env.TARGET_PROFILE }}-${{ env.SOURCE_BRANCH }}-ccache-dl
-          restore-keys: |
-            ${{ env.TARGET_PROFILE }}-${{ env.SOURCE_BRANCH }}-ccache-dl
-
-      - name: 5. Initial Engineering Injection
+      - name: 4. Engineering Injection (V13.1)
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -57,55 +44,36 @@ jobs:
           cp configs/sl3000-emmc.config .config
           make defconfig
 
-      - name: 6. Build Target Preparation & Dual Injection
+      - name: 5. Build Preparation & Kernel Dual-Injection
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> [核心修复] 强制解压内核源码..."
-          # 仅准备内核源码，不开始真正编译
+          echo ">>> 预解压内核并注入物理补丁..."
           make target/linux/prepare -j$(nproc)
           
-          echo ">>> [核心修复] 探测 build_dir 中的物理 DTS 路径..."
-          # 动态寻找解压后的 DTS 目录
+          # 寻找 build_dir 物理路径并强制同步已修复引用的 DTS
           REAL_DTS_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
-          
           if [ -n "$REAL_DTS_DIR" ]; then
-            echo ">>> 锁定物理路径: $REAL_DTS_DIR"
-            DTS_FILE_SOURCE=$(find ${{ github.workspace }}/custom-config -name "mt7981b-sl3000-emmc.dts")
+            # 从之前 clean-feeds 修复过的目录复制到 build_dir
+            FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts")
+            cp -v "$FIXED_DTS" "$REAL_DTS_DIR/"
             
-            # 执行多点暴力注入：
-            # 1. 塞进 mediatek 子目录
-            cp -v "$DTS_FILE_SOURCE" "$REAL_DTS_DIR/"
-            # 2. 塞进上一级目录 (应对报错中显示 mediatek/xxxx.dts 的逻辑)
-            cp -v "$DTS_FILE_SOURCE" "$REAL_DTS_DIR/../"
-            echo ">>> 物理注入完成！"
-          else
-            echo "WARNING: 未能锁定 build_dir 中的 DTS 路径，可能内核尚未解压或路径变更"
+            # 同样同步修改 build_dir 里的内核 Makefile
+            REAL_MAKEFILE="$REAL_DTS_DIR/Makefile"
+            grep -q "mt7981b-sl3000-emmc.dtb" "$REAL_MAKEFILE" || \
+            sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_MAKEFILE"
           fi
 
-      - name: 7. Build Tools & Toolchain
+      - name: 6. Full Build (Tools & Toolchain & Image)
         working-directory: ${{ env.WORKDIR }}
         run: |
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
-
-      - name: 8. Final Kernel & Image Build
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          # 此时 DTS 已经在 build_dir 里“严阵以待”，cc1 将无法报错
+          # 执行内核与固件生成
           make target/linux/install -j$(nproc) V=s || make target/linux/install -j1 V=s
           make target/install -j$(nproc)
 
-      - name: 9. Diagnostic & Release
-        if: always()
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          FIRMWARE_DIR="bin/targets/mediatek/filogic"
-          if ls "$FIRMWARE_DIR"/*.bin >/dev/null 2>&1; then
-            echo "FIRMWARE_STATUS=SUCCESS" >> $GITHUB_ENV
-          fi
-
-      - name: 10. Create Auto Release
-        if: env.FIRMWARE_STATUS == 'SUCCESS'
+      - name: 7. Create Auto Release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TARGET_PROFILE }}-${{ github.run_number }}
