@@ -1,6 +1,8 @@
 name: build-sl3000-v16.5-final
+
 on:
   workflow_dispatch:
+
 env:
   WORKDIR: ${{ github.workspace }}/immortalwrt
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
@@ -12,47 +14,66 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1-4. Init & Auto-Merge (原文照抄)
+      - name: 1. 环境准备 (Maximize Space)
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /var/lib/docker
           sudo docker system prune -af --volumes
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc dos2unix
+
+      - name: 2. 源码下载 (Checkout & Clone)
+        run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
-          cd ${{ env.WORKDIR }}
+
+      - name: 3. 初始化配置 (Execute Clean Feeds)
+        working-directory: ${{ env.WORKDIR }}
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
           cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
           chmod +x clean-feeds.sh
-          GITHUB_WORKSPACE=${{ github.workspace }} ./clean-feeds.sh
+          ./clean-feeds.sh
 
-      - name: 5. Final Protection & Build (强制二次覆盖修复)
+      - name: 4. 预编译工具链 (Build Tools)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 步骤 A: 准备工具链
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
-          
-          # 步骤 B: 核心拦截补丁 - 运行 prepare 并强制再次注入
+
+      - name: 5. 内核拦截与最终注入 (DTS Physical Hook)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          # 运行内核准备，让源码解压出来
           make target/linux/prepare -j$(nproc)
           
-          # 查找所有可能存在的 DTS 目标目录并强制覆盖 (防止 install 阶段重置)
+          # 再次运行脚本以更新 target/linux 下的文件
+          export GITHUB_WORKSPACE=${{ github.workspace }}
+          ./clean-feeds.sh
+          
+          # 绝杀：全盘扫描 build_dir，寻找内核编译使用的实时 DTS 目录并强制替换
           FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
           find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | while read -r d; do
-            echo ">>> 强制保护 DTS: 注入到 $d"
+            echo ">>> 强制注入合并版 DTS 到: $d"
             cp -fv "$FIXED_DTS" "$d/"
+            # 确保 Makefile 包含我们的 dtb 编译目标
             sed -i '/mt7981b-sl3000-emmc.dtb/d' "$d/Makefile"
             sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$d/Makefile"
           done
-          
-          # 步骤 C: 正式编译
+
+      - name: 6. 正式编译 (Build Target)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          # 再次确认配置，防止 install 阶段重置
+          make defconfig
           if ! make target/linux/install -j$(nproc) V=i; then
-            echo "::error::编译失败，正在进入详细诊断..."
+            echo "::error::检测到关键错误，进入详细诊断模式..."
             make target/linux/install -j1 V=s
             exit 1
           fi
           make target/install -j$(nproc)
 
-      - name: 6. Release (原文照抄)
+      - name: 7. 上传与发布 (Release)
         if: success()
         uses: softprops/action-gh-release@v2
         with:
