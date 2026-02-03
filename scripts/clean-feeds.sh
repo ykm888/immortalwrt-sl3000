@@ -32,18 +32,51 @@ EOT
 tr -d '\r' < "$DTS_SRC" | grep -v "/dts-v1/;" | grep -v "mt7981.dtsi" | grep -v "mt7981b.dtsi" >> "$DTS_DEST.tmp"
 cp -f "$DTS_DEST.tmp" "$DTS_DEST"
 
-# --- 3. Feeds 强制同步 (【修复点】：添加协议脱敏防止认证失败) ---
+# --- 3. Feeds 强制同步 (延续逻辑，仅保留官方源，暂不构建科学上网) ---
 git config --global url."https://github.com/".insteadOf "git://github.com/" || true
 git config --global url."https://github.com/".insteadOf "git@github.com:" || true
-sed -i '/passwall/d' feeds.conf.default
-echo "src-git-full passwall_packages https://github.com/xiaorouji/openwrt-passwall-packages.git;main" >> feeds.conf.default
-echo "src-git-full passwall https://github.com/xiaorouji/openwrt-passwall.git;main" >> feeds.conf.default
+
 ./scripts/feeds update -a
 ./scripts/feeds install -a
 
-# --- 4. 配置与 Makefile 注入 (原文照抄) ---
-[ -f "$CONF_SRC" ] && cat "$CONF_SRC" > .config
-echo "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" >> .config
+# --- 4. 配置与 Makefile 注入 (【修复点】：注入精简完整版 Config) ---
+# 优先使用精简配置模板
+cat <<EOT > .config
+CONFIG_TARGET_mediatek=y
+CONFIG_TARGET_mediatek_filogic=y
+CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y
+CONFIG_PACKAGE_base-files=y
+CONFIG_PACKAGE_busybox=y
+CONFIG_PACKAGE_dnsmasq-full=y
+CONFIG_PACKAGE_firewall4=y
+CONFIG_PACKAGE_odhcp6c=y
+CONFIG_PACKAGE_odhcpd-ipv6only=y
+CONFIG_PACKAGE_ppp=y
+CONFIG_PACKAGE_ppp-mod-pppoe=y
+CONFIG_PACKAGE_coremark=y
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-base=y
+CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_luci-lua-runtime=y
+CONFIG_PACKAGE_luci-lib-ip=y
+CONFIG_PACKAGE_luci-lib-jsonc=y
+CONFIG_PACKAGE_luci-theme-bootstrap=y
+CONFIG_PACKAGE_luci-mod-admin-full=y
+CONFIG_PACKAGE_luci-mod-network=y
+CONFIG_PACKAGE_luci-mod-status=y
+CONFIG_PACKAGE_luci-mod-system=y
+CONFIG_PACKAGE_luci-proto-ppp=y
+CONFIG_PACKAGE_luci-proto-ipv6=y
+CONFIG_PACKAGE_kmod-mmc=y
+CONFIG_PACKAGE_kmod-sdhci-mtk=y
+CONFIG_PACKAGE_f2fs-tools=y
+CONFIG_PACKAGE_kmod-fs-f2fs=y
+CONFIG_PACKAGE_kmod-mt7981-firmware=y
+EOT
+
+# 如果外部有自定义 config，则追加合并
+[ -f "$CONF_SRC" ] && cat "$CONF_SRC" >> .config
+
 [ -f "$MK_SRC" ] && cp -f "$MK_SRC" "target/linux/mediatek/image/filogic.mk"
 make defconfig
 
