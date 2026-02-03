@@ -11,7 +11,7 @@ env:
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
   SOURCE_BRANCH: openwrt-24.10
   TARGET_PROFILE: sl3000-emmc
-  TERM: xterm  # 关键修复：防止 "unknown terminal" 报错
+  TERM: xterm  # 全量修复：模拟终端环境
 
 jobs:
   build:
@@ -32,7 +32,7 @@ jobs:
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. Execute Auto-Merge (延续 V16.5 修复)
+      - name: 4. Execute Auto-Merge (延续修复项)
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -41,10 +41,10 @@ jobs:
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
 
-      - name: 5. Kernel Physical Injection & Hook (延续 DTS 合并修复)
+      - name: 5. Kernel Physical Injection & Hook (拦截并覆盖)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> 拦截内核解压并注入合并版 DTS..."
+          echo ">>> 拦截内核源码并注入全量修复版 DTS..."
           make target/linux/prepare -j$(nproc)
           export GITHUB_WORKSPACE=${{ github.workspace }}
           ./clean-feeds.sh
@@ -57,19 +57,18 @@ jobs:
             sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
           fi
 
-      - name: 6. Build Tools & Toolchain (延续静默修复)
+      - name: 6. Build Tools & Toolchain (静默加固)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 强制先 defconfig 锁定状态，防止 tools 安装时弹出 menuconfig
           make defconfig
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
 
-      - name: 7. Build Kernel & Image (原文照抄 + 诊断日志)
+      - name: 7. Build Kernel & Image (诊断模式原文)
         working-directory: ${{ env.WORKDIR }}
         run: |
           if ! make target/linux/install -j$(nproc) V=i; then
-            echo "::error::编译失败，正在进入诊断模式..."
+            echo "::error::检测到编译中断，输出诊断日志..."
             make target/linux/install -j1 V=s 2>&1 | tee build_detailed_error.log
             exit 1
           fi
