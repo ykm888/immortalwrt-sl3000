@@ -3,30 +3,36 @@ name: build-sl3000-v16.6-final
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   WORKDIR: ${{ github.workspace }}/immortalwrt
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
   SOURCE_BRANCH: openwrt-24.10
   TARGET_PROFILE: sl3000-emmc
-  TERM: xterm  # 延续修复：终端兼容性
+  TERM: xterm
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. 延续：基础环境清理与准备
+      - name: 1. Maximize Build Space (原文照抄)
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /var/lib/docker
           sudo docker system prune -af --volumes
+
+      - name: 2. Install Dependencies (原文照抄)
+        run: |
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc dos2unix
 
-      - name: 2. 延续：源码克隆
+      - name: 3. Checkout & Clone (原文照抄)
         run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 3. 延续：执行初始化脚本
+      - name: 4. Execute Auto-Merge (原文逻辑，引入 clean-feeds.sh)
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -35,45 +41,52 @@ jobs:
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
 
-      - name: 4. 延续：预编译工具链
+      - name: 5. Kernel Physical Injection & Hook (【原文补丁】：拦截解压覆盖)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make tools/install -j$(nproc)
-          make toolchain/install -j$(nproc)
-
-      - name: 5. 核心延续：内核源码二次拦截 (物理注入)
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          # A. 运行内核准备，让源码完成解压
+          # 运行内核准备以解压源码
           make target/linux/prepare -j$(nproc)
-          
-          # B. 再次调用脚本，确保 target/linux 下的 DTS 是最新的物理合并版
+          # 再次执行物理注入，确保 build_dir 里的源码被覆盖
           export GITHUB_WORKSPACE=${{ github.workspace }}
           ./clean-feeds.sh
           
-          # C. 延续绝杀逻辑：扫描并强行覆盖 build_dir 内解压后的实时源码
-          FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
-          find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | while read -r d; do
-            echo ">>> 正在强制保护 $d 中的 DTS 文件"
-            cp -fv "$FIXED_DTS" "$d/"
-            sed -i '/mt7981b-sl3000-emmc.dtb/d' "$d/Makefile"
-            sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$d/Makefile"
-          done
+          REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
+          if [ -n "$REAL_K_DIR" ]; then
+            FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
+            cp -fv "$FIXED_DTS" "$REAL_K_DIR/"
+            sed -i '/mt7981b-sl3000-emmc.dtb/d' "$REAL_K_DIR/Makefile"
+            sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
+          fi
 
-      - name: 6. 延续：正式编译固件
+      - name: 6. Build Tools & Toolchain (原文照抄)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          make defconfig  # 锁定配置，防止交互
+          make defconfig
+          make tools/install -j$(nproc)
+          make toolchain/install -j$(nproc)
+
+      - name: 7. Build Kernel & Image (原文照抄 + 详细诊断)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
           if ! make target/linux/install -j$(nproc) V=i; then
-            echo "::error::编译失败，正在进入 V=s 诊断模式..."
-            make target/linux/install -j1 V=s
+            echo "::error::编译中断，输出诊断日志..."
+            make target/linux/install -j1 V=s 2>&1 | tee build_detailed_error.log
             exit 1
           fi
           make target/install -j$(nproc)
 
-      - name: 7. 延续：上传成品固件
+      - name: 8. Create Auto Release (原文照抄)
         if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TARGET_PROFILE }}-${{ github.run_number }}
           files: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
+
+      - name: Diagnostic Upload on Failure (原文照抄)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-logs
+          path: |
+            ${{ env.WORKDIR }}/build_detailed_error.log
+            ${{ env.WORKDIR }}/.config
