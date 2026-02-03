@@ -1,88 +1,57 @@
 #!/bin/bash
-# ============================================================
-# SL3000 V16.6 工程延续修复版
-# 严格遵循原文逻辑：定位 -> DTS处理 -> Feeds -> 配置生成
-# ============================================================
 set -e
 
-echo ">>> [SL3000 V16.6] 执行延续修复..."
+echo ">>> [SL3000 V16.6] 正在执行最终物理修复逻辑..."
 
-# --- 1. 定位源文件 (原文照抄) ---
+# --- 1. 定位源文件 ---
 [ -z "$GITHUB_WORKSPACE" ] && GITHUB_WORKSPACE=$(cd ..; pwd)
 SRC_DIR="${GITHUB_WORKSPACE}/custom-config"
 DTS_SRC=$(find "$SRC_DIR" -type f -name "*mt7981b-sl3000-emmc.dts" | head -n 1)
 MK_SRC=$(find "$SRC_DIR" -type f -name "filogic.mk" | head -n 1)
-CONF_SRC=$(find "$SRC_DIR" -type f -name "*sl3000.config" | head -n 1)
 
-# --- 2. DTS 物理合并修复 (【专项修复】：消除第40行语法错误) ---
+# --- 2. DTS 物理合并修复 (彻底解决 40 行语法错误) ---
 K_DIR=$(ls -d target/linux/mediatek/files-* 2>/dev/null | sort -V | tail -n 1)
 [ -z "$K_DIR" ] && K_DIR="target/linux/mediatek/files-6.6"
 DTS_DEST="$K_DIR/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
 INC_DIR="$K_DIR/arch/arm64/boot/dts/mediatek"
 
 mkdir -p "$(dirname "$DTS_DEST")"
-
-# 强制生成干净的头部，确保唯一性
+# 强制生成标准头部
 echo '/dts-v1/;' > "$DTS_DEST"
 echo '#include <dt-bindings/gpio/gpio.h>' >> "$DTS_DEST"
 echo '#include <dt-bindings/input/input.h>' >> "$DTS_DEST"
 echo '#include <dt-bindings/leds/common.h>' >> "$DTS_DEST"
 
-# 物理抓取依赖定义，并剔除所有重复的头部和include (grep -vE 绝杀重复)
-if [ -f "$INC_DIR/mt7981.dtsi" ]; then
-    grep -vE "/dts-v1/;|#include" "$INC_DIR/mt7981.dtsi" >> "$DTS_DEST"
-fi
-if [ -f "$INC_DIR/mt7981b.dtsi" ]; then
-    grep -vE "/dts-v1/;|#include" "$INC_DIR/mt7981b.dtsi" >> "$DTS_DEST"
-fi
+# 注入依赖 (使用 sed 严格剔除所有内部头部，防止重复)
+[ -f "$INC_DIR/mt7981.dtsi" ] && sed -E '/\/dts-v1\/;|#include/d' "$INC_DIR/mt7981.dtsi" >> "$DTS_DEST"
+[ -f "$INC_DIR/mt7981b.dtsi" ] && sed -E '/\/dts-v1\/;|#include/d' "$INC_DIR/mt7981b.dtsi" >> "$DTS_DEST"
 
-# 注入自定义内容，剔除潜在冲突行并转换换行符
-tr -d '\r' < "$DTS_SRC" | grep -vE "/dts-v1/;|mt7981.dtsi|mt7981b.dtsi|#include" >> "$DTS_DEST"
+# 注入用户 DTS 内容 (剔除 include 行，并确保与前文隔离)
+echo -e "\n\n" >> "$DTS_DEST"
+tr -d '\r' < "$DTS_SRC" | sed -E '/\/dts-v1\/;|#include|mt7981.dtsi|mt7981b.dtsi/d' >> "$DTS_DEST"
 
-# --- 3. Feeds 强制同步 (原文照抄) ---
+# --- 3. Feeds 更新 ---
 git config --global url."https://github.com/".insteadOf "git://github.com/" || true
-git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+./scripts/feeds update -a && ./scripts/feeds install -a
 
-./scripts/feeds update -a
-./scripts/feeds install -a
-
-# --- 4. 配置与 Makefile 注入 (合入完整精简版 Config) ---
+# --- 4. 配置注入与 MK 修复 (合入 1024M 扩容三件套) ---
 cat <<EOT > .config
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
 CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y
-CONFIG_PACKAGE_base-files=y
-CONFIG_PACKAGE_busybox=y
-CONFIG_PACKAGE_dnsmasq-full=y
-CONFIG_PACKAGE_firewall4=y
-CONFIG_PACKAGE_odhcp6c=y
-CONFIG_PACKAGE_odhcpd-ipv6only=y
-CONFIG_PACKAGE_ppp=y
-CONFIG_PACKAGE_ppp-mod-pppoe=y
-CONFIG_PACKAGE_coremark=y
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-base=y
-CONFIG_PACKAGE_luci-compat=y
-CONFIG_PACKAGE_luci-lua-runtime=y
-CONFIG_PACKAGE_luci-lib-ip=y
-CONFIG_PACKAGE_luci-lib-jsonc=y
-CONFIG_PACKAGE_luci-theme-bootstrap=y
-CONFIG_PACKAGE_luci-mod-admin-full=y
-CONFIG_PACKAGE_luci-mod-network=y
-CONFIG_PACKAGE_luci-mod-status=y
-CONFIG_PACKAGE_luci-mod-system=y
-CONFIG_PACKAGE_luci-proto-ppp=y
-CONFIG_PACKAGE_luci-proto-ipv6=y
+CONFIG_TARGET_KERNEL_PARTSIZE=128
+CONFIG_TARGET_ROOTFS_PARTSIZE=1024
 CONFIG_PACKAGE_kmod-mmc=y
 CONFIG_PACKAGE_kmod-sdhci-mtk=y
 CONFIG_PACKAGE_f2fs-tools=y
 CONFIG_PACKAGE_kmod-fs-f2fs=y
 CONFIG_PACKAGE_kmod-mt7981-firmware=y
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-theme-bootstrap=y
 EOT
 
-[ -f "$CONF_SRC" ] && cat "$CONF_SRC" >> .config
-echo "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" >> .config
-[ -f "$MK_SRC" ] && cp -f "$MK_SRC" "target/linux/mediatek/image/filogic.mk"
+# 物理劫持镜像生成逻辑 (filogic.mk)
+[ -f "$MK_SRC" ] && cp -fv "$MK_SRC" "target/linux/mediatek/image/filogic.mk"
 make defconfig
 
-echo "✅ [任务完成] V16.6 修复项已锁定！"
+echo "✅ [脚本执行完毕] 物理劫持成功！"
