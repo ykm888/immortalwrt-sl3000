@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo ">>> [SL3000 V16.6] 正在执行最终物理修复逻辑..."
+echo ">>> [SL3000 V16.6-Stable] 启动跨版本物理缝合逻辑..."
 
 # --- 1. 定位源文件 ---
 [ -z "$GITHUB_WORKSPACE" ] && GITHUB_WORKSPACE=$(cd ..; pwd)
@@ -9,32 +9,39 @@ SRC_DIR="${GITHUB_WORKSPACE}/custom-config"
 DTS_SRC=$(find "$SRC_DIR" -type f -name "*mt7981b-sl3000-emmc.dts" | head -n 1)
 MK_SRC=$(find "$SRC_DIR" -type f -name "filogic.mk" | head -n 1)
 
-# --- 2. DTS 物理合并修复 (彻底解决 40 行语法错误) ---
-K_DIR=$(ls -d target/linux/mediatek/files-* 2>/dev/null | sort -V | tail -n 1)
-[ -z "$K_DIR" ] && K_DIR="target/linux/mediatek/files-6.6"
-DTS_DEST="$K_DIR/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-INC_DIR="$K_DIR/arch/arm64/boot/dts/mediatek"
+# --- 2. 动态探测并缝合 DTS (核心修复点) ---
+# 自动寻找 mt7981.dtsi 所在的物理目录（兼容 files-6.1/6.6/6.12 等）
+BASE_DTSI=$(find target/linux/mediatek -name "mt7981.dtsi" | head -n 1)
 
-mkdir -p "$(dirname "$DTS_DEST")"
-# 强制生成标准头部
-echo '/dts-v1/;' > "$DTS_DEST"
-echo '#include <dt-bindings/gpio/gpio.h>' >> "$DTS_DEST"
-echo '#include <dt-bindings/input/input.h>' >> "$DTS_DEST"
-echo '#include <dt-bindings/leds/common.h>' >> "$DTS_DEST"
+if [ -z "$BASE_DTSI" ]; then
+    echo "❌ [错误] 源码树中找不到 mt7981.dtsi，请确认源码下载完整。"
+    exit 1
+fi
 
-# 注入依赖 (使用 sed 严格剔除所有内部头部，防止重复)
-[ -f "$INC_DIR/mt7981.dtsi" ] && sed -E '/\/dts-v1\/;|#include/d' "$INC_DIR/mt7981.dtsi" >> "$DTS_DEST"
-[ -f "$INC_DIR/mt7981b.dtsi" ] && sed -E '/\/dts-v1\/;|#include/d' "$INC_DIR/mt7981b.dtsi" >> "$DTS_DEST"
+INC_DIR=$(dirname "$BASE_DTSI")
+DTS_DEST="$INC_DIR/mt7981b-sl3000-emmc.dts"
+echo "📂 基础路径已锁定: $INC_DIR"
 
-# 注入用户 DTS 内容 (剔除 include 行，并确保与前文隔离)
-echo -e "\n\n" >> "$DTS_DEST"
-tr -d '\r' < "$DTS_SRC" | sed -E '/\/dts-v1\/;|#include|mt7981.dtsi|mt7981b.dtsi/d' >> "$DTS_DEST"
+# 物理深度缝合：清除重复标签，确保唯一性
+{
+    echo '/dts-v1/;'
+    # 提取基础 dtsi 里的头文件定义，排除重复项
+    grep "#include" "$BASE_DTSI" | head -n 20
+    echo '#include <dt-bindings/leds/common.h>'
+    echo '#include <dt-bindings/input/input.h>'
 
-# --- 3. Feeds 更新 ---
-git config --global url."https://github.com/".insteadOf "git://github.com/" || true
+    # 注入基础架构 (清洗掉 /dts-v1/ 和 #include)
+    sed -E '/\/dts-v1\/;|#include/d' "$INC_DIR/mt7981.dtsi"
+    [ -f "$INC_DIR/mt7981b.dtsi" ] && sed -E '/\/dts-v1\/;|#include/d' "$INC_DIR/mt7981b.dtsi"
+    
+    # 注入 SL3000 自定义配置 (清洗掉用户文件里的 include，防止 Error 1)
+    echo -e "\n/* --- CUSTOM SL3000 SECTION --- */\n"
+    tr -d '\r' < "$DTS_SRC" | sed -E '/\/dts-v1\/;|#include|mt7981.dtsi|mt7981b.dtsi/d'
+} > "$DTS_DEST"
+
+# --- 3. 更新 Feeds 并注入扩容配置 ---
 ./scripts/feeds update -a && ./scripts/feeds install -a
 
-# --- 4. 配置注入与 MK 修复 (合入 1024M 扩容三件套) ---
 cat <<EOT > .config
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
@@ -47,11 +54,10 @@ CONFIG_PACKAGE_f2fs-tools=y
 CONFIG_PACKAGE_kmod-fs-f2fs=y
 CONFIG_PACKAGE_kmod-mt7981-firmware=y
 CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-theme-bootstrap=y
 EOT
 
-# 物理劫持镜像生成逻辑 (filogic.mk)
+# 物理覆盖镜像生成规则
 [ -f "$MK_SRC" ] && cp -fv "$MK_SRC" "target/linux/mediatek/image/filogic.mk"
 make defconfig
 
-echo "✅ [脚本执行完毕] 物理劫持成功！"
+echo "✅ [脚本任务完成] 物理劫持就绪！"
