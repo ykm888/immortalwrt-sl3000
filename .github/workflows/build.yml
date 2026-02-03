@@ -1,4 +1,4 @@
-name: build-sl3000-v16.6-final
+name: build-sl3000-v16.6-stable
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
 env:
   WORKDIR: ${{ github.workspace }}/immortalwrt
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
-  SOURCE_BRANCH: openwrt-24.10
+  SOURCE_BRANCH: master # 或者你习惯的分支名
   TARGET_PROFILE: sl3000-emmc
   TERM: xterm
 
@@ -17,22 +17,22 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. Maximize Build Space
+      - name: 1. 清理空间
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /var/lib/docker
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo docker system prune -af --volumes
 
-      - name: 2. Install Dependencies
+      - name: 2. 安装编译环境
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc dos2unix
 
-      - name: 3. Checkout & Clone
+      - name: 3. 下载源码与自定义配置
         run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. Execute Auto-Merge
+      - name: 4. 执行初始物理缝合
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -41,54 +41,48 @@ jobs:
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
 
-      - name: 5. Kernel Physical Injection & Hook (关键拦截步骤)
+      - name: 5. 内核解压与物理劫持 (拦截 Error 1 的核心)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 运行内核 prepare 解压源码树
+          # 解压内核源码树，这步往往会把我们在 Step 4 修改的文件重置
           make target/linux/prepare -j$(nproc)
-          # 解压后立刻再次运行脚本，覆盖 build_dir 里的物理文件
+          
+          # 重置后再次调用脚本，确保 target 模板是最新的
           export GITHUB_WORKSPACE=${{ github.workspace }}
           ./clean-feeds.sh
           
-          # 手动定位 build_dir 内的 DTS 并再次覆盖
+          # 动态定位内核编译的“现场” (build_dir)
           REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
           if [ -n "$REAL_K_DIR" ]; then
-            FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
-            cp -fv "$FIXED_DTS" "$REAL_K_DIR/"
-            # 确保 Makefile 引用此 DTB
+            # 找到我们在 target 下生成的干净 DTS 文件
+            TARGET_DTS=$(find target/linux/mediatek -name "mt7981b-sl3000-emmc.dts" | head -n 1)
+            cp -fv "$TARGET_DTS" "$REAL_K_DIR/"
+            
+            # 同步更新 build_dir 里的 Makefile
             sed -i '/mt7981b-sl3000-emmc.dtb/d' "$REAL_K_DIR/Makefile"
             sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
+            echo "🚀 已成功在编译现场 ($REAL_K_DIR) 强制注入 DTS。"
           fi
 
-      - name: 6. Build Tools & Toolchain
+      - name: 6. 编译工具链
         working-directory: ${{ env.WORKDIR }}
         run: |
           make defconfig
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
 
-      - name: 7. Build Kernel & Image (V=s 诊断模式)
+      - name: 7. 最终固件编译
         working-directory: ${{ env.WORKDIR }}
         run: |
           if ! make target/linux/install -j$(nproc) V=i; then
-            echo "::error::内核编译失败，正在输出详细错误日志..."
-            make target/linux/install -j1 V=s 2>&1 | tee build_detailed_error.log
-            exit 1
+             make target/linux/install -j1 V=s 2>&1 | tee build_error.log
+             exit 1
           fi
           make target/install -j$(nproc)
 
-      - name: 8. Create Auto Release
+      - name: 8. 发布固件
         if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TARGET_PROFILE }}-${{ github.run_number }}
           files: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
-
-      - name: Diagnostic Upload on Failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: diagnostic-logs
-          path: |
-            ${{ env.WORKDIR }}/build_detailed_error.log
-            ${{ env.WORKDIR }}/.config
