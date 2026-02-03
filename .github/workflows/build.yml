@@ -1,4 +1,4 @@
-name: build-sl3000-v16.6-stable
+name: build-sl3000-stable
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
 env:
   WORKDIR: ${{ github.workspace }}/immortalwrt
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
-  SOURCE_BRANCH: master # 或者你习惯的分支名
+  SOURCE_BRANCH: openwrt-24.10
   TARGET_PROFILE: sl3000-emmc
   TERM: xterm
 
@@ -17,70 +17,64 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. 清理空间
+      - name: 1. Maximize Workspace
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo docker system prune -af --volumes
 
-      - name: 2. 安装编译环境
+      - name: 2. Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc dos2unix
 
-      - name: 3. 下载源码与自定义配置
+      - name: 3. Clone Source
         run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. 执行初始物理缝合
+      - name: 4. Execute Initial Fix
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
-          cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
+          # 显式路径拷贝脚本
+          cp -v "${{ github.workspace }}/custom-config/scripts/clean-feeds.sh" ./
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
 
-      - name: 5. 内核解压与物理劫持 (拦截 Error 1 的核心)
+      - name: 5. Kernel Prepare & Double Hook
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 解压内核源码树，这步往往会把我们在 Step 4 修改的文件重置
+          # 1. 强制解压内核源码，此时 build_dir 会被创建
           make target/linux/prepare -j$(nproc)
           
-          # 重置后再次调用脚本，确保 target 模板是最新的
+          # 2. 再次执行脚本，确保 target 模板文件更新
           export GITHUB_WORKSPACE=${{ github.workspace }}
           ./clean-feeds.sh
           
-          # 动态定位内核编译的“现场” (build_dir)
+          # 3. 物理劫持 build_dir 里的编译现场
           REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
           if [ -n "$REAL_K_DIR" ]; then
-            # 找到我们在 target 下生成的干净 DTS 文件
             TARGET_DTS=$(find target/linux/mediatek -name "mt7981b-sl3000-emmc.dts" | head -n 1)
             cp -fv "$TARGET_DTS" "$REAL_K_DIR/"
             
-            # 同步更新 build_dir 里的 Makefile
+            # 修正内核 Makefile
             sed -i '/mt7981b-sl3000-emmc.dtb/d' "$REAL_K_DIR/Makefile"
             sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
-            echo "🚀 已成功在编译现场 ($REAL_K_DIR) 强制注入 DTS。"
+            echo "🚀 现场劫持成功: $REAL_K_DIR"
           fi
 
-      - name: 6. 编译工具链
+      - name: 6. Build Images
         working-directory: ${{ env.WORKDIR }}
         run: |
           make defconfig
-          make tools/install -j$(nproc)
-          make toolchain/install -j$(nproc)
-
-      - name: 7. 最终固件编译
-        working-directory: ${{ env.WORKDIR }}
-        run: |
           if ! make target/linux/install -j$(nproc) V=i; then
              make target/linux/install -j1 V=s 2>&1 | tee build_error.log
              exit 1
           fi
           make target/install -j$(nproc)
 
-      - name: 8. 发布固件
+      - name: 7. Upload Artifacts
         if: success()
         uses: softprops/action-gh-release@v2
         with:
