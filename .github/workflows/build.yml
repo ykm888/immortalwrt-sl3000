@@ -11,27 +11,28 @@ env:
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
   SOURCE_BRANCH: openwrt-24.10
   TARGET_PROFILE: sl3000-emmc
+  TERM: xterm  # 关键修复：防止 "unknown terminal" 报错
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. Maximize Build Space
+      - name: 1. Maximize Build Space (原文照抄)
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /var/lib/docker
           sudo docker system prune -af --volumes
 
-      - name: 2. Install Dependencies
+      - name: 2. Install Dependencies (原文照抄)
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc dos2unix
 
-      - name: 3. Checkout & Clone
+      - name: 3. Checkout & Clone (原文照抄)
         run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. Execute Auto-Merge (V16.5原文逻辑)
+      - name: 4. Execute Auto-Merge (延续 V16.5 修复)
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -39,40 +40,36 @@ jobs:
           cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
-          make defconfig
 
-      - name: 5. Kernel Physical Injection & Hook (原文照抄+延续修复)
+      - name: 5. Kernel Physical Injection & Hook (延续 DTS 合并修复)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> 执行内核源码级拦截与物理合并..."
+          echo ">>> 拦截内核解压并注入合并版 DTS..."
           make target/linux/prepare -j$(nproc)
-          
-          # 延续修复：prepare后必须再次运行脚本以防源码重置
           export GITHUB_WORKSPACE=${{ github.workspace }}
           ./clean-feeds.sh
           
           REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
           if [ -n "$REAL_K_DIR" ]; then
-            # 使用生成的物理独立 DTS 覆盖
             FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
-            cp -v "$FIXED_DTS" "$REAL_K_DIR/"
-            
-            # Makefile 加固
+            cp -fv "$FIXED_DTS" "$REAL_K_DIR/"
             sed -i '/mt7981b-sl3000-emmc.dtb/d' "$REAL_K_DIR/Makefile"
             sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
           fi
 
-      - name: 6. Build Tools & Toolchain
+      - name: 6. Build Tools & Toolchain (延续静默修复)
         working-directory: ${{ env.WORKDIR }}
         run: |
+          # 强制先 defconfig 锁定状态，防止 tools 安装时弹出 menuconfig
+          make defconfig
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
 
-      - name: 7. Build Kernel & Image (Diagnostic Mode原文)
+      - name: 7. Build Kernel & Image (原文照抄 + 诊断日志)
         working-directory: ${{ env.WORKDIR }}
         run: |
           if ! make target/linux/install -j$(nproc) V=i; then
-            echo "::error::编译失败，正在尝试单线程诊断模式..."
+            echo "::error::编译失败，正在进入诊断模式..."
             make target/linux/install -j1 V=s 2>&1 | tee build_detailed_error.log
             exit 1
           fi
