@@ -1,4 +1,4 @@
-name: build-sl3000-v18.5-flattened
+name: build-sl3000-v16.5-final
 
 on:
   workflow_dispatch:
@@ -31,7 +31,7 @@ jobs:
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. Pre-process (Flatten DTS)
+      - name: 4. Execute Auto-Merge (V16.5)
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -39,42 +39,61 @@ jobs:
           cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
+          # 关键：确保所有插件软连接后再执行配置
           make defconfig
 
-      - name: 5. Kernel Deep Hook (Physical Injection)
+      - name: 5. Kernel Physical Injection & Hook
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> 正在执行内核源码级扁平化覆盖..."
+          echo ">>> 执行内核源码级物理拦截..."
           make target/linux/prepare -j$(nproc)
           
-          # 定位内核真实的构建目录
+          # 核心修复：重新执行合并脚本，确保扁平化后的 DTS 进入 build_dir 生产阵地
+          export GITHUB_WORKSPACE=${{ github.workspace }}
+          ./clean-feeds.sh
+          
           REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
           if [ -n "$REAL_K_DIR" ]; then
-            # 获取已经在 Step 4 中处理好的“无依赖版”DTS
             FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
-            cp -fv "$FIXED_DTS" "$REAL_K_DIR/"
+            cp -v "$FIXED_DTS" "$REAL_K_DIR/"
             
-            # 确保 Makefile 指向这个 DTS
+            # 物理层 Makefile 加固
             sed -i '/mt7981b-sl3000-emmc.dtb/d' "$REAL_K_DIR/Makefile"
             sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
+            
+            # 绝杀：修正编译器 DTC 标志（可选辅助）
+            sed -i "s|DTC_FLAGS += |DTC_FLAGS += -i $REAL_K_DIR |" $(find build_dir -name "Makefile.lib") 2>/dev/null || true
           fi
 
-      - name: 6. Full Compilation
+      - name: 6. Build Tools & Toolchain
         working-directory: ${{ env.WORKDIR }}
         run: |
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
-          # 核心编译
+
+      - name: 7. Build Kernel & Image (Diagnostic Mode)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          # 优先尝试高效并行编译，捕获 cc1 错误
           if ! make target/linux/install -j$(nproc) V=i; then
-             echo "::error::内核阶段报错，执行单线程诊断..."
-             make target/linux/install -j1 V=s
-             exit 1
+            echo "::error::编译失败，正在尝试单线程诊断模式..."
+            make target/linux/install -j1 V=s 2>&1 | tee build_detailed_error.log
+            exit 1
           fi
           make target/install -j$(nproc)
 
-      - name: 7. Upload Firmware
-        if: success()
+      - name: 8. Diagnostic Upload on Failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: SL3000-eMMC-V18.5
-          path: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
+          name: diagnostic-logs
+          path: |
+            ${{ env.WORKDIR }}/build_detailed_error.log
+            ${{ env.WORKDIR }}/.config
+
+      - name: 9. Create Auto Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TARGET_PROFILE }}-${{ github.run_number }}
+          files: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
