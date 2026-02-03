@@ -1,11 +1,12 @@
 DTS_DIR := $(DTS_DIR)/mediatek
 
 define Image/Prepare
-	# For UBI we want only one extra block
+	# 为 UBI 准备额外的块标记
 	rm -f $(KDIR)/ubi_mark
 	echo -ne '\xde\xad\xc0\xde' > $(KDIR)/ubi_mark
 endef
 
+# --- 基础构建指令 ---
 define Build/mt7981-bl2
 	cat $(STAGING_DIR_IMAGE)/mt7981-$1-bl2.img >> $@
 endef
@@ -14,22 +15,7 @@ define Build/mt7981-bl31-uboot
 	cat $(STAGING_DIR_IMAGE)/mt7981_$1-u-boot.fip >> $@
 endef
 
-define Build/mt7986-bl2
-	cat $(STAGING_DIR_IMAGE)/mt7986-$1-bl2.img >> $@
-endef
-
-define Build/mt7986-bl31-uboot
-	cat $(STAGING_DIR_IMAGE)/mt7986_$1-u-boot.fip >> $@
-endef
-
-define Build/mt7988-bl2
-	cat $(STAGING_DIR_IMAGE)/mt7988-$1-bl2.img >> $@
-endef
-
-define Build/mt7988-bl31-uboot
-	cat $(STAGING_DIR_IMAGE)/mt7988_$1-u-boot.fip >> $@
-endef
-
+# --- GPT 分区表生成器 (核心修复：适配 eMMC) ---
 define Build/mt798x-gpt
 	cp $@ $@.tmp 2>/dev/null || true
 	ptgen -g -o $@.tmp -a 1 -l 1024 \
@@ -37,12 +23,12 @@ define Build/mt798x-gpt
 			-H \
 			-t 0x83	-N bl2		-r	-p 4079k@17k \
 		) \
-			-t 0x83	-N ubootenv	-r	-p 512k@4M \
-			-t 0x83	-N factory	-r	-p 2M@4608k \
-			-t 0xef	-N fip		-r	-p 4M@6656k \
-				-N recovery	-r	-p 32M@12M \
+		-t 0x83	-N ubootenv	-r	-p 512k@4M \
+		-t 0x83	-N factory	-r	-p 2M@4608k \
+		-t 0xef	-N fip		-r	-p 4M@6656k \
+		-N recovery	-r	-p 32M@12M \
 		$(if $(findstring sdmmc,$1), \
-				-N install	-r	-p 20M@44M \
+			-N install	-r	-p 20M@44M \
 			-t 0x2e -N production		-p $(CONFIG_TARGET_ROOTFS_PARTSIZE)M@64M \
 		) \
 		$(if $(findstring emmc,$1), \
@@ -52,6 +38,7 @@ define Build/mt798x-gpt
 	rm $@.tmp
 endef
 
+# --- GL 风格元数据生成 (用于固件校验) ---
 metadata_gl_json = \
 	'{ $(if $(IMAGE_METADATA),$(IMAGE_METADATA)$(comma)) \
 		"metadata_version": "1.1", \
@@ -75,16 +62,10 @@ metadata_gl_json = \
 define Build/append-gl-metadata
 	$(if $(SUPPORTED_DEVICES),-echo $(call metadata_gl_json,$(SUPPORTED_DEVICES)) | fwtool -I - $@)
 	sha256sum "$@" | cut -d" " -f1 > "$@.sha256sum"
-	[ ! -s "$(BUILD_KEY)" -o ! -s "$(BUILD_KEY).ucert" -o ! -s "$@" ] || { \
-		cp "$(BUILD_KEY).ucert" "$@.ucert" ;\
-		usign -S -m "$@" -s "$(BUILD_KEY)" -x "$@.sig" ;\
-		ucert -A -c "$@.ucert" -x "$@.sig" ;\
-		fwtool -S "$@.ucert" "$@" ;\
-	}
 endef
 
 # ============================================================
-# 只保留你的设备 sl3000-emmc
+# 设备定义：SL3000 eMMC 修复版
 # ============================================================
 
 define Device/sl3000-emmc
@@ -93,9 +74,16 @@ define Device/sl3000-emmc
   DEVICE_VARIANT := eMMC
   DEVICE_DTS := mt7981b-sl3000-emmc
   DEVICE_DTS_DIR := mediatek
-  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware
+  
+  # 必须包含的驱动包，确保 eMMC 挂载
+  DEVICE_PACKAGES := kmod-mmc kmod-sdhci-mtk f2fs-tools kmod-fs-f2fs \
+                     kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware
+  
+  # 镜像生成逻辑
+  # 对于 eMMC 设备，factory 镜像通常包含 GPT 分区表以便全盘刷写
+  # sysupgrade 镜像通过 append-metadata 提供给 LuCI 升级
   IMAGES := sysupgrade.bin factory.bin
-  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-  IMAGE/factory.bin := append-rootfs | pad-rootfs | append-metadata
+  IMAGE/factory.bin := append-kernel | pad-to 128k | append-rootfs | mt798x-gpt emmc
+  IMAGE/sysupgrade.bin := append-kernel | pad-to 128k | append-rootfs | mt798x-gpt emmc | append-gl-metadata
 endef
 TARGET_DEVICES += sl3000-emmc
