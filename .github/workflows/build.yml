@@ -32,7 +32,7 @@ jobs:
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. Execute Auto-Merge (原文逻辑，引入 clean-feeds.sh)
+      - name: 4. Execute Auto-Merge (原文逻辑)
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -41,17 +41,21 @@ jobs:
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
 
-      - name: 5. Kernel Physical Injection & Hook (【原文补丁】：拦截解压覆盖)
+      - name: 5. Kernel Physical Injection & Hook (【修复 Error 1】：强制清理内核缓存并注入)
         working-directory: ${{ env.WORKDIR }}
         run: |
+          # 修复点：先执行 prepare 确保源码解压，再物理注入
           make target/linux/prepare -j$(nproc)
           export GITHUB_WORKSPACE=${{ github.workspace }}
           ./clean-feeds.sh
           
+          # 物理定位并强制覆盖 build_dir 里的 DTS
           REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
           if [ -n "$REAL_K_DIR" ]; then
+            # 找到我们物理合并后的单体 DTS
             FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
             cp -fv "$FIXED_DTS" "$REAL_K_DIR/"
+            # 修复 Makefile 确保内核识别此 DTB
             sed -i '/mt7981b-sl3000-emmc.dtb/d' "$REAL_K_DIR/Makefile"
             sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
           fi
@@ -63,7 +67,7 @@ jobs:
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
 
-      - name: 7. Build Kernel & Image (原文照抄 + 详细诊断)
+      - name: 7. Build Kernel & Image (原文照抄)
         working-directory: ${{ env.WORKDIR }}
         run: |
           if ! make target/linux/install -j$(nproc) V=i; then
