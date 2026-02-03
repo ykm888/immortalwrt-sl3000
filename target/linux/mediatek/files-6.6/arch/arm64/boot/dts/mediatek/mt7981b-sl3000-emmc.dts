@@ -59,8 +59,19 @@
 			gpios = <&pio 12 GPIO_ACTIVE_LOW>;
 		};
 	};
+
+    /* 物理层修复：固定的 3.3V 供电 */
+	reg_3p3v: regulator-3p3v {
+		compatible = "regulator-fixed";
+		regulator-name = "fixed-3.3V";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
 };
 
+/* 网络与交换机配置 */
 &eth {
 	status = "okay";
 	gmac0: mac@0 {
@@ -95,6 +106,7 @@
 	};
 };
 
+/* eMMC 存储器 */
 &mmc0 {
 	bus-width = <8>;
 	cap-mmc-highspeed;
@@ -108,38 +120,29 @@
 	status = "okay";
 };
 
+/* Pinctrl 控制 */
 &pio {
 	mmc0_pins_default: mmc0-pins-default {
 		mux { function = "flash"; groups = "emmc_45"; };
 		conf {
 			pins = "EMMC_DATA_0", "EMMC_DATA_1", "EMMC_DATA_2", "EMMC_DATA_3", "EMMC_DATA_4", "EMMC_DATA_5", "EMMC_DATA_6", "EMMC_DATA_7", "EMMC_CMD";
-			input-enable; drive-strength = <4>; bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
+			input-enable; drive-strength = <MTK_DRIVE_4mA>; bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
 		};
-		conf-clk { pins = "EMMC_CLK"; drive-strength = <4>; bias-pull-down = <MTK_PUPD_SET_R1R0_01>; };
+		conf-clk { pins = "EMMC_CLK"; drive-strength = <MTK_DRIVE_4mA>; bias-pull-down = <MTK_PUPD_SET_R1R0_01>; };
 	};
 	mmc0_pins_uhs: mmc0-pins-uhs {
 		mux { function = "flash"; groups = "emmc_45"; };
 		conf {
 			pins = "EMMC_DATA_0", "EMMC_DATA_1", "EMMC_DATA_2", "EMMC_DATA_3", "EMMC_DATA_4", "EMMC_DATA_5", "EMMC_DATA_6", "EMMC_DATA_7", "EMMC_CMD";
-			input-enable; drive-strength = <6>; bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
+			input-enable; drive-strength = <MTK_DRIVE_6mA>; bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
 		};
-		conf-clk { pins = "EMMC_CLK"; drive-strength = <6>; bias-pull-down = <MTK_PUPD_SET_R1R0_01>; };
+		conf-clk { pins = "EMMC_CLK"; drive-strength = <MTK_DRIVE_6mA>; bias-pull-down = <MTK_PUPD_SET_R1R0_01>; };
 	};
 };
 
+/* 基础外设 */
 &uart0 { status = "okay"; };
 &watchdog { status = "okay"; };
 &wifi { status = "okay"; };
 &usb_phy { status = "okay"; };
 &xhci { status = "okay"; };
-
-/ {
-	reg_3p3v: regulator-3p3v {
-		compatible = "regulator-fixed";
-		regulator-name = "fixed-3.3V";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		regulator-boot-on;
-		regulator-always-on;
-	};
-};
