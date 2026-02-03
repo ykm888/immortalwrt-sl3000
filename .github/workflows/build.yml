@@ -1,83 +1,90 @@
-#!/bin/bash
-# ============================================================
-# SL3000 V16.6 工程延续修复版
-# 严格遵循原文逻辑：定位 -> DTS处理 -> Feeds -> 配置生成
-# ============================================================
-set -e
+name: build-sl3000-v16.6-final
 
-echo ">>> [SL3000 V16.6] 执行延续修复..."
+on:
+  workflow_dispatch:
 
-# --- 1. 定位源文件 (原文照抄) ---
-[ -z "$GITHUB_WORKSPACE" ] && GITHUB_WORKSPACE=$(cd ..; pwd)
-SRC_DIR="${GITHUB_WORKSPACE}/custom-config"
-DTS_SRC=$(find "$SRC_DIR" -type f -name "*mt7981b-sl3000-emmc.dts" | head -n 1)
-MK_SRC=$(find "$SRC_DIR" -type f -name "filogic.mk" | head -n 1)
-CONF_SRC=$(find "$SRC_DIR" -type f -name "*sl3000.config" | head -n 1)
+permissions:
+  contents: write
 
-# --- 2. DTS 物理合并修复 (【关键修复】：消除路径依赖) ---
-K_DIR=$(ls -d target/linux/mediatek/files-* 2>/dev/null | sort -V | tail -n 1)
-[ -z "$K_DIR" ] && K_DIR="target/linux/mediatek/files-6.6"
-DTS_DEST="$K_DIR/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
-INC_DIR="$K_DIR/arch/arm64/boot/dts/mediatek"
+env:
+  WORKDIR: ${{ github.workspace }}/immortalwrt
+  SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
+  SOURCE_BRANCH: openwrt-24.10
+  TARGET_PROFILE: sl3000-emmc
+  TERM: xterm
 
-mkdir -p "$(dirname "$DTS_DEST")"
-cat <<EOT > "$DTS_DEST.tmp"
-/dts-v1/;
-#include <dt-bindings/gpio/gpio.h>
-#include <dt-bindings/input/input.h>
-#include <dt-bindings/leds/common.h>
-EOT
-[ -f "$INC_DIR/mt7981.dtsi" ] && grep -v "/dts-v1/;" "$INC_DIR/mt7981.dtsi" | grep -v "#include" >> "$DTS_DEST.tmp"
-[ -f "$INC_DIR/mt7981b.dtsi" ] && grep -v "/dts-v1/;" "$INC_DIR/mt7981b.dtsi" | grep -v "#include" >> "$DTS_DEST.tmp"
-tr -d '\r' < "$DTS_SRC" | grep -v "/dts-v1/;" | grep -v "mt7981.dtsi" | grep -v "mt7981b.dtsi" >> "$DTS_DEST.tmp"
-cp -f "$DTS_DEST.tmp" "$DTS_DEST"
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: 1. Maximize Build Space (原文照抄)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /var/lib/docker
+          sudo docker system prune -af --volumes
 
-# --- 3. Feeds 强制同步 (延续逻辑：添加协议脱敏并保持纯净源) ---
-git config --global url."https://github.com/".insteadOf "git://github.com/" || true
-git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+      - name: 2. Install Dependencies (原文照抄)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc dos2unix
 
-./scripts/feeds update -a
-./scripts/feeds install -a
+      - name: 3. Checkout & Clone (原文照抄)
+        run: |
+          git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
+          git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-# --- 4. 配置与 Makefile 注入 (【原文照抄并修复 Config 内容】) ---
-# 注入您确认的完整版 Config
-cat <<EOT > .config
-CONFIG_TARGET_mediatek=y
-CONFIG_TARGET_mediatek_filogic=y
-CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y
-CONFIG_PACKAGE_base-files=y
-CONFIG_PACKAGE_busybox=y
-CONFIG_PACKAGE_dnsmasq-full=y
-CONFIG_PACKAGE_firewall4=y
-CONFIG_PACKAGE_odhcp6c=y
-CONFIG_PACKAGE_odhcpd-ipv6only=y
-CONFIG_PACKAGE_ppp=y
-CONFIG_PACKAGE_ppp-mod-pppoe=y
-CONFIG_PACKAGE_coremark=y
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-base=y
-CONFIG_PACKAGE_luci-compat=y
-CONFIG_PACKAGE_luci-lua-runtime=y
-CONFIG_PACKAGE_luci-lib-ip=y
-CONFIG_PACKAGE_luci-lib-jsonc=y
-CONFIG_PACKAGE_luci-theme-bootstrap=y
-CONFIG_PACKAGE_luci-mod-admin-full=y
-CONFIG_PACKAGE_luci-mod-network=y
-CONFIG_PACKAGE_luci-mod-status=y
-CONFIG_PACKAGE_luci-mod-system=y
-CONFIG_PACKAGE_luci-proto-ppp=y
-CONFIG_PACKAGE_luci-proto-ipv6=y
-CONFIG_PACKAGE_kmod-mmc=y
-CONFIG_PACKAGE_kmod-sdhci-mtk=y
-CONFIG_PACKAGE_f2fs-tools=y
-CONFIG_PACKAGE_kmod-fs-f2fs=y
-CONFIG_PACKAGE_kmod-mt7981-firmware=y
-EOT
+      - name: 4. Execute Auto-Merge (原文逻辑，引入 clean-feeds.sh)
+        working-directory: ${{ env.WORKDIR }}
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
+          chmod +x clean-feeds.sh
+          ./clean-feeds.sh
 
-# 延续：如果外部有 .config 则追加，并应用 filogic.mk
-[ -f "$CONF_SRC" ] && cat "$CONF_SRC" >> .config
-echo "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" >> .config
-[ -f "$MK_SRC" ] && cp -f "$MK_SRC" "target/linux/mediatek/image/filogic.mk"
-make defconfig
+      - name: 5. Kernel Physical Injection & Hook (【原文补丁】：拦截解压覆盖)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make target/linux/prepare -j$(nproc)
+          export GITHUB_WORKSPACE=${{ github.workspace }}
+          ./clean-feeds.sh
+          
+          REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
+          if [ -n "$REAL_K_DIR" ]; then
+            FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
+            cp -fv "$FIXED_DTS" "$REAL_K_DIR/"
+            sed -i '/mt7981b-sl3000-emmc.dtb/d' "$REAL_K_DIR/Makefile"
+            sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
+          fi
 
-echo "✅ [任务完成] V16.6 修复项已锁定！"
+      - name: 6. Build Tools & Toolchain (原文照抄)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          make defconfig
+          make tools/install -j$(nproc)
+          make toolchain/install -j$(nproc)
+
+      - name: 7. Build Kernel & Image (原文照抄 + 详细诊断)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          if ! make target/linux/install -j$(nproc) V=i; then
+            echo "::error::编译中断，输出诊断日志..."
+            make target/linux/install -j1 V=s 2>&1 | tee build_detailed_error.log
+            exit 1
+          fi
+          make target/install -j$(nproc)
+
+      - name: 8. Create Auto Release (原文照抄)
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TARGET_PROFILE }}-${{ github.run_number }}
+          files: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
+
+      - name: Diagnostic Upload on Failure (原文照抄)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-logs
+          path: |
+            ${{ env.WORKDIR }}/build_detailed_error.log
+            ${{ env.WORKDIR }}/.config
