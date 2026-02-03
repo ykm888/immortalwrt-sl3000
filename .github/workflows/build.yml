@@ -31,7 +31,7 @@ jobs:
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. Execute Auto-Merge (V16.5)
+      - name: 4. Execute Auto-Merge (V16.5原文逻辑)
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -39,30 +39,27 @@ jobs:
           cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
-          # 关键：确保所有插件软连接后再执行配置
           make defconfig
 
-      - name: 5. Kernel Physical Injection & Hook
+      - name: 5. Kernel Physical Injection & Hook (原文照抄+延续修复)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> 执行内核源码级物理拦截..."
+          echo ">>> 执行内核源码级拦截与物理合并..."
           make target/linux/prepare -j$(nproc)
           
-          # 核心修复：重新执行合并脚本，确保扁平化后的 DTS 进入 build_dir 生产阵地
+          # 延续修复：prepare后必须再次运行脚本以防源码重置
           export GITHUB_WORKSPACE=${{ github.workspace }}
           ./clean-feeds.sh
           
           REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
           if [ -n "$REAL_K_DIR" ]; then
+            # 使用生成的物理独立 DTS 覆盖
             FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
             cp -v "$FIXED_DTS" "$REAL_K_DIR/"
             
-            # 物理层 Makefile 加固
+            # Makefile 加固
             sed -i '/mt7981b-sl3000-emmc.dtb/d' "$REAL_K_DIR/Makefile"
             sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
-            
-            # 绝杀：修正编译器 DTC 标志（可选辅助）
-            sed -i "s|DTC_FLAGS += |DTC_FLAGS += -i $REAL_K_DIR |" $(find build_dir -name "Makefile.lib") 2>/dev/null || true
           fi
 
       - name: 6. Build Tools & Toolchain
@@ -71,10 +68,9 @@ jobs:
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
 
-      - name: 7. Build Kernel & Image (Diagnostic Mode)
+      - name: 7. Build Kernel & Image (Diagnostic Mode原文)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 优先尝试高效并行编译，捕获 cc1 错误
           if ! make target/linux/install -j$(nproc) V=i; then
             echo "::error::编译失败，正在尝试单线程诊断模式..."
             make target/linux/install -j1 V=s 2>&1 | tee build_detailed_error.log
@@ -82,7 +78,7 @@ jobs:
           fi
           make target/install -j$(nproc)
 
-      - name: 8. Diagnostic Upload on Failure
+      - name: 8. Diagnostic Upload on Failure (原文照抄)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -91,7 +87,7 @@ jobs:
             ${{ env.WORKDIR }}/build_detailed_error.log
             ${{ env.WORKDIR }}/.config
 
-      - name: 9. Create Auto Release
+      - name: 9. Create Auto Release (原文照抄)
         if: success()
         uses: softprops/action-gh-release@v2
         with:
