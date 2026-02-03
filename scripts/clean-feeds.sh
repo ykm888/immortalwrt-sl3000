@@ -4,26 +4,26 @@ set -e
 echo ">>> [SL3000 Final-Fixed] 正在同步 1GB 扩容配置与环境补丁..."
 
 ROOT_DIR=$(pwd)
+# 自动定位 custom-config 目录
 [ -z "$GITHUB_WORKSPACE" ] && GITHUB_WORKSPACE=$(cd ..; pwd)
 SRC_DIR="${GITHUB_WORKSPACE}/custom-config"
+
 DTS_SRC=$(find "$SRC_DIR" -type f -name "*mt7981b-sl3000-emmc.dts" | head -n 1)
 MK_SRC=$(find "$SRC_DIR" -type f -name "filogic.mk" | head -n 1)
 
 # --- 1. 依赖欺骗与环境占位 (解决 m4/flex 报错) ---
-# 我们不删除 Makefile 规则，而是预先建立 staging 目录并建立指向系统工具的软链接
 echo "🔗 正在执行宿主机工具链预劫持..."
 mkdir -p staging_dir/host/bin
 ln -sf /usr/bin/m4 staging_dir/host/bin/m4
 ln -sf /usr/bin/flex staging_dir/host/bin/flex
 ln -sf /usr/bin/bison staging_dir/host/bin/bison
 ln -sf /usr/bin/flex staging_dir/host/bin/lex
-# 关键：创建一个伪造的安装戳记，让 Makefile 认为 tools/m4 已经 install 过了
 touch staging_dir/host/.tools_install_y
 mkdir -p staging_dir/host/stamp
 touch staging_dir/host/stamp/.tools_compile_y
 touch staging_dir/host/stamp/.m4_installed
 
-# --- 2. DTS 物理缝合 (延续 V16.6 逻辑) ---
+# --- 2. DTS 物理缝合 ---
 BASE_DTSI=$(find "$ROOT_DIR/target/linux/mediatek" -name "mt7981.dtsi" | head -n 1)
 INC_DIR=$(dirname "$BASE_DTSI")
 DTS_DEST="$INC_DIR/mt7981b-sl3000-emmc.dts"
@@ -53,7 +53,10 @@ CONFIG_PACKAGE_f2fs-tools=y
 CONFIG_PACKAGE_kmod-fs-f2fs=y
 EOT
 
-# 物理同步镜像规则 (GPT 分区核心)
+# 物理同步镜像规则
 [ -f "$MK_SRC" ] && cp -fv "$MK_SRC" "target/linux/mediatek/image/filogic.mk"
 
-echo "✅ [脚本完成] 劫持已就绪，准备开始编译。"
+# 强制执行 defconfig 锁定配置，防止弹出 menuconfig
+make defconfig
+
+echo "✅ [脚本完成] 劫持与 1GB 配置已就绪。"
