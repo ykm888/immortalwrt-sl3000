@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. 预装系统工具 (确保宿主机 m4 环境)
+      - name: 1. 预装系统工具
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison m4 gawk libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 device-tree-compiler bc dos2unix
@@ -24,54 +24,53 @@ jobs:
 
       - name: 3. 环境与 DTS 初始化注入
         working-directory: ${{ env.WORKDIR }}
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
           cp -v "${{ github.workspace }}/custom-config/scripts/clean-feeds.sh" ./
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
 
-      - name: 4. 编译 Host 工具 (优先使用预注入路径)
+      - name: 4. 编译 Host 工具链 (Tools)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 将我们伪造的 bin 目录加入最前面，确保 flex 调用的是 /usr/bin/m4
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
-          make defconfig
-          # 直接并行编译 tools，脚本已经标记 m4 已完成
           make tools/install -j$(nproc) || make tools/install -j1 V=s
 
-      - name: 5. 内核 Prepare 与 编译现场“回马枪”
+      - name: 5. 编译交叉编译器 (Toolchain) - 修复 Terminal 报错的关键
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 1. 解压内核
+          export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
+          make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
+
+      - name: 6. 内核 Prepare 与 编译现场“回马枪”
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
+          # 现在编译器有了，prepare 才能顺利执行
           make target/linux/prepare -j$(nproc)
           
-          # 2. 重新执行同步 (防止解压后 build_dir 为空)
-          export GITHUB_WORKSPACE=${{ github.workspace }}
-          ./clean-feeds.sh
-          
-          # 3. 强制锁定 build_dir 物理路径
+          # 重新同步 DTS 到 build_dir (防止解压后覆盖)
           REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
           TARGET_DTS=$(find target/linux/mediatek -name "mt7981b-sl3000-emmc.dts" | head -n 1)
           cp -fv "$TARGET_DTS" "$REAL_K_DIR/"
           
-          # 修正 Makefile 防止丢失链接
+          # 修正 Makefile
           sed -i '/mt7981b-sl3000-emmc.dtb/d' "$REAL_K_DIR/Makefile"
           sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
           echo "🚀 编译现场已锁定: $REAL_K_DIR"
 
-      - name: 6. 最终固件编译
+      - name: 7. 最终固件编译
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
-          # 编译内核
+          # 再次锁定配置，防止任何交互式弹窗
+          make defconfig
+          echo "📦 正在生产内核与镜像..."
           make target/linux/install -j$(nproc) V=i || make target/linux/install -j1 V=s
-          # 编译镜像
           make target/install -j$(nproc)
 
-      - name: 7. 上传固件
+      - name: 8. 上传固件
         if: success()
-        uses: softprops/action-gh-release@v2
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: sl3000-v2026-final
-          files: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
+          name: SL3000-1GB-Firmware
+          path: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
