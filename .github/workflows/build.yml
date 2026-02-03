@@ -17,22 +17,22 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. Maximize Build Space (原文照抄)
+      - name: 1. Maximize Build Space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /var/lib/docker
           sudo docker system prune -af --volumes
 
-      - name: 2. Install Dependencies (原文照抄)
+      - name: 2. Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc dos2unix
 
-      - name: 3. Checkout & Clone (原文照抄)
+      - name: 3. Checkout & Clone
         run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. Execute Auto-Merge (原文逻辑)
+      - name: 4. Execute Auto-Merge
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -41,50 +41,50 @@ jobs:
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
 
-      - name: 5. Kernel Physical Injection & Hook (【修复 Error 1】：强制清理内核缓存并注入)
+      - name: 5. Kernel Physical Injection & Hook (关键拦截步骤)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 修复点：先执行 prepare 确保源码解压，再物理注入
+          # 运行内核 prepare 解压源码树
           make target/linux/prepare -j$(nproc)
+          # 解压后立刻再次运行脚本，覆盖 build_dir 里的物理文件
           export GITHUB_WORKSPACE=${{ github.workspace }}
           ./clean-feeds.sh
           
-          # 物理定位并强制覆盖 build_dir 里的 DTS
+          # 手动定位 build_dir 内的 DTS 并再次覆盖
           REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
           if [ -n "$REAL_K_DIR" ]; then
-            # 找到我们物理合并后的单体 DTS
             FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
             cp -fv "$FIXED_DTS" "$REAL_K_DIR/"
-            # 修复 Makefile 确保内核识别此 DTB
+            # 确保 Makefile 引用此 DTB
             sed -i '/mt7981b-sl3000-emmc.dtb/d' "$REAL_K_DIR/Makefile"
             sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
           fi
 
-      - name: 6. Build Tools & Toolchain (原文照抄)
+      - name: 6. Build Tools & Toolchain
         working-directory: ${{ env.WORKDIR }}
         run: |
           make defconfig
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
 
-      - name: 7. Build Kernel & Image (原文照抄)
+      - name: 7. Build Kernel & Image (V=s 诊断模式)
         working-directory: ${{ env.WORKDIR }}
         run: |
           if ! make target/linux/install -j$(nproc) V=i; then
-            echo "::error::编译中断，输出诊断日志..."
+            echo "::error::内核编译失败，正在输出详细错误日志..."
             make target/linux/install -j1 V=s 2>&1 | tee build_detailed_error.log
             exit 1
           fi
           make target/install -j$(nproc)
 
-      - name: 8. Create Auto Release (原文照抄)
+      - name: 8. Create Auto Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TARGET_PROFILE }}-${{ github.run_number }}
           files: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
 
-      - name: Diagnostic Upload on Failure (原文照抄)
+      - name: Diagnostic Upload on Failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
