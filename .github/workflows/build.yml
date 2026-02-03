@@ -1,4 +1,4 @@
-name: build-sl3000-v15.5-final
+name: build-sl3000-v16.5-final
 
 on:
   workflow_dispatch:
@@ -24,14 +24,14 @@ jobs:
       - name: 2. Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc
+          sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc dos2unix
 
       - name: 3. Checkout & Clone
         run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. Execute Auto-Merge (V15.5)
+      - name: 4. Execute Auto-Merge (V16.5)
         working-directory: ${{ env.WORKDIR }}
         env:
           GITHUB_WORKSPACE: ${{ github.workspace }}
@@ -39,51 +39,54 @@ jobs:
           cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
+          # 关键：确保所有插件软连接后再执行配置
           make defconfig
 
-      - name: 5. Kernel Hardware Hook & DTB Injection
+      - name: 5. Kernel Physical Injection & Hook
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> 执行内核物理层拦截..."
+          echo ">>> 执行内核源码级物理拦截..."
           make target/linux/prepare -j$(nproc)
           
-          # 定位 build_dir 物理路径
           REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
           if [ -n "$REAL_K_DIR" ]; then
             FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
-            # 物理覆盖，确保编译阶段使用的是修复后的 DTS
             cp -v "$FIXED_DTS" "$REAL_K_DIR/"
             
-            # Makefile 二次加固
+            # 物理层 Makefile 加固
             sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
             
-            # 强制编译器包含正确的 DTS 目录
+            # 绝杀：修正编译器 Include 路径报错
             sed -i "s|DTC_FLAGS += |DTC_FLAGS += -i $REAL_K_DIR |" $(find build_dir -name "Makefile.lib") 2>/dev/null || true
           fi
 
-      - name: 6. Full Compilation (Diagnostic Mode)
+      - name: 6. Build Tools & Toolchain
         working-directory: ${{ env.WORKDIR }}
         run: |
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
-          # 内核编译错误捕获逻辑
+
+      - name: 7. Build Kernel & Image (Diagnostic Mode)
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          # 优先尝试高效并行编译，捕获 cc1 错误
           if ! make target/linux/install -j$(nproc) V=i; then
-            echo "::error::发现编译失败，正在尝试单线程诊断..."
+            echo "::error::编译失败，正在尝试单线程诊断模式..."
             make target/linux/install -j1 V=s 2>&1 | tee build_detailed_error.log
             exit 1
           fi
           make target/install -j$(nproc)
 
-      - name: 7. Upload Diagnostic Logs on Failure
+      - name: 8. Diagnostic Upload on Failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: diagnostic-logs
           path: |
-            ${{ env.WORKDIR }}/dts_error.log
             ${{ env.WORKDIR }}/build_detailed_error.log
+            ${{ env.WORKDIR }}/.config
 
-      - name: 8. Create Auto Release
+      - name: 9. Create Auto Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
