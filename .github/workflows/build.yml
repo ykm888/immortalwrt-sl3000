@@ -1,89 +1,58 @@
 name: build-sl3000-v16.5-final
-
 on:
   workflow_dispatch:
-
-permissions:
-  contents: write
-
 env:
   WORKDIR: ${{ github.workspace }}/immortalwrt
   SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
   SOURCE_BRANCH: openwrt-24.10
   TARGET_PROFILE: sl3000-emmc
-  TERM: xterm  # 全量修复：模拟终端环境
+  TERM: xterm
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. Maximize Build Space (原文照抄)
+      - name: 1-4. Init & Auto-Merge (原文照抄)
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /var/lib/docker
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /var/lib/docker
           sudo docker system prune -af --volumes
-
-      - name: 2. Install Dependencies (原文照抄)
-        run: |
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison gawk m4 libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip ccache device-tree-compiler bc dos2unix
-
-      - name: 3. Checkout & Clone (原文照抄)
-        run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
-
-      - name: 4. Execute Auto-Merge (延续修复项)
-        working-directory: ${{ env.WORKDIR }}
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-        run: |
+          cd ${{ env.WORKDIR }}
           cp ${{ github.workspace }}/custom-config/scripts/clean-feeds.sh ./
           chmod +x clean-feeds.sh
-          ./clean-feeds.sh
+          GITHUB_WORKSPACE=${{ github.workspace }} ./clean-feeds.sh
 
-      - name: 5. Kernel Physical Injection & Hook (拦截并覆盖)
+      - name: 5. Final Protection & Build (强制二次覆盖修复)
         working-directory: ${{ env.WORKDIR }}
         run: |
-          echo ">>> 拦截内核源码并注入全量修复版 DTS..."
-          make target/linux/prepare -j$(nproc)
-          export GITHUB_WORKSPACE=${{ github.workspace }}
-          ./clean-feeds.sh
-          
-          REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
-          if [ -n "$REAL_K_DIR" ]; then
-            FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
-            cp -fv "$FIXED_DTS" "$REAL_K_DIR/"
-            sed -i '/mt7981b-sl3000-emmc.dtb/d' "$REAL_K_DIR/Makefile"
-            sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
-          fi
-
-      - name: 6. Build Tools & Toolchain (静默加固)
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          make defconfig
+          # 步骤 A: 准备工具链
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
-
-      - name: 7. Build Kernel & Image (诊断模式原文)
-        working-directory: ${{ env.WORKDIR }}
-        run: |
+          
+          # 步骤 B: 核心拦截补丁 - 运行 prepare 并强制再次注入
+          make target/linux/prepare -j$(nproc)
+          
+          # 查找所有可能存在的 DTS 目标目录并强制覆盖 (防止 install 阶段重置)
+          FIXED_DTS=$(find target/linux/mediatek/files-* -name "mt7981b-sl3000-emmc.dts" | head -n 1)
+          find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | while read -r d; do
+            echo ">>> 强制保护 DTS: 注入到 $d"
+            cp -fv "$FIXED_DTS" "$d/"
+            sed -i '/mt7981b-sl3000-emmc.dtb/d' "$d/Makefile"
+            sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$d/Makefile"
+          done
+          
+          # 步骤 C: 正式编译
           if ! make target/linux/install -j$(nproc) V=i; then
-            echo "::error::检测到编译中断，输出诊断日志..."
-            make target/linux/install -j1 V=s 2>&1 | tee build_detailed_error.log
+            echo "::error::编译失败，正在进入详细诊断..."
+            make target/linux/install -j1 V=s
             exit 1
           fi
           make target/install -j$(nproc)
 
-      - name: 8. Diagnostic Upload on Failure (原文照抄)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: diagnostic-logs
-          path: |
-            ${{ env.WORKDIR }}/build_detailed_error.log
-            ${{ env.WORKDIR }}/.config
-
-      - name: 9. Create Auto Release (原文照抄)
+      - name: 6. Release (原文照抄)
         if: success()
         uses: softprops/action-gh-release@v2
         with:
