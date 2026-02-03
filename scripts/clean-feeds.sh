@@ -14,33 +14,39 @@ DTS_SRC=$(find "$SRC_DIR" -type f -name "*mt7981b-sl3000-emmc.dts" | head -n 1)
 MK_SRC=$(find "$SRC_DIR" -type f -name "filogic.mk" | head -n 1)
 CONF_SRC=$(find "$SRC_DIR" -type f -name "*sl3000.config" | head -n 1)
 
-# --- 2. DTS 物理合并修复 (【关键修复】：消除路径依赖) ---
+# --- 2. DTS 物理合并修复 (【专项修复】：消除第40行语法错误) ---
 K_DIR=$(ls -d target/linux/mediatek/files-* 2>/dev/null | sort -V | tail -n 1)
 [ -z "$K_DIR" ] && K_DIR="target/linux/mediatek/files-6.6"
 DTS_DEST="$K_DIR/arch/arm64/boot/dts/mediatek/mt7981b-sl3000-emmc.dts"
 INC_DIR="$K_DIR/arch/arm64/boot/dts/mediatek"
 
 mkdir -p "$(dirname "$DTS_DEST")"
-cat <<EOT > "$DTS_DEST.tmp"
-/dts-v1/;
-#include <dt-bindings/gpio/gpio.h>
-#include <dt-bindings/input/input.h>
-#include <dt-bindings/leds/common.h>
-EOT
-[ -f "$INC_DIR/mt7981.dtsi" ] && grep -v "/dts-v1/;" "$INC_DIR/mt7981.dtsi" | grep -v "#include" >> "$DTS_DEST.tmp"
-[ -f "$INC_DIR/mt7981b.dtsi" ] && grep -v "/dts-v1/;" "$INC_DIR/mt7981b.dtsi" | grep -v "#include" >> "$DTS_DEST.tmp"
-tr -d '\r' < "$DTS_SRC" | grep -v "/dts-v1/;" | grep -v "mt7981.dtsi" | grep -v "mt7981b.dtsi" >> "$DTS_DEST.tmp"
-cp -f "$DTS_DEST.tmp" "$DTS_DEST"
 
-# --- 3. Feeds 强制同步 (延续逻辑，仅保留官方源，暂不构建科学上网) ---
+# 强制生成干净的头部，确保唯一性
+echo '/dts-v1/;' > "$DTS_DEST"
+echo '#include <dt-bindings/gpio/gpio.h>' >> "$DTS_DEST"
+echo '#include <dt-bindings/input/input.h>' >> "$DTS_DEST"
+echo '#include <dt-bindings/leds/common.h>' >> "$DTS_DEST"
+
+# 物理抓取依赖定义，并剔除所有重复的头部和include (grep -vE 绝杀重复)
+if [ -f "$INC_DIR/mt7981.dtsi" ]; then
+    grep -vE "/dts-v1/;|#include" "$INC_DIR/mt7981.dtsi" >> "$DTS_DEST"
+fi
+if [ -f "$INC_DIR/mt7981b.dtsi" ]; then
+    grep -vE "/dts-v1/;|#include" "$INC_DIR/mt7981b.dtsi" >> "$DTS_DEST"
+fi
+
+# 注入自定义内容，剔除潜在冲突行并转换换行符
+tr -d '\r' < "$DTS_SRC" | grep -vE "/dts-v1/;|mt7981.dtsi|mt7981b.dtsi|#include" >> "$DTS_DEST"
+
+# --- 3. Feeds 强制同步 (原文照抄) ---
 git config --global url."https://github.com/".insteadOf "git://github.com/" || true
 git config --global url."https://github.com/".insteadOf "git@github.com:" || true
 
 ./scripts/feeds update -a
 ./scripts/feeds install -a
 
-# --- 4. 配置与 Makefile 注入 (【修复点】：注入精简完整版 Config) ---
-# 优先使用精简配置模板
+# --- 4. 配置与 Makefile 注入 (合入完整精简版 Config) ---
 cat <<EOT > .config
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
@@ -74,9 +80,8 @@ CONFIG_PACKAGE_kmod-fs-f2fs=y
 CONFIG_PACKAGE_kmod-mt7981-firmware=y
 EOT
 
-# 如果外部有自定义 config，则追加合并
 [ -f "$CONF_SRC" ] && cat "$CONF_SRC" >> .config
-
+echo "CONFIG_TARGET_mediatek_filogic_DEVICE_sl3000-emmc=y" >> .config
 [ -f "$MK_SRC" ] && cp -f "$MK_SRC" "target/linux/mediatek/image/filogic.mk"
 make defconfig
 
