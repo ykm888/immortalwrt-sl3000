@@ -1,14 +1,52 @@
 #!/bin/bash
 set -e
 
-echo ">>> [SL3000] 执行源码层级初始化..."
+echo ">>> [SL3000 Final-Fixed] 正在同步 1GB 扩容配置与环境补丁..."
 
-# 1. 更新并安装 Feeds
-./scripts/feeds update -a
-./scripts/feeds install -a
+ROOT_DIR=$(pwd)
+# 自动定位 custom-config 目录，使用绝对路径防止相对路径失效
+[ -z "$GITHUB_WORKSPACE" ] && GITHUB_WORKSPACE=$(cd ..; pwd)
+# 匹配你工作流中的目录名
+SRC_DIR="${GITHUB_WORKSPACE}/custom-config"
 
-# 2. 注入 1GB 内存与 eMMC 核心配置到 .config
-# 注意：CONFIG_TARGET_KERNEL_PARTSIZE 必须匹配分区表
+DTS_SRC=$(find "$SRC_DIR" -type f -name "*mt7981b-sl3000-emmc.dts" | head -n 1)
+MK_SRC=$(find "$SRC_DIR" -type f -name "filogic.mk" | head -n 1)
+
+# --- 1. 依赖欺骗与环境占位 ---
+echo "🔗 正在执行宿主机工具链预劫持..."
+mkdir -p staging_dir/host/bin
+ln -sf /usr/bin/m4 staging_dir/host/bin/m4
+ln -sf /usr/bin/flex staging_dir/host/bin/flex
+ln -sf /usr/bin/bison staging_dir/host/bin/bison
+ln -sf /usr/bin/flex staging_dir/host/bin/lex
+touch staging_dir/host/.tools_install_y
+mkdir -p staging_dir/host/stamp
+touch staging_dir/host/stamp/.tools_compile_y
+touch staging_dir/host/stamp/.m4_installed
+
+# --- 2. DTS 物理缝合 ---
+# 修复：先创建 files 目录，利用 OpenWrt 的 files 机制将 DTS 自动同步到内核
+KERNEL_FILES_DIR="$ROOT_DIR/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek"
+mkdir -p "$KERNEL_FILES_DIR"
+
+BASE_DTSI=$(find "$ROOT_DIR/target/linux/mediatek" -name "mt7981.dtsi" | head -n 1)
+INC_DIR=$(dirname "$BASE_DTSI")
+# 修改写入目标到 files 目录，这是解决 cc1 报错的最稳妥办法
+DTS_DEST="$KERNEL_FILES_DIR/mt7981b-sl3000-emmc.dts"
+
+{
+    echo '/dts-v1/;'
+    grep "#include" "$BASE_DTSI" | head -n 20
+    echo '#include <dt-bindings/leds/common.h>'
+    echo '#include <dt-bindings/input/input.h>'
+    sed -E '/\/dts-v1\/;|#include/d' "$BASE_DTSI"
+    [ -f "$INC_DIR/mt7981b.dtsi" ] && sed -E '/\/dts-v1\/;|#include/d' "$INC_DIR/mt7981b.dtsi"
+    echo -e "\n/* --- SL3000 CUSTOM SECTION --- */\n"
+    tr -d '\r' < "$DTS_SRC" | sed -E '/\/dts-v1\/;|#include|mt7981.dtsi/d'
+} > "$DTS_DEST"
+
+# --- 3. 注入 1GB 扩容与 eMMC 核心配置 ---
+./scripts/feeds update -a && ./scripts/feeds install -a
 cat <<EOT > .config
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
@@ -21,15 +59,10 @@ CONFIG_PACKAGE_f2fs-tools=y
 CONFIG_PACKAGE_kmod-fs-f2fs=y
 EOT
 
-# 3. 修正镜像定义文件 (filogic.mk)
-# 从 custom-config 中拷贝预设好的镜像产生规则
-SRC_DIR="../../custom-config"
-if [ -d "$SRC_DIR" ]; then
-    MK_SRC=$(find "$SRC_DIR" -name "filogic.mk" | head -n 1)
-    [ -f "$MK_SRC" ] && cp -fv "$MK_SRC" target/linux/mediatek/image/filogic.mk
-fi
+# 物理同步镜像规则
+[ -f "$MK_SRC" ] && cp -fv "$MK_SRC" "target/linux/mediatek/image/filogic.mk"
 
-# 4. 执行 defconfig 确保依赖完整
+# 强制执行 defconfig
 make defconfig
 
-echo "✅ [customize.sh] 基础配置注入完成。"
+echo "✅ [脚本完成] 劫持与 1GB 配置已就绪。"
