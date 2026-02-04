@@ -15,66 +15,68 @@ jobs:
       - name: 1. 预装系统工具
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential flex bison m4 gawk libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 device-tree-compiler bc dos2unix
+          sudo apt-get install -y build-essential flex bison m4 gawk libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libelf-dev python3 device-tree-compiler bc dos2unix
 
       - name: 2. 获取源码
         run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
-          # 修复点：克隆到固定名称，确保脚本能找到对应路径
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 3. 环境与 DTS 初始化注入
+      - name: 3. 执行初始化脚本
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 修复点：动态查找脚本，解决 cp: cannot stat 报错
           SCRIPT_FILE=$(find ${{ github.workspace }}/custom-config -name "clean-feeds.sh" | head -n 1)
-          cp -v "$SCRIPT_FILE" ./
+          cp -v "$SCRIPT_FILE" ./clean-feeds.sh
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
 
-      - name: 4. 编译 Host 工具链 (Tools)
+      - name: 4. 编译 Host 工具链
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
-          make tools/install -j$(nproc) || make tools/install -j1 V=s
+          make tools/install -j$(nproc)
 
-      - name: 5. 编译交叉编译器 (Toolchain) - 修复 Terminal 报错的关键
+      - name: 5. 编译交叉编译器
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
-          make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
+          make toolchain/install -j$(nproc)
 
-      - name: 6. 内核 Prepare 与 编译现场“回马枪”
+      - name: 6. 内核 Prepare 与 编译现场修复
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
-          # 现在编译器有了，prepare 才能顺利执行
+          # 1. 展开内核并同步 DTS files
           make target/linux/prepare -j$(nproc)
           
-          # 重新同步 DTS 到 build_dir (防止解压后覆盖)
+          # 2. 定位内核 DTS 编译目录
           REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
-          TARGET_DTS=$(find target/linux/mediatek -name "mt7981b-sl3000-emmc.dts" | head -n 1)
-          cp -fv "$TARGET_DTS" "$REAL_K_DIR/"
+          SPLICED_DTS=$(find target/linux/mediatek -name "mt7981b-sl3000-emmc.dts" | head -n 1)
           
-          # 修复点：修正内核 Makefile，否则 cc1 会因为找不到构建规则报错
+          # 3. 暴力注入 DTS 确保镜像阶段 cc1 能找到
+          cp -fv "$SPLICED_DTS" "$REAL_K_DIR/"
+          
+          # 4. 修复内核 Makefile (解决 dtb 生成规则缺失)
           if ! grep -q "mt7981b-sl3000-emmc.dtb" "$REAL_K_DIR/Makefile"; then
               sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
           fi
+          
+          # 5. 强制创建 root-mediatek 目录，防止 cp 报错
+          mkdir -p build_dir/target-aarch64_cortex-a53_musl/root-mediatek
           echo "🚀 编译现场已锁定: $REAL_K_DIR"
 
       - name: 7. 最终固件编译
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
-          # 再次锁定配置，防止任何交互式弹窗
           make defconfig
-          echo "📦 正在生产内核与镜像..."
-          make target/linux/install -j$(nproc) V=i || make target/linux/install -j1 V=s
+          # 先单独执行一次内核安装，确保 dtb 优先生成
+          make target/linux/install -j$(nproc) || make target/linux/install -j1 V=s
           make target/install -j$(nproc)
 
       - name: 8. 上传固件
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: SL3000-1GB-Firmware
+          name: SL3000-1GB-Fixed
           path: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
