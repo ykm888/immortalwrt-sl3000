@@ -4,15 +4,15 @@ set -e
 echo ">>> [SL3000 Final-Fixed] 正在同步 1GB 扩容配置与环境补丁..."
 
 ROOT_DIR=$(pwd)
-# 自动定位 custom-config 目录，使用绝对路径防止相对路径失效
+# 修复点：确保 SRC_DIR 能准确定位到克隆下来的仓库根目录
 [ -z "$GITHUB_WORKSPACE" ] && GITHUB_WORKSPACE=$(cd ..; pwd)
-# 匹配你工作流中的目录名
-SRC_DIR="${GITHUB_WORKSPACE}/custom-config"
+# 这里的 custom-config 指的是你克隆下来的仓库文件夹
+SRC_DIR=$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type d -name "*sl3000*" | head -n 1)
 
 DTS_SRC=$(find "$SRC_DIR" -type f -name "*mt7981b-sl3000-emmc.dts" | head -n 1)
 MK_SRC=$(find "$SRC_DIR" -type f -name "filogic.mk" | head -n 1)
 
-# --- 1. 依赖欺骗与环境占位 ---
+# --- 1. 依赖欺骗与环境占位 (解决 m4/flex 报错) ---
 echo "🔗 正在执行宿主机工具链预劫持..."
 mkdir -p staging_dir/host/bin
 ln -sf /usr/bin/m4 staging_dir/host/bin/m4
@@ -25,14 +25,11 @@ touch staging_dir/host/stamp/.tools_compile_y
 touch staging_dir/host/stamp/.m4_installed
 
 # --- 2. DTS 物理缝合 ---
-# 修复：先创建 files 目录，利用 OpenWrt 的 files 机制将 DTS 自动同步到内核
-KERNEL_FILES_DIR="$ROOT_DIR/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek"
-mkdir -p "$KERNEL_FILES_DIR"
-
 BASE_DTSI=$(find "$ROOT_DIR/target/linux/mediatek" -name "mt7981.dtsi" | head -n 1)
 INC_DIR=$(dirname "$BASE_DTSI")
-# 修改写入目标到 files 目录，这是解决 cc1 报错的最稳妥办法
-DTS_DEST="$KERNEL_FILES_DIR/mt7981b-sl3000-emmc.dts"
+# 修复点：在写入前确保目录存在
+mkdir -p "$INC_DIR"
+DTS_DEST="$INC_DIR/mt7981b-sl3000-emmc.dts"
 
 {
     echo '/dts-v1/;'
@@ -62,7 +59,7 @@ EOT
 # 物理同步镜像规则
 [ -f "$MK_SRC" ] && cp -fv "$MK_SRC" "target/linux/mediatek/image/filogic.mk"
 
-# 强制执行 defconfig
+# 强制执行 defconfig 锁定配置，防止弹出 menuconfig
 make defconfig
 
 echo "✅ [脚本完成] 劫持与 1GB 配置已就绪。"
