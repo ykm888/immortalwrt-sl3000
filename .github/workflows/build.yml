@@ -22,55 +22,63 @@ jobs:
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 3. 环境与 DTS 初始化注入
+      - name: 3. 执行脚本初始化
         working-directory: ${{ env.WORKDIR }}
         run: |
-          cp -v "${{ github.workspace }}/custom-config/scripts/clean-feeds.sh" ./
-          chmod +x clean-feeds.sh
-          ./clean-feeds.sh
+          # 假设上面的脚本名为 customize.sh 并在 custom-config/scripts 下
+          cp -v "${{ github.workspace }}/custom-config/scripts/customize.sh" ./
+          chmod +x customize.sh
+          ./customize.sh
 
-      - name: 4. 编译 Host 工具链 (Tools)
+      - name: 4. 编译 Host 工具与交叉编译器
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          # 合并编译以节省空间
+          make tools/install -j$(nproc)
+          make toolchain/install -j$(nproc)
+
+      - name: 5. 内核 Prepare 与 DTS 物理注入 (核心修复点)
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
-          make tools/install -j$(nproc) || make tools/install -j1 V=s
-
-      - name: 5. 编译交叉编译器 (Toolchain) - 修复 Terminal 报错的关键
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
-          make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
-
-      - name: 6. 内核 Prepare 与 编译现场“回马枪”
-        working-directory: ${{ env.WORKDIR }}
-        run: |
-          export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
-          # 现在编译器有了，prepare 才能顺利执行
+          
+          # 释放内核源码
           make target/linux/prepare -j$(nproc)
           
-          # 重新同步 DTS 到 build_dir (防止解压后覆盖)
-          REAL_K_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
-          TARGET_DTS=$(find target/linux/mediatek -name "mt7981b-sl3000-emmc.dts" | head -n 1)
-          cp -fv "$TARGET_DTS" "$REAL_K_DIR/"
+          # 定位内核 DTS 目录 (arch/arm64/boot/dts/mediatek)
+          K_DTS_DIR=$(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d | head -n 1)
+          echo "内核 DTS 目录: $K_DTS_DIR"
           
-          # 修正 Makefile
-          sed -i '/mt7981b-sl3000-emmc.dtb/d' "$REAL_K_DIR/Makefile"
-          sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$REAL_K_DIR/Makefile"
-          echo "🚀 编译现场已锁定: $REAL_K_DIR"
+          # 获取原始 DTS 源码
+          SRC_DTS=$(find ${{ github.workspace }}/custom-config -name "*mt7981b-sl3000-emmc.dts" | head -n 1)
+          
+          # 物理注入: 必须放在内核源码树内，cc1 才能找到
+          cp -fv "$SRC_DTS" "$K_DTS_DIR/mt7981b-sl3000-emmc.dts"
+          
+          # 修正内核 Makefile (添加 dtb 生成规则)
+          if ! grep -q "mt7981b-sl3000-emmc.dtb" "$K_DTS_DIR/Makefile"; then
+              sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK) +=/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$K_DTS_DIR/Makefile"
+          fi
 
-      - name: 7. 最终固件编译
+          # 强制修改内存定义 (确保 1GB 生效)
+          # 如果 DTS 里已经写了 1GB，这一步是双重保险
+          sed -i 's/reg = <0x00 0x40000000 0x00 0x10000000>/reg = <0x00 0x40000000 0x00 0x40000000>/g' "$K_DTS_DIR/mt7981b-sl3000-emmc.dts"
+
+      - name: 6. 最终固件编译
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
-          # 再次锁定配置，防止任何交互式弹窗
+          # 锁定配置并执行内核/镜像安装
           make defconfig
-          echo "📦 正在生产内核与镜像..."
-          make target/linux/install -j$(nproc) V=i || make target/linux/install -j1 V=s
+          make target/linux/install -j$(nproc) V=s
           make target/install -j$(nproc)
+          make checksum
 
-      - name: 8. 上传固件
+      - name: 7. 上传固件
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: SL3000-1GB-Firmware
-          path: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
+          name: SL3000-1GB-Fixed-Firmware
+          path: |
+            ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
+            ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.buildinfo
