@@ -3,7 +3,8 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/leds/common.h>
-#include <mediatek/mt7981.dtsi>
+/* 暴力修正：直接引用同级目录下的 dtsi */
+#include "mt7981.dtsi"
 
 / {
 	model = "SL-3000 eMMC Router";
@@ -22,6 +23,7 @@
 		bootargs = "root=PARTLABEL=production rootwait";
 	};
 
+	/* 1GB 内存锁定方案 */
 	memory@40000000 {
 		device_type = "memory";
 		reg = <0x0 0x40000000 0x0 0x40000000>;
@@ -60,7 +62,6 @@
 		};
 	};
 
-    /* 物理层修复：固定的 3.3V 供电 */
 	reg_3p3v: regulator-3p3v {
 		compatible = "regulator-fixed";
 		regulator-name = "fixed-3.3V";
@@ -71,7 +72,6 @@
 	};
 };
 
-/* 网络与交换机配置 */
 &eth {
 	status = "okay";
 	gmac0: mac@0 {
@@ -106,7 +106,6 @@
 	};
 };
 
-/* eMMC 存储器 */
 &mmc0 {
 	bus-width = <8>;
 	cap-mmc-highspeed;
@@ -120,27 +119,25 @@
 	status = "okay";
 };
 
-/* Pinctrl 控制 */
 &pio {
 	mmc0_pins_default: mmc0-pins-default {
 		mux { function = "flash"; groups = "emmc_45"; };
 		conf {
 			pins = "EMMC_DATA_0", "EMMC_DATA_1", "EMMC_DATA_2", "EMMC_DATA_3", "EMMC_DATA_4", "EMMC_DATA_5", "EMMC_DATA_6", "EMMC_DATA_7", "EMMC_CMD";
-			input-enable; drive-strength = <MTK_DRIVE_4mA>; bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
+			input-enable; drive-strength = <4>; bias-pull-up;
 		};
-		conf-clk { pins = "EMMC_CLK"; drive-strength = <MTK_DRIVE_4mA>; bias-pull-down = <MTK_PUPD_SET_R1R0_01>; };
+		conf-clk { pins = "EMMC_CLK"; drive-strength = <4>; bias-pull-down; };
 	};
 	mmc0_pins_uhs: mmc0-pins-uhs {
 		mux { function = "flash"; groups = "emmc_45"; };
 		conf {
 			pins = "EMMC_DATA_0", "EMMC_DATA_1", "EMMC_DATA_2", "EMMC_DATA_3", "EMMC_DATA_4", "EMMC_DATA_5", "EMMC_DATA_6", "EMMC_DATA_7", "EMMC_CMD";
-			input-enable; drive-strength = <MTK_DRIVE_6mA>; bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
+			input-enable; drive-strength = <6>; bias-pull-up;
 		};
-		conf-clk { pins = "EMMC_CLK"; drive-strength = <MTK_DRIVE_6mA>; bias-pull-down = <MTK_PUPD_SET_R1R0_01>; };
+		conf-clk { pins = "EMMC_CLK"; drive-strength = <6>; bias-pull-down; };
 	};
 };
 
-/* 基础外设 */
 &uart0 { status = "okay"; };
 &watchdog { status = "okay"; };
 &wifi { status = "okay"; };
