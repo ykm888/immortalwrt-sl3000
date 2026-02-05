@@ -1,57 +1,54 @@
 #!/bin/bash
 set -e
 
-echo ">>> [SL3000 SLAM-FIX] 开始执行暴力补丁..."
+echo ">>> [SL3000 SLAM-FIX] 正在执行全链路自愈初始化..."
 
 ROOT_DIR=$(pwd)
-# 自动定位配置仓库
 [ -z "$GITHUB_WORKSPACE" ] && GITHUB_WORKSPACE=$(cd ..; pwd)
 SRC_DIR=$(find "$GITHUB_WORKSPACE" -maxdepth 2 -type d -name "*sl3000*" | head -n 1)
 
-DTS_SRC=$(find "$SRC_DIR" -type f -name "*mt7981b-sl3000-emmc.dts" | head -n 1)
-MK_SRC=$(find "$SRC_DIR" -type f -name "filogic.mk" | head -n 1)
+# --- 1. 优化磁盘空间 (全链路自愈第一步：清理环境) ---
+echo "清理冗余文件以释放空间..."
+sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift
+# 清理本地不必要的镜像
+docker image prune -a -f || true
 
-# --- 1. 宿主机工具伪装 (修复：必须先创建目录) ---
-echo "🔗 正在预建工具链标记目录..."
-mkdir -p staging_dir/host/bin
-mkdir -p staging_dir/host/stamp
-
-# 劫持系统工具以加快构建并绕过 m4/flex 报错
+# --- 2. 宿主机工具强制伪装 ---
+mkdir -p staging_dir/host/bin staging_dir/host/stamp
 for t in m4 flex bison; do 
     ln -sf /usr/bin/$t staging_dir/host/bin/$t
 done
 ln -sf /usr/bin/flex staging_dir/host/bin/lex
 
-# 暴力标记工具已“安装”
 touch staging_dir/host/.tools_install_y
 touch staging_dir/host/stamp/.tools_compile_y
 touch staging_dir/host/stamp/.m4_installed
-touch staging_dir/host/stamp/.flex_installed
 
-# --- 2. DTS 物理缝合 (延续原有逻辑) ---
+# --- 3. DTS 暴力缝合与物理自愈覆盖 ---
 BASE_DTSI=$(find "$ROOT_DIR/target/linux/mediatek" -name "mt7981.dtsi" | head -n 1)
 INC_DIR=$(dirname "$BASE_DTSI")
 DTS_DEST="$INC_DIR/mt7981b-sl3000-emmc.dts"
 
-echo "🔨 物理缝合依赖到 DTS: $DTS_DEST"
+echo "🔨 物理缝合依赖到 DTS..."
 {
     echo '/dts-v1/;'
     grep "#include" "$BASE_DTSI" | head -n 20
     echo '#include <dt-bindings/leds/common.h>'
     echo '#include <dt-bindings/input/input.h>'
     sed -E '/\/dts-v1\/;|#include/d' "$BASE_DTSI"
-    [ -f "$INC_DIR/mt7981b.dtsi" ] && sed -E '/\/dts-v1\/;|#include/d' "$INC_DIR/mt7981b.dtsi"
-    echo -e "\n/* --- SL3000 CUSTOM SECTION --- */\n"
-    tr -d '\r' < "$DTS_SRC" | sed -E '/\/dts-v1\/;|#include|mt7981.dtsi/d'
+    echo -e "\n/* --- SL3000 CUSTOM --- */\n"
+    tr -d '\r' < $(find "$SRC_DIR" -type f -name "*mt7981b-sl3000-emmc.dts" | head -n 1) | sed -E '/\/dts-v1\/;|#include|mt7981.dtsi/d'
 } > "$DTS_DEST"
 
-# 镜像构建优先级修复：将 DTS 放入 files 目录，这是 OpenWrt 覆盖机制的最高优先级
+# 【全链路自愈关键】
+# 将 DTS 放入 files 目录，OpenWrt 每次 prepare 内核时都会强制覆盖回来
 FILES_DIR="$ROOT_DIR/target/linux/mediatek/files/arch/arm64/boot/dts/mediatek"
 mkdir -p "$FILES_DIR"
 cp -fv "$DTS_DEST" "$FILES_DIR/"
 
-# --- 3. 配置与 Feeds ---
+# --- 4. 配置锁定 ---
 ./scripts/feeds update -a && ./scripts/feeds install -a
+MK_SRC=$(find "$SRC_DIR" -type f -name "filogic.mk" | head -n 1)
 [ -f "$MK_SRC" ] && cp -fv "$MK_SRC" "target/linux/mediatek/image/filogic.mk"
 
 cat <<EOT > .config
@@ -68,4 +65,4 @@ CONFIG_TARGET_ROOTFS_INITRAMFS=n
 EOT
 
 make defconfig
-echo "✅ [脚本完成] 环境伪装与 DTS 缝合就绪。"
+echo "✅ [自愈脚本] 环境与配置已加固。"
