@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. 预装系统工具
+      - name: 1. 系统依赖补全
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison m4 gawk libtool-bin rsync unzip wget curl patch git-core gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 device-tree-compiler bc dos2unix
@@ -22,60 +22,61 @@ jobs:
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 3. 执行初始化脚本
+      - name: 3. 初始化与补丁
         working-directory: ${{ env.WORKDIR }}
         run: |
+          # 提前创建 stamp 目录，防止脚本 touch 失败
+          mkdir -p staging_dir/host/stamp
           SCRIPT_FILE=$(find ${{ github.workspace }}/custom-config -name "clean-feeds.sh" | head -n 1)
           cp -v "$SCRIPT_FILE" ./clean-feeds.sh
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
 
-      - name: 4. 构建工具链
+      - name: 4. 工具链预编译
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
 
-      - name: 5. 暴力修复路径层级 (关键修复步)
+      - name: 5. 暴力锁定编译现场 (防止 cc1 报错)
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
-          # 1. 解压内核源码
+          # 展开内核源码并应用 files 覆盖
           make target/linux/prepare -j$(nproc)
           
-          # 2. 定位生成的 DTS 文件
+          # 获取刚才脚本缝合好的 DTS
           SPLICED_DTS=$(find target/linux/mediatek -name "mt7981b-sl3000-emmc.dts" | head -n 1)
           
-          # 3. 修复 cc1 报错：在内核源码目录内创建 mediatek 子目录并链接
-          # 镜像构建脚本通常在 arch/arm64/boot/dts/ 下寻找 mediatek/*.dts
+          # 遍历并注入所有潜在的编译目录 (暴力对策)
+          
           for dts_base in $(find build_dir -path "*/arch/arm64/boot/dts" -type d); do
-            echo "🔗 正在建立路径映射: $dts_base/mediatek"
+            echo "🔗 注入 DTS 层级到: $dts_base/mediatek"
             mkdir -p "$dts_base/mediatek"
             cp -fv "$SPLICED_DTS" "$dts_base/mediatek/"
-            
-            # 补全 Makefile 编译规则
+            # 补齐内核 Makefile 规则
             if [ -f "$dts_base/mediatek/Makefile" ]; then
               sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$dts_base/mediatek/Makefile"
             fi
           done
 
-          # 4. 解决 root-mediatek 目录缺失导致的 cp 报错
+          # 预创目录防止 cp init 失败
           mkdir -p build_dir/target-aarch64_cortex-a53_musl/root-mediatek
-          echo "🚀 路径层级暴力修复完成。"
+          echo "🚀 构建现场补丁完成。"
 
-      - name: 6. 固件生产
+      - name: 6. 最终固件编译
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
           make defconfig
-          # 先单独编译内核 dtbs
+          # 优先安装内核与 DTB
           make target/linux/install -j$(nproc) V=s || make target/linux/install -j1 V=s
           make target/install -j$(nproc)
 
-      - name: 7. 上传固件
+      - name: 7. 上传产物
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: SL3000-1GB-Fixed-Firmware
+          name: SL3000-1GB-Fixed
           path: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
