@@ -3,10 +3,11 @@ define Device/sl3000-emmc
   DEVICE_MODEL := Custom-1GB-Edition
   DEVICE_DTS := mt7981b-sl3000-emmc
   DEVICE_DTS_DIR := $(DTS_DIR)/mediatek
-  SUPPORTED_DEVICES := sl,sl3000-emmc mediatek,mt7981b
+  SUPPORTED_DEVICES := sl,sl3000-emmc mediatek,mt7981b mediatek,mt7981
   
-  # 修复单位报错：64M -> 67108864, 1024M -> 1073741824
-  KERNEL_SIZE := 67108864
+  # 128MB = 134217728 Bytes
+  KERNEL_SIZE := 134217728
+  # 1GB = 1073741824 Bytes
   IMAGE_SIZE := 1073741824
   
   DEVICE_PACKAGES := \
@@ -17,6 +18,7 @@ define Device/sl3000-emmc
 	block-mount blkid lsblk parted
   
   IMAGES := sysupgrade.bin
-  IMAGE/sysupgrade.bin := append-kernel | pad-to $$(KERNEL_SIZE) | append-rootfs | pad-rootfs | check-size | append-metadata
+  # 核心修复：这里必须使用单 $ 符号，否则 pad-to 接收不到参数
+  IMAGE/sysupgrade.bin := append-kernel | pad-to $(KERNEL_SIZE) | append-rootfs | pad-rootfs | check-size | append-metadata
 endef
 TARGET_DEVICES += sl3000-emmc
