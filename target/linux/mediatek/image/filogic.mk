@@ -5,9 +5,8 @@ define Device/sl3000-emmc
   DEVICE_DTS_DIR := $(DTS_DIR)/mediatek
   SUPPORTED_DEVICES := sl,sl3000-emmc mediatek,mt7981b mediatek,mt7981
   
-  # 128MB = 134217728 Bytes
+  # 定义依然保留，用于其他可能的逻辑引用
   KERNEL_SIZE := 134217728
-  # 1GB = 1073741824 Bytes
   IMAGE_SIZE := 1073741824
   
   DEVICE_PACKAGES := \
@@ -18,7 +17,8 @@ define Device/sl3000-emmc
 	block-mount blkid lsblk parted
   
   IMAGES := sysupgrade.bin
-  # 核心修复：这里必须使用单 $ 符号，否则 pad-to 接收不到参数
-  IMAGE/sysupgrade.bin := append-kernel | pad-to $(KERNEL_SIZE) | append-rootfs | pad-rootfs | check-size | append-metadata
+  # 🚀 【核心修复】直接将 128MB 的字节数 (134217728) 硬编码到命令中
+  # 这样可以 100% 避开 OpenWrt 变量作用域导致 pad-to 拿不到数字的 bug
+  IMAGE/sysupgrade.bin := append-kernel | pad-to 134217728 | append-rootfs | pad-rootfs | check-size | append-metadata
 endef
 TARGET_DEVICES += sl3000-emmc
