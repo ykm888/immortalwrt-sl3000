@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 /dts-v1/;
 
 #include <dt-bindings/gpio/gpio.h>
@@ -7,19 +8,21 @@
 
 / {
 	model = "SL-3000 eMMC Router (1GB Custom Edition)";
-	compatible = "sl,sl3000-emmc", "mediatek,mt7981b", "mediatek,mt7981";
+	compatible = "sl,sl3000-emmc", "mediatek,mt7981";
+
+	/* 修复：与 dtsi 的 #address-cells = <2> 保持一致 */
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0 0x40000000 0 0x40000000>; /* 1GB RAM */
+	};
 
 	chosen {
 		bootargs = "console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x11002000";
 		stdout-path = "serial0:115200n8";
 	};
 
-	memory@40000000 {
-		device_type = "memory";
-		reg = <0 0x40000000 0 0x40000000>;
-	};
-
-	keys {
+	/* 修复：使用唯一节点名，避免与 dtsi 冲突 */
+	gpio-keys-sl3000 {
 		compatible = "gpio-keys";
 		reset {
 			label = "reset";
@@ -28,15 +31,16 @@
 		};
 	};
 
-	leds {
+	gpio-leds-sl3000 {
 		compatible = "gpio-leds";
-		blue {
+		status_blue {
 			label = "blue:status";
 			gpios = <&pio 8 GPIO_ACTIVE_HIGH>;
 		};
 	};
 };
 
+/* 核心修复：eMMC 驱动 */
 &mmc0 {
 	pinctrl-names = "default", "state_uhs";
 	pinctrl-0 = <&mmc0_pins_default>;
@@ -47,8 +51,8 @@
 	mmc-hs200-1_8v;
 	mmc-hs400-1_8v;
 	non-removable;
+	/* 直接引用 dtsi 中已有的 regulator */
 	vmmc-supply = <&reg_3p3v>;
-	vqmmc-supply = <&reg_1p8v>;
 	status = "okay";
 
 	partitions {
@@ -73,38 +77,71 @@
 			read-only;
 		};
 
+		/* 延续设置：128M Kernel */
 		partition@380000 {
 			label = "kernel";
-			reg = <0x380000 0x8000000>; /* 128MB */
+			reg = <0x380000 0x8000000>;
 		};
 
+		/* 延续设置：1G Rootfs */
 		partition@8380000 {
 			label = "rootfs";
-			reg = <0x8380000 0x40000000>; /* 1GB */
+			reg = <0x8380000 0x40000000>;
 		};
 	};
 };
 
 &pio {
 	mmc0_pins_default: mmc0-pins-default {
-		mux { function = "flash"; groups = "emmc_51"; };
+		mux {
+			function = "flash";
+			groups = "emmc_51";
+		};
 		conf-cmd-dat {
 			pins = "EMMC_DATA0", "EMMC_DATA1", "EMMC_DATA2", "EMMC_DATA3",
 			       "EMMC_DATA4", "EMMC_DATA5", "EMMC_DATA6", "EMMC_DATA7", "EMMC_CMD";
-			input-enable; drive-strength = <MTK_DRIVE_4mA>; bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
+			input-enable;
+			drive-strength = <MTK_DRIVE_4mA>;
+			bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
 		};
-		conf-clk { pins = "EMMC_CK"; drive-strength = <MTK_DRIVE_6mA>; bias-pull-down = <MTK_PUPD_SET_R1R0_10>; };
-		conf-rst { pins = "EMMC_RSTB"; drive-strength = <MTK_DRIVE_4mA>; bias-pull-up = <MTK_PUPD_SET_R1R0_01>; };
+		conf-clk {
+			pins = "EMMC_CK";
+			drive-strength = <MTK_DRIVE_6mA>;
+			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
+		};
+		conf-rst {
+			pins = "EMMC_RSTB";
+			drive-strength = <MTK_DRIVE_4mA>;
+			bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
+		};
 	};
+
 	mmc0_pins_uhs: mmc0-pins-uhs {
-		mux { function = "flash"; groups = "emmc_51"; };
+		mux {
+			function = "flash";
+			groups = "emmc_51";
+		};
+	};
+
+	/* 启用 UART0 引脚复用 */
+	uart0_pins: uart0-pins {
+		mux {
+			function = "uart";
+			groups = "uart0_0_tx_rx";
+		};
 	};
 };
 
-&uart0 { status = "okay"; };
-&watchdog { status = "okay"; };
+/* 延续设置：开启基础外设 */
+&uart0 {
+	status = "okay";
+};
 
-/* 核心修复：将 &eth0 改为 &eth */
+&watchdog {
+	status = "okay";
+};
+
+/* 延续修复：使用官方 dtsi 定义的 &eth */
 &eth {
 	status = "okay";
 	mediatek,gmac-id = <0>;
