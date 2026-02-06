@@ -3,143 +3,115 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/leds/common.h>
-/* 暴力修正：直接引用同级目录下的 dtsi */
 #include "mt7981.dtsi"
 
 / {
-	model = "SL-3000 eMMC Router";
-	compatible = "sl,sl3000-emmc", "mediatek,mt7981b";
-
-	aliases {
-		serial0 = &uart0;
-		led-boot = &led_red;
-		led-failsafe = &led_red;
-		led-running = &led_green;
-		led-upgrade = &led_blue;
-	};
+	model = "SL-3000 eMMC Router (1GB Custom Edition)";
+	compatible = "sl,sl3000-emmc", "mediatek,mt7981b", "mediatek,mt7981";
 
 	chosen {
+		bootargs = "console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x11002000";
 		stdout-path = "serial0:115200n8";
-		bootargs = "root=PARTLABEL=production rootwait";
 	};
 
-	/* 1GB 内存锁定方案 */
 	memory@40000000 {
 		device_type = "memory";
-		reg = <0x0 0x40000000 0x0 0x40000000>;
+		reg = <0 0x40000000 0 0x40000000>;
 	};
 
-	gpio-keys {
+	keys {
 		compatible = "gpio-keys";
-		mesh {
-			label = "mesh";
-			linux,code = <BTN_9>;
-			gpios = <&pio 0 GPIO_ACTIVE_LOW>;
-		};
 		reset {
 			label = "reset";
-			linux,code = <KEY_RESTART>;
 			gpios = <&pio 1 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_RESTART>;
 		};
 	};
 
 	leds {
 		compatible = "gpio-leds";
-		led_red: led-red {
-			label = "red:status";
-			color = <LED_COLOR_ID_RED>;
-			gpios = <&pio 10 GPIO_ACTIVE_LOW>;
-		};
-		led_green: led-green {
-			label = "green:status";
-			color = <LED_COLOR_ID_GREEN>;
-			gpios = <&pio 11 GPIO_ACTIVE_LOW>;
-		};
-		led_blue: led-blue {
+		blue {
 			label = "blue:status";
-			color = <LED_COLOR_ID_BLUE>;
-			gpios = <&pio 12 GPIO_ACTIVE_LOW>;
-		};
-	};
-
-	reg_3p3v: regulator-3p3v {
-		compatible = "regulator-fixed";
-		regulator-name = "fixed-3.3V";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		regulator-boot-on;
-		regulator-always-on;
-	};
-};
-
-&eth {
-	status = "okay";
-	gmac0: mac@0 {
-		compatible = "mediatek,eth-mac";
-		reg = <0>;
-		phy-mode = "2500base-x";
-		fixed-link { speed = <2500>; full-duplex; pause; };
-	};
-	mdio: mdio-bus {
-		#address-cells = <1>;
-		#size-cells = <0>;
-		switch@0 {
-			compatible = "mediatek,mt7531";
-			reg = <31>;
-			reset-gpios = <&pio 39 GPIO_ACTIVE_LOW>;
-			ports {
-				#address-cells = <1>;
-				#size-cells = <0>;
-				port@0 { reg = <0>; label = "lan1"; };
-				port@1 { reg = <1>; label = "lan2"; };
-				port@2 { reg = <2>; label = "lan3"; };
-				port@3 { reg = <3>; label = "wan"; };
-				port@6 {
-					reg = <6>;
-					label = "cpu";
-					ethernet = <&gmac0>;
-					phy-mode = "2500base-x";
-					fixed-link { speed = <2500>; full-duplex; pause; };
-				};
-			};
+			gpios = <&pio 8 GPIO_ACTIVE_HIGH>;
 		};
 	};
 };
 
 &mmc0 {
-	bus-width = <8>;
-	cap-mmc-highspeed;
-	cap-mmc-hw-reset;
-	max-frequency = <52000000>;
-	non-removable;
-	vmmc-supply = <&reg_3p3v>;
 	pinctrl-names = "default", "state_uhs";
 	pinctrl-0 = <&mmc0_pins_default>;
 	pinctrl-1 = <&mmc0_pins_uhs>;
+	bus-width = <8>;
+	max-frequency = <200000000>;
+	cap-mmc-highspeed;
+	mmc-hs200-1_8v;
+	mmc-hs400-1_8v;
+	non-removable;
+	vmmc-supply = <&reg_3p3v>;
+	vqmmc-supply = <&reg_1p8v>;
 	status = "okay";
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		partition@0 {
+			label = "gpt";
+			reg = <0x0 0x100000>;
+			read-only;
+		};
+
+		partition@100000 {
+			label = "u-boot-env";
+			reg = <0x100000 0x80000>;
+		};
+
+		partition@180000 {
+			label = "factory";
+			reg = <0x180000 0x200000>;
+			read-only;
+		};
+
+		partition@380000 {
+			label = "kernel";
+			reg = <0x380000 0x8000000>; /* 128MB */
+		};
+
+		partition@8380000 {
+			label = "rootfs";
+			reg = <0x8380000 0x40000000>; /* 1GB */
+		};
+	};
 };
 
 &pio {
 	mmc0_pins_default: mmc0-pins-default {
-		mux { function = "flash"; groups = "emmc_45"; };
-		conf {
-			pins = "EMMC_DATA_0", "EMMC_DATA_1", "EMMC_DATA_2", "EMMC_DATA_3", "EMMC_DATA_4", "EMMC_DATA_5", "EMMC_DATA_6", "EMMC_DATA_7", "EMMC_CMD";
-			input-enable; drive-strength = <4>; bias-pull-up;
+		mux { function = "flash"; groups = "emmc_51"; };
+		conf-cmd-dat {
+			pins = "EMMC_DATA0", "EMMC_DATA1", "EMMC_DATA2", "EMMC_DATA3",
+			       "EMMC_DATA4", "EMMC_DATA5", "EMMC_DATA6", "EMMC_DATA7", "EMMC_CMD";
+			input-enable; drive-strength = <MTK_DRIVE_4mA>; bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
 		};
-		conf-clk { pins = "EMMC_CLK"; drive-strength = <4>; bias-pull-down; };
+		conf-clk { pins = "EMMC_CK"; drive-strength = <MTK_DRIVE_6mA>; bias-pull-down = <MTK_PUPD_SET_R1R0_10>; };
+		conf-rst { pins = "EMMC_RSTB"; drive-strength = <MTK_DRIVE_4mA>; bias-pull-up = <MTK_PUPD_SET_R1R0_01>; };
 	};
 	mmc0_pins_uhs: mmc0-pins-uhs {
-		mux { function = "flash"; groups = "emmc_45"; };
-		conf {
-			pins = "EMMC_DATA_0", "EMMC_DATA_1", "EMMC_DATA_2", "EMMC_DATA_3", "EMMC_DATA_4", "EMMC_DATA_5", "EMMC_DATA_6", "EMMC_DATA_7", "EMMC_CMD";
-			input-enable; drive-strength = <6>; bias-pull-up;
-		};
-		conf-clk { pins = "EMMC_CLK"; drive-strength = <6>; bias-pull-down; };
+		mux { function = "flash"; groups = "emmc_51"; };
 	};
 };
 
 &uart0 { status = "okay"; };
 &watchdog { status = "okay"; };
-&wifi { status = "okay"; };
-&usb_phy { status = "okay"; };
-&xhci { status = "okay"; };
+
+/* 核心修复：将 &eth0 改为 &eth */
+&eth {
+	status = "okay";
+	mediatek,gmac-id = <0>;
+	phy-mode = "2500base-x";
+	fixed-link {
+		speed = <2500>;
+		full-duplex;
+		pause;
+	};
+};
