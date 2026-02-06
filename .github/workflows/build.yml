@@ -1,4 +1,4 @@
-name: build-sl3000-optimized-fixed
+name: build-sl3000-ultimate-healing
 
 on:
   workflow_dispatch:
@@ -12,73 +12,68 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. 深度清理磁盘 (优化空间)
+      - name: 1. 极简环境准备与磁盘清理
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /var/lib/docker
-          sudo apt-get clean
-          df -h
-
-      - name: 2. 补全系统依赖 (修复 Python-setuptools 缺失)
-        run: |
           sudo apt-get update
           sudo apt-get install -y build-essential flex bison m4 gawk rsync unzip wget git-core \
-            gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-pip \
-            python3-setuptools device-tree-compiler bc dos2unix
+            gettext libncurses-dev zlib1g-dev libssl-dev libelf-dev python3 python3-setuptools \
+            device-tree-compiler bc dos2unix
 
-      - name: 3. 克隆源码与配置
+      - name: 2. 源码下载
         run: |
           git clone --depth=1 -b ${{ env.SOURCE_BRANCH }} ${{ env.SOURCE_REPO }} ${{ env.WORKDIR }}
           git clone https://github.com/${{ github.repository }}.git ${{ github.workspace }}/custom-config
 
-      - name: 4. 执行自愈脚本
+      - name: 3. 初始化全链路自愈
         working-directory: ${{ env.WORKDIR }}
         run: |
-          # 提前创建路径，防止脚本 touch 失败
           mkdir -p staging_dir/host/stamp
           SCRIPT_FILE=$(find ${{ github.workspace }}/custom-config -name "clean-feeds.sh" | head -n 1)
           cp -v "$SCRIPT_FILE" ./clean-feeds.sh
           chmod +x clean-feeds.sh
           ./clean-feeds.sh
 
-      - name: 5. 编译基础工具链
+      - name: 4. 工具链构建
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
 
-      - name: 6. 暴力修复编译现场 (解决 cc1 找不到文件)
+      - name: 5. 暴力修复路径对齐 (解决 cc1 报错)
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
-          # 展开内核源码并应用 files 覆盖
+          # 1. 展开内核并同步 files
           make target/linux/prepare -j$(nproc)
           
-          # 定位缝合好的 DTS 并地毯式注入所有编译子目录
+          # 2. 定位缝合好的 DTS
           SPLICED_DTS=$(find target/linux/mediatek -name "mt7981b-sl3000-emmc.dts" | head -n 1)
-          for dts_dir in $(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d); do
-            echo "📥 注入自愈 DTS 到: $dts_dir"
-            cp -fv "$SPLICED_DTS" "$dts_dir/"
-            # 自动补全内核 Makefile
-            sed -i '/dtb-$(CONFIG_ARCH_MEDIATEK)/a dtb-$(CONFIG_ARCH_MEDIATEK) += mt7981b-sl3000-emmc.dtb' "$(dirname "$dts_dir")/Makefile" || true
+          
+          # 3. 【核心修复】将 DTS 注入到 build_dir 下所有预期的 mediatek 目录
+          # 解决 aarch64-openwrt-linux-musl-cpp 找不到源文件的问题
+          for target_dir in $(find build_dir -path "*/arch/arm64/boot/dts/mediatek" -type d); do
+            echo "📥 强力注入 DTS 到: $target_dir"
+            cp -fv "$SPLICED_DTS" "$target_dir/"
           done
           
-          # 解决 root-mediatek 目录 cp 报错
+          # 4. 修复 root-mediatek 目录
           mkdir -p build_dir/target-aarch64_cortex-a53_musl/root-mediatek
-          echo "🚀 编译场修复完成。"
+          echo "🚀 路径自愈完成。"
 
-      - name: 7. 最终编译
+      - name: 6. 最终固件生成
         working-directory: ${{ env.WORKDIR }}
         run: |
           export PATH=${{ env.WORKDIR }}/staging_dir/host/bin:$PATH
           make defconfig
-          # 优先安装内核与 DTB，失败则单线程报错
+          # 尝试编译，若失败则切换单线程 V=s 暴露问题
           make target/linux/install -j$(nproc) || make target/linux/install -j1 V=s
           make target/install -j$(nproc)
 
-      - name: 8. 上传产物
+      - name: 7. 上传产物
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: SL3000-Fixed-1GB-eMMC
+          name: SL3000-Ultimate-Firmware
           path: ${{ env.WORKDIR }}/bin/targets/mediatek/filogic/*.bin
